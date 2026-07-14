@@ -1,15 +1,839 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Redirecting to GT Rota Builder...</title>
-    <script>
-        // Redirect to the main app
-        window.location.href = 'GT%20Rota%20builder.html';
-    </script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GT Rota Builder</title>
+  <style>
+    :root{--bg:#07111f;--panel:#101b2c;--text:#f2f5f9;--muted:#90a3bd;--accent:#4dc8ff;--good:#42d392;--warn:#ffbe4d;--bad:#ff6b6b}
+    body{margin:0;font-family:Inter,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text)}
+    .wrap{max-width:1400px;margin:0 auto;padding:20px 20px 60px}
+    .panel{background:var(--panel);border:1px solid #22324a;border-radius:16px;padding:18px;margin-bottom:18px;box-shadow:0 12px 35px rgba(0,0,0,.25)}
+    h1,h2,h3{margin-top:0}
+    p{color:var(--muted)}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+    label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)}
+    input,select,textarea{border:1px solid #304560;background:#0b1422;color:var(--text);border-radius:10px;padding:10px;font-size:14px}
+    textarea{min-height:80px;resize:vertical}
+    button{border:none;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer;background:var(--accent);color:#072235}
+    button.secondary{background:#22324a;color:var(--text)}
+    button.danger{background:var(--bad);color:white}
+    .controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    th,td{padding:10px;border-bottom:1px solid #243547;text-align:left;vertical-align:top}
+    th{color:#dae3ee;font-size:12px;text-transform:uppercase;letter-spacing:.08em}
+    .badge{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px;background:#22324a;color:#e7eef7;margin-right:6px;margin-top:4px}
+    .pill{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px;margin-right:6px;margin-top:4px}
+    .pill.good{background:rgba(66,211,146,.2);color:var(--good)}
+    .pill.warn{background:rgba(255,190,77,.2);color:var(--warn)}
+    .pill.bad{background:rgba(255,107,107,.2);color:var(--bad)}
+    .muted{color:var(--muted)}
+    .summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+    .card{background:#0b1422;border:1px solid #243547;border-radius:12px;padding:12px}
+    .small{font-size:12px;color:var(--muted)}
+    .row{display:flex;gap:8px;flex-wrap:wrap}
+    .rota-table{width:100%;border-collapse:collapse;margin-top:10px;table-layout:fixed}
+    .rota-table th,.rota-table td{border:1px solid #243547;padding:8px;text-align:left;vertical-align:top}
+    .rota-table thead th{background:#16253b;color:#f2f5f9;font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+    .rota-table tbody th{background:#0f1a2a;color:#e7eef7;font-size:13px;white-space:nowrap}
+    .modal{position:fixed;inset:0;background:rgba(3,8,15,.76);display:none;align-items:center;justify-content:center;padding:20px;z-index:20}
+    .modal.open{display:flex}
+    .modal-card{background:#101b2c;border:1px solid #2a3e58;border-radius:16px;width:min(720px,100%);padding:20px;box-shadow:0 20px 50px rgba(0,0,0,.35)}
+    .small-btn{padding:8px 10px;font-size:12px}
+    .inline-input{display:flex;gap:8px;align-items:center}
+    .inline-input input, .inline-input select{flex:1}
+    .strength-row{font-size:12px;color:var(--muted);padding-top:6px}
+    .strength-pill{display:inline-block;padding:3px 7px;border-radius:999px;background:#17263a;color:#e7eef7;margin:2px 4px 2px 0}
+  </style>
 </head>
 <body>
-    <p>Redirecting to GT Rota Builder... <a href="GT%20Rota%20builder.html">Click here if not redirected</a></p>
+  <div class="wrap">
+    <div class="panel">
+      <h1>GT Rota Builder</h1>
+      <p>Generate a weekly rota from the workbook rules: fixed availability, annual leave, unavailability, breakfast cover, section skill scores, and the 4-day working cap.</p>
+      <div class="controls">
+        <span class="small">Changes update the rota live.</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Weekly inputs</h2>
+      <div class="grid">
+        <label>Week commencing<input id="weekStart" type="date" min="2024-01-01" step="7"></label>
+        <label>MIO chef<select id="mioChef"></select></label>
+        <label>Busy service / event<input id="event" type="text" placeholder="e.g. private dining"></label>
+        <label>Additional GT chef request<input id="extraCover" type="text" placeholder="e.g. extra larder"></label>
+        <label>Any rule changes?<textarea id="changes" placeholder="e.g. Aled prefers Pass; Charlie off Tuesday"></textarea><div class="small"><a href="requirements/rota-rules.md" target="_blank" rel="noopener">View saved rota rules</a></div><div id="ruleSummary" class="small" style="margin-top:6px;min-height:1.3em"></div></label>
+      </div>
+      <h3 style="margin-bottom:6px">Leave and unavailable</h3>
+      <table>
+        <thead>
+          <tr><th>Chef</th><th>Type</th><th>Start date</th><th>Finish date</th><th>Notes</th><th></th></tr>
+        </thead>
+        <tbody id="availabilityBody"></tbody>
+      </table>
+      <div class="controls" style="margin-top:10px">
+        <button id="addAvailabilityBtn" class="secondary">Add entry</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="controls" style="justify-content:space-between">
+        <h2 style="margin:0">Staff</h2>
+        <button id="addChefBtn" class="secondary">Add chef</button>
+      </div>
+      <p class="small" style="margin-top:8px;margin-bottom:8px">Use the strength values to show how strong each chef is on each section: 0 = not suitable, 1 = limited, 2 = capable, 3 = preferred.</p>
+      <table>
+        <thead>
+          <tr><th>Name</th><th>Role</th><th>Seniority</th><th>MIO eligible</th><th>Weekend rule</th><th>Fixed day off</th><th></th></tr>
+        </thead>
+        <tbody id="staffBody"></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>Generated rota</h2>
+      <div id="results"></div>
+    </div>
+  </div>
+
+  <div id="chefModal" class="modal">
+    <div class="modal-card">
+      <h3 style="margin-top:0">Add chef</h3>
+      <div class="grid">
+        <label>Name<input id="newChefName" type="text"></label>
+        <label>Role<select id="newChefRole"></select></label>
+        <label>Seniority<select id="newChefSeniority">${seniorityOptions.map(option=>`<option value="${option.value}">${option.label}</option>`).join('')}</select></label>
+        <label>MIO eligible<select id="newChefMio"><option value="true">Yes</option><option value="false">No</option></select></label>
+        <label>Weekend rule<select id="newChefWeekendRule"><option value="">None</option><option>Works weekends</option><option>Does not work weekends</option></select></label>
+        <label>Fixed day off<select id="newChefFixedDayOff"><option value="">None</option><option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option><option>Saturday</option><option>Sunday</option></select></label>
+      </div>
+      <h4 style="margin-bottom:8px">Skills</h4>
+      <div class="grid">
+        <label>Pass<select data-skill="Pass" class="new-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+        <label>Sauce<select data-skill="Sauce" class="new-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+        <label>Garnish<select data-skill="Garnish" class="new-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+        <label>Larder<select data-skill="Larder" class="new-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+        <label>Pastry<select data-skill="Pastry" class="new-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+      </div>
+      <div class="controls" style="margin-top:14px;justify-content:flex-end">
+        <button id="cancelChefBtn" class="secondary">Cancel</button>
+        <button id="saveChefBtn">Save chef</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const sections = ['Pass','Sauce','Garnish','Larder','Pastry'];
+    const today = new Date();
+    const defaultWeek = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+
+    const chefRoles = ['Executive Chef','Head Chef','Sous Chef','Chef de Partie','Demi Chef de Partie','Commis Chef'];
+    const seniorityOptions = [
+      {value:1,label:'1 - Junior'},
+      {value:2,label:'2 - Commis'},
+      {value:3,label:'3 - Junior CDP'},
+      {value:4,label:'4 - CDP'},
+      {value:5,label:'5 - Senior CDP'},
+      {value:6,label:'6 - Junior Sous'},
+      {value:7,label:'7 - Sous'},
+      {value:8,label:'8 - Senior Sous'},
+      {value:9,label:'9 - Head Chef'},
+      {value:10,label:'10 - Executive Chef'}
+    ];
+    const initialStaff = [
+      {name:'Aled', role:'Executive Chef', seniorityRank:1, breakfastEligible:true, weekendRule:'Does not work weekends', fixedDayOff:'', skills:{Pass:3,Sauce:1,Garnish:1,Larder:1,Pastry:3,Breakfast:3}, preferredBreakfast:'Monday', notes:'Prefers pass or pastry'},
+      {name:'Charlie', role:'Head Chef', seniorityRank:2, breakfastEligible:true, weekendRule:'Works weekends', fixedDayOff:'Tuesday', skills:{Pass:3,Sauce:2,Garnish:2,Larder:2,Pastry:2,Breakfast:2}, preferredBreakfast:'Sunday', notes:'Can work any section'},
+      {name:'Adam', role:'Sous Chef', seniorityRank:3, breakfastEligible:true, weekendRule:'', fixedDayOff:'', skills:{Pass:3,Sauce:3,Garnish:1,Larder:3,Pastry:1,Breakfast:2}, preferredBreakfast:'', notes:'Prefers pass, larder or sauce'},
+      {name:'Connor', role:'Sous Chef', seniorityRank:3, breakfastEligible:true, weekendRule:'', fixedDayOff:'', skills:{Pass:2,Sauce:3,Garnish:2,Larder:2,Pastry:2,Breakfast:2}, preferredBreakfast:'', notes:'Prefers sauce; can work any section'},
+      {name:'Dan', role:'Chef de Partie', seniorityRank:4, breakfastEligible:true, weekendRule:'', fixedDayOff:'', skills:{Pass:2,Sauce:2,Garnish:3,Larder:2,Pastry:2,Breakfast:2}, preferredBreakfast:'', notes:'Prefers garnish; can work all sections'},
+      {name:'Fred', role:'Chef de Partie', seniorityRank:4, breakfastEligible:true, weekendRule:'', fixedDayOff:'', skills:{Pass:0,Sauce:0,Garnish:3,Larder:0,Pastry:0,Breakfast:2}, preferredBreakfast:'', notes:'Garnish only at present'},
+      {name:'Joel', role:'Chef de Partie', seniorityRank:4, breakfastEligible:true, weekendRule:'', fixedDayOff:'', skills:{Pass:0,Sauce:3,Garnish:0,Larder:0,Pastry:0,Breakfast:2}, preferredBreakfast:'', notes:'Sauce only at present'},
+      {name:'Camilla', role:'Demi Chef de Partie', seniorityRank:5, breakfastEligible:true, weekendRule:'', fixedDayOff:'', skills:{Pass:0,Sauce:0,Garnish:0,Larder:3,Pastry:3,Breakfast:2}, preferredBreakfast:'', notes:'Pastry and larder'},
+      {name:'Brooke', role:'Demi Chef de Partie', seniorityRank:5, breakfastEligible:true, weekendRule:'', fixedDayOff:'', skills:{Pass:0,Sauce:0,Garnish:0,Larder:2,Pastry:3,Breakfast:2}, preferredBreakfast:'', notes:'Prefer 3 pastry and 1 larder shift'},
+      {name:'Myles', role:'Commis Chef', seniorityRank:6, breakfastEligible:true, weekendRule:'', fixedDayOff:'', skills:{Pass:0,Sauce:0,Garnish:0,Larder:3,Pastry:0,Breakfast:2}, preferredBreakfast:'', notes:'Larder only'}
+    ];
+
+    const state = {
+      staff: JSON.parse(JSON.stringify(initialStaff)),
+      availability: [
+        {chef:'Aled', type:'Annual Leave', startDate:defaultWeek, finishDate:defaultWeek, notes:'Example'},
+      ]
+    };
+
+    function getDefaultSkills(){
+      return Object.fromEntries(sections.map(section => [section, 0]));
+    }
+
+    function escapeRegex(text){
+      return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function normalizeSection(section){
+      const normalized = (section||'').toLowerCase().trim();
+      const map = {
+        pass:'Pass',
+        'pass section':'Pass',
+        sauce:'Sauce',
+        garnish:'Garnish',
+        larder:'Larder',
+        pastry:'Pastry',
+        breakfast:'Breakfast',
+        'breakfast section':'Breakfast',
+        'breakie':'Breakfast'
+      };
+      return map[normalized] || section?.charAt(0).toUpperCase() + section.slice(1) || '';
+    }
+
+    function normalizeDay(day){
+      const normalized = (day||'').toLowerCase().trim();
+      const map = {
+        mon:'Monday', monday:'Monday',
+        tue:'Tuesday', tuesday:'Tuesday',
+        wed:'Wednesday', wednesday:'Wednesday',
+        thu:'Thursday', thursday:'Thursday',
+        fri:'Friday', friday:'Friday',
+        sat:'Saturday', saturday:'Saturday',
+        sun:'Sunday', sunday:'Sunday'
+      };
+      return map[normalized] || day?.charAt(0).toUpperCase() + day.slice(1) || '';
+    }
+
+    function getRuleOverrides(text){
+      const overrides = {dayOffs:{}, preferredSections:{}, avoidedSections:{}};
+      if (!text) return overrides;
+      const phrases = text.split(/[;\n]+/).map(item=>item.trim()).filter(Boolean);
+      for (const phrase of phrases){
+        const lowerPhrase = phrase.toLowerCase();
+        for (const staff of state.staff){
+          const name = staff.name;
+          const namePattern = escapeRegex(name.toLowerCase());
+          const dayPatterns = [
+            new RegExp(`${namePattern}\\s+(?:is\\s+)?(?:off|day off|not working|not available|not on|free on|away on)\\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)`),
+            new RegExp(`${namePattern}\\s+(?:should|must|needs?|wants?)\\s+be\\s+(?:off|day off)\\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)`),
+            new RegExp(`${namePattern}\\s+(?:has|needs?|wants?)\\s+(?:a\\s+)?day\\s+off(?:\\s+on)?\\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)`)
+          ];
+          for (const pattern of dayPatterns){
+            const dayMatch = lowerPhrase.match(pattern);
+            if (dayMatch){
+              const day = normalizeDay(dayMatch[1]);
+              overrides.dayOffs[name] = [...(overrides.dayOffs[name]||[]), day];
+              break;
+            }
+          }
+          const prefPatterns = [
+            new RegExp(`${namePattern}\\s+(?:prefer(?:s)?|would like|wants? to work|should work|must work|needs? to work|is best on|is good on|should be on)\\s+(pass|sauce|garnish|larder|pastry|breakfast|pass section|breakfast section)`),
+            new RegExp(`${namePattern}\\s+for\\s+(pass|sauce|garnish|larder|pastry|breakfast|pass section|breakfast section)`)
+          ];
+          for (const pattern of prefPatterns){
+            const prefMatch = lowerPhrase.match(pattern);
+            if (prefMatch){
+              const section = normalizeSection(prefMatch[1]);
+              const weight = lowerPhrase.includes('must work') || lowerPhrase.includes('needs to work') ? 3 : 2;
+              overrides.preferredSections[name] = {...(overrides.preferredSections[name]||{}), [section]: (overrides.preferredSections[name]?.[section]||0) + weight};
+              break;
+            }
+          }
+          const avoidPatterns = [
+            new RegExp(`${namePattern}\\s+(?:avoid|does not want|doesn't want|should not work|must not work|cannot work|can't work|is not suited to|is not on)\\s+(pass|sauce|garnish|larder|pastry|breakfast|pass section|breakfast section)`),
+            new RegExp(`${namePattern}\\s+(?:does not want|doesn't want|should not work|must not work)\\s+(?:to\\s+)?work\\s+(?:on\\s+)?(pass|sauce|garnish|larder|pastry|breakfast|pass section|breakfast section)`)
+          ];
+          for (const pattern of avoidPatterns){
+            const avoidMatch = lowerPhrase.match(pattern);
+            if (avoidMatch){
+              const section = normalizeSection(avoidMatch[1] || avoidMatch[2]);
+              overrides.avoidedSections[name] = {...(overrides.avoidedSections[name]||{}), [section]: (overrides.avoidedSections[name]?.[section]||0) + 3};
+              break;
+            }
+          }
+        }
+      }
+      return overrides;
+    }
+
+    function renderRuleSummary(){
+      const textarea = document.getElementById('changes');
+      const summary = document.getElementById('ruleSummary');
+      const overrides = getRuleOverrides(textarea.value);
+      const parts = [];
+      Object.entries(overrides.dayOffs).forEach(([name, days])=>{
+        parts.push(`${name} off ${days.join(', ')}`);
+      });
+      Object.entries(overrides.preferredSections).forEach(([name, sections])=>{
+        Object.entries(sections).forEach(([section, weight])=>{
+          parts.push(`${name} prefers ${section}${weight>2?' (strong)':''}`);
+        });
+      });
+      Object.entries(overrides.avoidedSections).forEach(([name, sections])=>{
+        Object.entries(sections).forEach(([section])=>{
+          parts.push(`${name} avoids ${section}`);
+        });
+      });
+      summary.textContent = parts.length ? `Parsed rules: ${parts.join(' · ')}` : 'No coded rules parsed yet.';
+    }
+
+    function formatDate(dateStr){
+      const d = parseLocalDate(dateStr);
+      return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+    }
+
+    function parseLocalDate(dateStr){
+      const parts = dateStr.split('-');
+      return new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]));
+    }
+
+    function formatWeekCommencing(dateStr){
+      const d = parseLocalDate(dateStr);
+      const day = d.getDay();
+      const monday = new Date(d);
+      const diff = (day + 6) % 7;
+      monday.setDate(d.getDate() - diff);
+      return monday.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+    }
+
+    function normalizeWeekStart(dateStr){
+      const d = parseLocalDate(dateStr);
+      const monday = new Date(d);
+      const day = d.getDay();
+      const diff = (day + 6) % 7;
+      monday.setDate(d.getDate() - diff);
+      return `${monday.getFullYear()}-${String(monday.getMonth()+1).padStart(2,'0')}-${String(monday.getDate()).padStart(2,'0')}`;
+    }
+
+    function getDayName(dateStr){
+      const d = parseLocalDate(dateStr);
+      return dayNames[d.getDay()];
+    }
+
+    function resetSampleData(){
+      state.staff = JSON.parse(JSON.stringify(initialStaff));
+      state.availability = [];
+      document.getElementById('weekStart').value = normalizeWeekStart(defaultWeek);
+      document.getElementById('mioChef').value = '';
+      document.getElementById('event').value = '';
+      document.getElementById('extraCover').value = '';
+      document.getElementById('changes').value = '';
+      renderRuleSummary();
+      renderStaff();
+      renderAvailability();
+      renderResults();
+    }
+
+    function renderStaff(){
+      const body=document.getElementById('staffBody');
+      body.innerHTML='';
+      state.staff.forEach((staff,index)=>{
+        const row=document.createElement('tr');
+        row.innerHTML=`
+          <td><input data-field="name" data-index="${index}" value="${staff.name}" /></td>
+          <td><select data-field="role" data-index="${index}">${chefRoles.map(role=>`<option value="${role}" ${staff.role===role?'selected':''}>${role}</option>`).join('')}</select></td>
+          <td><select data-field="seniority" data-index="${index}">${seniorityOptions.map(option=>`<option value="${option.value}" ${staff.seniorityRank===option.value?'selected':''}>${option.label}</option>`).join('')}</select></td>
+          <td><select data-field="mio" data-index="${index}"><option value="true" ${staff.mioEligible?'selected':''}>Yes</option><option value="false" ${!staff.mioEligible?'selected':''}>No</option></select></td>
+          <td><select data-field="weekend" data-index="${index}"><option value="" ${!staff.weekendRule?'selected':''}>None</option><option ${staff.weekendRule==='Works weekends'?'selected':''}>Works weekends</option><option ${staff.weekendRule==='Does not work weekends'?'selected':''}>Does not work weekends</option></select></td>
+          <td><select data-field="fixedDay" data-index="${index}"><option value="" ${!staff.fixedDayOff?'selected':''}>None</option><option value="Monday" ${staff.fixedDayOff==='Monday'?'selected':''}>Monday</option><option value="Tuesday" ${staff.fixedDayOff==='Tuesday'?'selected':''}>Tuesday</option><option value="Wednesday" ${staff.fixedDayOff==='Wednesday'?'selected':''}>Wednesday</option><option value="Thursday" ${staff.fixedDayOff==='Thursday'?'selected':''}>Thursday</option><option value="Friday" ${staff.fixedDayOff==='Friday'?'selected':''}>Friday</option><option value="Saturday" ${staff.fixedDayOff==='Saturday'?'selected':''}>Saturday</option><option value="Sunday" ${staff.fixedDayOff==='Sunday'?'selected':''}>Sunday</option></select></td>
+          <td><button class="danger small-btn" data-remove-chef="${index}">Remove</button></td>`;
+        const strengthRow=document.createElement('tr');
+        strengthRow.innerHTML=`
+          <td colspan="7">
+            <div class="strength-row">Section strength: ${sections.map(section=>`<span class="strength-pill">${section}: <select data-skill="${section}" data-index="${index}" class="strength-select" style="margin-left:4px;padding:2px 4px;border-radius:6px;background:#0b1422;color:#fff;border:1px solid #304560">${[0,1,2,3].map(v=>`<option value="${v}" ${staff.skills?.[section]===v?'selected':''}>${v}</option>`).join('')}</select></span>`).join('')}</div>
+          </td>`;
+        body.appendChild(row);
+        body.appendChild(strengthRow);
+      });
+      populateMioOptions();
+    }
+
+    function renderAvailability(){
+      const body=document.getElementById('availabilityBody');
+      body.innerHTML='';
+      state.availability.forEach((entry,index)=>{
+        const row=document.createElement('tr');
+        row.innerHTML=`
+          <td><select class="entry-chef" data-index="${index}">${state.staff.map(s=>`<option value="${s.name}" ${entry.chef===s.name?'selected':''}>${s.name}</option>`).join('')}</select></td>
+          <td><select class="entry-type" data-index="${index}"><option ${entry.type==='Annual Leave'?'selected':''}>Annual Leave</option><option ${entry.type==='Unavailable'?'selected':''}>Unavailable</option></select></td>
+          <td><input class="entry-start-date" type="date" data-index="${index}" value="${entry.startDate||''}"></td>
+          <td><input class="entry-finish-date" type="date" data-index="${index}" value="${entry.finishDate||''}"></td>
+          <td><input class="entry-notes" type="text" data-index="${index}" value="${entry.notes||''}"></td>
+          <td><button class="danger" data-remove="${index}">Remove</button></td>`;
+        body.appendChild(row);
+      });
+    }
+
+    function populateMioOptions(){
+      const select=document.getElementById('mioChef');
+      const current=select.value || state.staff.find(s=>s.mioEligible)?.name || '';
+      const eligible = state.staff.filter(s=>s.mioEligible);
+      select.innerHTML = eligible.map(s=>`<option value="${s.name}" ${current===s.name?'selected':''}>${s.name}</option>`).join('');
+      if (!eligible.some(s=>s.name===current)) {
+        select.value = eligible[0]?.name || '';
+      }
+    }
+
+    function openAddChefModal(){
+      document.getElementById('newChefName').value='';
+      document.getElementById('newChefRole').innerHTML = chefRoles.map(role=>`<option>${role}</option>`).join('');
+      document.getElementById('newChefSeniority').value='3';
+      document.getElementById('newChefMio').value='true';
+      document.getElementById('newChefWeekendRule').value='';
+      document.getElementById('newChefFixedDayOff').value='';
+      document.querySelectorAll('.new-skill-select').forEach(select=>{select.value='0';});
+      document.getElementById('chefModal').classList.add('open');
+    }
+
+    function closeAddChefModal(){
+      document.getElementById('chefModal').classList.remove('open');
+    }
+
+    function saveNewChef(){
+      const name=document.getElementById('newChefName').value.trim();
+      if (!name) return;
+      const skills={};
+      document.querySelectorAll('.new-skill-select').forEach(select=>{skills[select.dataset.skill]=Number(select.value);});
+      state.staff.push({
+        name,
+        role: document.getElementById('newChefRole').value,
+        seniorityRank: Number(document.getElementById('newChefSeniority').value),
+        breakfastEligible:true,
+        mioEligible: document.getElementById('newChefMio').value === 'true',
+        weekendRule: document.getElementById('newChefWeekendRule').value,
+        fixedDayOff: document.getElementById('newChefFixedDayOff').value,
+        skills,
+        preferredBreakfast:'',
+        notes:''
+      });
+      closeAddChefModal();
+      renderStaff();
+      renderAvailability();
+      renderResults();
+    }
+
+    function collectInputs(){
+      const rawWeek = document.getElementById('weekStart').value || defaultWeek;
+      return {
+        weekStart: normalizeWeekStart(rawWeek),
+        mioChef: document.getElementById('mioChef').value,
+        event: document.getElementById('event').value,
+        extraCover: document.getElementById('extraCover').value,
+        changes: document.getElementById('changes').value,
+        availability: state.availability
+      };
+    }
+
+    function isUnavailable(staff, date, dayName, ruleOverrides){
+      const fixedOff = staff.fixedDayOff && staff.fixedDayOff.toLowerCase() === dayName.toLowerCase();
+      const dayOffFromRules = (ruleOverrides.dayOffs?.[staff.name]||[]).includes(dayName);
+      const leave = state.availability.some(entry=>{
+        if (entry.chef!==staff.name) return false;
+        if (entry.type!=='Annual Leave' && entry.type!=='Unavailable') return false;
+        const start = entry.startDate || entry.date;
+        const finish = entry.finishDate || entry.date;
+        const current = parseLocalDate(date);
+        const startDate = parseLocalDate(start);
+        const finishDate = parseLocalDate(finish);
+        return current >= startDate && current <= finishDate;
+      });
+      return fixedOff || dayOffFromRules || leave;
+    }
+
+    function getSectionScore(staff, section, ruleOverrides){
+      let score = staff.skills?.[section] ?? 0;
+      score += ruleOverrides.preferredSections?.[staff.name]?.[section] || 0;
+      score -= ruleOverrides.avoidedSections?.[staff.name]?.[section] || 0;
+      return score;
+    }
+
+    function getWeeklyContextAdjustments(inputs){
+      const text = `${inputs.event||''} ${inputs.extraCover||''}`.toLowerCase();
+      let extraChefs = 0;
+      const extraSections = [];
+      if (/(busy|private|service|event|extra|cover|need|needed|staff|heavy)/.test(text)) {
+        extraChefs += 1;
+      }
+      const sectionHints = ['pass','sauce','garnish','larder','pastry','breakfast','mio'];
+      sectionHints.forEach(section => {
+        if (text.includes(section)) {
+          extraSections.push(normalizeSection(section));
+        }
+      });
+      return {extraChefs, extraSections: [...new Set(extraSections)]};
+    }
+
+    function getRequiredChefCount(dayName, weeklyAdjustments){
+      return (['Monday','Tuesday','Wednesday'].includes(dayName) ? 4 : 5) + (weeklyAdjustments?.extraChefs || 0);
+    }
+
+    function getCoreSections(dayName, weeklyAdjustments){
+      const sections = ['Monday','Tuesday','Wednesday'].includes(dayName)
+        ? ['Sauce','Garnish','Larder','Pastry']
+        : ['Pass','Sauce','Garnish','Larder','Pastry'];
+      const extraSections = weeklyAdjustments?.extraSections || [];
+      return [...extraSections.filter(section => section && !sections.includes(section)), ...sections];
+    }
+
+    function getMioPlacement(dayName){
+      if (['Monday','Tuesday','Wednesday'].includes(dayName)) return 'MIO';
+      if (dayName === 'Saturday') return 'Weekend';
+      if (dayName === 'Sunday') return 'Weekend';
+      return 'Off';
+    }
+
+    function getSeniorityBonus(staff, dayName){
+      const seniority = staff.seniorityRank || 0;
+      let bonus = 0;
+      if (['Friday','Saturday','Sunday'].includes(dayName) && seniority >= 7) bonus += 2;
+      if (['Friday','Saturday','Sunday'].includes(dayName) && seniority >= 6) bonus += 1;
+      if (seniority >= 8) bonus += 1;
+      return bonus;
+    }
+
+    function getHoursForDay(dayName, isBreakfast = false){
+      if (isBreakfast) {
+        // Breakfast starts at 7:30am (ends at usual time with 30min unpaid)
+        if (dayName === 'Sunday') return 12.5;   // 7:30am-8pm = 12.5 hrs
+        if (dayName === 'Saturday') return 14.5;  // 7:30am-10pm minus 30min = 14.5 hrs
+        return 14;                                  // 7:30am-10pm minus 30min = 14 hrs (Mon-Fri)
+      }
+      // Regular hours (no breakfast)
+      if (dayName === 'Sunday') return 11;
+      if (dayName === 'Saturday') return 12.5;
+      return 11.5;
+    }
+
+    function createFallbackDayPlan(available, dayName, requiredChefs, coreSections, ruleOverrides){
+      const ranked = available.slice().sort((a,b)=>{
+        const aScore = getSectionScore(a,'Breakfast', ruleOverrides) + (a.preferredBreakfast===dayName?10:0) + getSeniorityBonus(a, dayName);
+        const bScore = getSectionScore(b,'Breakfast', ruleOverrides) + (b.preferredBreakfast===dayName?10:0) + getSeniorityBonus(b, dayName);
+        return bScore - aScore;
+      });
+      const selectedStaff = ranked.slice(0, requiredChefs);
+      if (selectedStaff.length < requiredChefs) return null;
+      const assignments = [];
+      const selected = [];
+      const breakfastChef = selectedStaff[0];
+      assignments.push({chef:breakfastChef.name, section:'Breakfast'});
+      selected.push(breakfastChef.name);
+      const remainingSections = coreSections.filter(section => section !== 'Breakfast').slice(0, requiredChefs - 1);
+      remainingSections.forEach(section => {
+        const candidates = selectedStaff.filter(staff => !selected.includes(staff.name));
+        if (!candidates.length) return;
+        const best = candidates.sort((a,b)=>{
+          const aScore = getSectionScore(a, section, ruleOverrides) + (a.preferredBreakfast===dayName?1:0) + getSeniorityBonus(a, dayName);
+          const bScore = getSectionScore(b, section, ruleOverrides) + (b.preferredBreakfast===dayName?1:0) + getSeniorityBonus(b, dayName);
+          return bScore - aScore;
+        })[0];
+        assignments.push({chef:best.name, section});
+        selected.push(best.name);
+      });
+      return {chefs:selectedStaff.map(staff=>staff.name), assignments};
+    }
+
+    function buildRota(inputs){
+      const start = parseLocalDate(inputs.weekStart);
+      const dates = [];
+      for(let i=0;i<7;i++){
+        const d=new Date(start);
+        d.setDate(start.getDate()+i);
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        dates.push({date:dateStr, dayName:dayNames[d.getDay()]});
+      }
+
+      const shifts = {};
+      const breakfastCounts = {}; // Track breakfast shifts per chef (max 1 per week)
+      const rota = [];
+      const validation = [];
+      const dayPlans = [];
+      const ruleOverrides = getRuleOverrides(inputs.changes);
+      const chefDayCounts = {};
+      const seniorCoreNames = ['Aled','Charlie','Adam','Connor'];
+      const weeklyAdjustments = getWeeklyContextAdjustments(inputs);
+
+      let mioAssigned = false;
+      let mioChefName = inputs.mioChef;
+
+      for(let i=0;i<dates.length;i++){
+        const current = dates[i];
+        const dayName = current.dayName;
+        const requiredChefs = getRequiredChefCount(dayName, weeklyAdjustments);
+        const coreSections = getCoreSections(dayName, weeklyAdjustments);
+
+        const available = state.staff.filter(staff=>{
+          if (isUnavailable(staff, current.date, dayName, ruleOverrides)) return false;
+          if (staff.name==='Aled' && ['Saturday','Sunday'].includes(dayName)) return false;
+          if (staff.name==='Charlie' && dayName==='Tuesday') return false;
+          if ((shifts[staff.name]||0) >= 4) return false;
+          return true;
+        });
+
+        if (available.length < requiredChefs) {
+          validation.push({day:dayName, message:'Not enough available chefs to satisfy minimum staffing', severity:'bad'});
+        }
+
+        // Breakfast candidates: eligible for breakfast AND haven't worked breakfast yet this week
+        const breakfastCandidates = available.filter(s=>s.breakfastEligible && (breakfastCounts[s.name]||0) === 0 && (s.name!==mioChefName || !mioAssigned || dayName!=='Monday'));
+        let breakfastChef = null;
+        const breakfastScores = breakfastCandidates.slice().sort((a,b)=>{
+          const aPref = a.preferredBreakfast===dayName?10:0;
+          const bPref = b.preferredBreakfast===dayName?10:0;
+          return (getSectionScore(b,'Breakfast', ruleOverrides)+bPref) - (getSectionScore(a,'Breakfast', ruleOverrides)+aPref);
+        });
+
+        for (const chef of breakfastScores) {
+          const selected = [chef.name];
+          const selectedStaff = [chef];
+          const remaining = available.filter(s=>s.name!==chef.name);
+          const usedSections = [];
+          // Breakfast is their only assignment for the day (counts as 1 of their 4 shifts)
+          const dayAssignments = [{chef:chef.name, section:'Breakfast'}];
+
+          // Fill remaining core sections with other chefs (requiredChefs - 1 more)
+          let remainingSections = coreSections.slice();
+          let selectedSenior = seniorCoreNames.includes(chef.name);
+          let okay = true;
+          for (let slot=0; slot<requiredChefs-1; slot++) {
+            if (remainingSections.length===0) break;
+            const section = remainingSections[0];
+            const sectionCandidates = remaining.filter(s=>!selected.includes(s.name)).sort((a,b)=>{
+              const seniorBonus = seniorCoreNames.includes(a.name)?1:0;
+              const seniorBonusB = seniorCoreNames.includes(b.name)?1:0;
+              const aScore = (getSectionScore(a, section, ruleOverrides) * 10) + seniorBonus + (a.preferredBreakfast===dayName?1:0) + getSeniorityBonus(a, dayName) - (shifts[a.name]||0);
+              const bScore = (getSectionScore(b, section, ruleOverrides) * 10) + seniorBonusB + (b.preferredBreakfast===dayName?1:0) + getSeniorityBonus(b, dayName) - (shifts[b.name]||0);
+              return bScore - aScore;
+            });
+            const best = sectionCandidates[0];
+            if (!best) { okay=false; break; }
+            selected.push(best.name);
+            selectedStaff.push(best);
+            dayAssignments.push({chef:best.name, section:section});
+            remainingSections = remainingSections.slice(1);
+            selectedSenior = selectedSenior || seniorCoreNames.includes(best.name);
+            remaining.splice(remaining.indexOf(best),1);
+          }
+
+          if (!selectedSenior) {
+            const seniorCandidate = selectedStaff.find(s=>seniorCoreNames.includes(s.name));
+            if (!seniorCandidate) {
+              okay = false;
+            }
+          }
+
+          if (!okay) continue;
+
+          if (selected.length !== requiredChefs) {
+            continue;
+          }
+
+          breakfastChef = chef.name;
+          breakfastCounts[chef.name] = (breakfastCounts[chef.name]||0) + 1; // Track breakfast shift
+          dayPlans.push({dayName, date:current.date, assignments:dayAssignments, chefs:selected});
+          break;
+        }
+
+        if (!breakfastChef) {
+          const fallbackPlan = createFallbackDayPlan(available, dayName, requiredChefs, coreSections, ruleOverrides);
+          if (fallbackPlan) {
+            breakfastChef = fallbackPlan.assignments[0]?.chef || fallbackPlan.chefs[0];
+            dayPlans.push({dayName, date:current.date, assignments:fallbackPlan.assignments, chefs:fallbackPlan.chefs});
+          } else {
+            validation.push({day:dayName, message:'Could not build a valid day plan', severity:'bad'});
+            continue;
+          }
+        }
+
+        const selectedChefs = dayPlans[dayPlans.length-1].chefs;
+        selectedChefs.forEach(name=>{
+          shifts[name] = (shifts[name]||0)+1;
+          chefDayCounts[name] = (chefDayCounts[name]||0)+1;
+        });
+        rota.push({dayName, date:current.date, assignments:dayPlans[dayPlans.length-1].assignments, chefs:selectedChefs});
+
+        if (inputs.mioChef) {
+          const mioStaff = state.staff.find(s=>s.name===inputs.mioChef);
+          const placement = getMioPlacement(dayName);
+          if (mioStaff && !isUnavailable(mioStaff,current.date,dayName,ruleOverrides) && (shifts[mioStaff.name]||0) < 4) {
+            if (placement === 'MIO' && !mioAssigned) {
+              rota[rota.length-1].assignments.push({chef:inputs.mioChef, section:'MIO'});
+              rota[rota.length-1].chefs.push(inputs.mioChef);
+              shifts[inputs.mioChef] = (shifts[inputs.mioChef]||0)+1;
+              chefDayCounts[inputs.mioChef] = (chefDayCounts[inputs.mioChef]||0)+1;
+              mioAssigned = true;
+            } else if (placement === 'Weekend' && !mioAssigned) {
+              const weekendSection = coreSections[0] || 'Pass';
+              rota[rota.length-1].assignments.push({chef:inputs.mioChef, section:weekendSection});
+              rota[rota.length-1].chefs.push(inputs.mioChef);
+              shifts[inputs.mioChef] = (shifts[inputs.mioChef]||0)+1;
+              chefDayCounts[inputs.mioChef] = (chefDayCounts[inputs.mioChef]||0)+1;
+            }
+          }
+        }
+      }
+
+      const issues = []; 
+      const breakfastCount = rota.filter(item=>item.assignments.some(a=>a.section==='Breakfast')).length;
+      const requiredDays = rota.length;
+      if (breakfastCount < 7) issues.push('Some days are missing breakfast coverage');
+      if (!rota.every(item=>item.chefs.length >= 4 && item.chefs.length <= 6)) issues.push('Some days do not meet the required chef count');
+      if (weeklyAdjustments.extraChefs > 0 && requiredDays < 7) issues.push('Weekly input requested extra cover but the plan was not fully built');
+      if (!mioAssigned) issues.push('MIO assignment was not created');
+      
+      // Validate breakfast constraint: no chef should work breakfast more than once per week
+      Object.entries(breakfastCounts).forEach(([chef, count])=>{
+        if (count > 1) issues.push(`${chef} worked breakfast ${count} times (max 1 per week)`);
+      });
+
+      const summary = Object.entries(chefDayCounts).map(([name,count])=>({
+        name,
+        count,
+        hours: 0
+      }));
+
+      rota.forEach(day=>{
+        day.chefs.forEach(name=>{
+          const entry = summary.find(item=>item.name===name);
+          if (entry) {
+            // Check if this chef worked breakfast on this day
+            const workingBreakfast = day.assignments.some(a=>a.chef===name && a.section==='Breakfast');
+            entry.hours += getHoursForDay(day.dayName, workingBreakfast);
+          }
+        });
+      });
+
+      return {rota, validation: validation.concat(issues.map(message=>({day:'Overall',message,severity:'warn'}))), summary};
+    }
+
+    function renderResults(){
+      const inputs=collectInputs();
+      const result=buildRota(inputs);
+      const container=document.getElementById('results');
+      const summaryCards = result.summary.map(item=>`<div class="card"><strong>${item.name}</strong><div class="small">${item.hours.toFixed(1)} hrs this week</div></div>`).join('');
+      const validationCards = result.validation.map(item=>`<div class="pill ${item.severity==='bad'?'bad':item.severity==='warn'?'warn':'good'}">${item.day}: ${item.message}</div>`).join('');
+      const ruleNotes = [];
+      const overrides = getRuleOverrides(inputs.changes);
+      if (Object.keys(overrides.dayOffs).length) {
+        ruleNotes.push(`Day-off rules: ${Object.entries(overrides.dayOffs).map(([name, days])=>`${name} off ${days.join(', ')}`).join('; ')}`);
+      }
+      if (Object.keys(overrides.preferredSections).length) {
+        ruleNotes.push(`Preferred sections: ${Object.entries(overrides.preferredSections).map(([name, sections])=>`${name} → ${Object.entries(sections).map(([section, weight])=>`${section} (${weight})`).join(', ')}`).join('; ')}`);
+      }
+      if (Object.keys(overrides.avoidedSections).length) {
+        ruleNotes.push(`Avoided sections: ${Object.entries(overrides.avoidedSections).map(([name, sections])=>`${name} → ${Object.entries(sections).map(([section])=>section).join(', ')}`).join('; ')}`);
+      }
+      const weeklyAdjustments = getWeeklyContextAdjustments(inputs);
+      if (weeklyAdjustments.extraChefs > 0 || weeklyAdjustments.extraSections.length) {
+        ruleNotes.push(`Weekly inputs: extra staffing ${weeklyAdjustments.extraChefs > 0 ? `+${weeklyAdjustments.extraChefs}` : '0'}; focus sections ${weeklyAdjustments.extraSections.length ? weeklyAdjustments.extraSections.join(', ') : 'none'}`);
+      }
+      if (inputs.mioChef) {
+        ruleNotes.push(`MIO selection: ${inputs.mioChef}`);
+      }
+      const rulesApplied = ruleNotes.length ? ruleNotes.map(note=>`<div class="small">• ${note}</div>`).join('') : '<div class="small">• No extra rules were applied.</div>';
+      const sectionRows = ['Pass','Sauce','Garnish','Larder','Pastry','Breakfast','MIO'];
+      const dayHeaders = result.rota.map(day=>`<th>${day.dayName}<br><span class="small">${formatDate(day.date)}</span></th>`).join('');
+      const sectionCells = sectionRows.map(section=>{
+        const cells = result.rota.map(day=>{
+          const matches = day.assignments.filter(assignment=>assignment.section===section);
+          const value = matches.length ? matches.map(assignment=>assignment.chef).join(', ') : '—';
+          return `<td>${value}</td>`;
+        }).join('');
+        return `<tr><th>${section}</th>${cells}</tr>`;
+      }).join('');
+      container.innerHTML=`
+        <div class="summary-grid">
+          <div class="card"><h3 style="margin-bottom:6px">Weekly context</h3><div class="small">Week commencing: ${formatWeekCommencing(inputs.weekStart)}<br>MIO chef: ${inputs.mioChef || 'None'}<br>Target: ${inputs.weekStart ? 'Mon-Wed: 4 chefs, Thu-Sun: 5 chefs' : 'Set the week start to see staffing targets'}<br>Cap: 4 shifts per chef</div></div>
+          <div class="card"><h3 style="margin-bottom:6px">Hours rota</h3><div class="row">${summaryCards}</div></div>
+        </div>
+        <h3 style="margin-top:16px">Rules applied</h3>
+        <div>${rulesApplied}</div>
+        <h3 style="margin-top:16px">Validation</h3>
+        <div>${validationCards||'<span class="pill good">No issues detected</span>'}</div>
+        <h3 style="margin-top:16px">Rota</h3>
+        <table class="rota-table"><thead><tr><th>Section</th>${dayHeaders}</tr></thead><tbody>${sectionCells}</tbody></table>`;
+    }
+
+    document.getElementById('weekStart').addEventListener('change', (event)=>{
+      const normalized = normalizeWeekStart(event.target.value || defaultWeek);
+      event.target.value = normalized;
+      renderResults();
+    });
+
+    document.getElementById('changes').addEventListener('input', ()=>{
+      renderRuleSummary();
+      renderResults();
+    });
+    document.getElementById('addAvailabilityBtn').addEventListener('click', ()=>{state.availability.push({chef:state.staff[0].name,type:'Unavailable',startDate:defaultWeek,finishDate:defaultWeek,notes:''});renderAvailability();});
+    document.getElementById('addChefBtn').addEventListener('click', openAddChefModal);
+    document.getElementById('cancelChefBtn').addEventListener('click', closeAddChefModal);
+    document.getElementById('saveChefBtn').addEventListener('click', saveNewChef);
+    document.addEventListener('click', (event)=>{
+      const button=event.target.closest('button[data-remove]');
+      if (button){
+        const index=Number(button.getAttribute('data-remove'));
+        state.availability.splice(index,1);
+        renderAvailability();
+      }
+      const removeChefButton=event.target.closest('button[data-remove-chef]');
+      if (removeChefButton){
+        const index=Number(removeChefButton.getAttribute('data-remove-chef'));
+        state.staff.splice(index,1);
+        renderStaff();
+        renderAvailability();
+        renderResults();
+      }
+    });
+    const updateStateFromControl = (event)=>{
+      if (event.target.classList.contains('entry-chef')){
+        state.availability[Number(event.target.dataset.index)].chef=event.target.value;
+      }
+      if (event.target.classList.contains('entry-type')){
+        state.availability[Number(event.target.dataset.index)].type=event.target.value;
+      }
+      if (event.target.classList.contains('entry-start-date')){
+        state.availability[Number(event.target.dataset.index)].startDate=event.target.value;
+      }
+      if (event.target.classList.contains('entry-finish-date')){
+        state.availability[Number(event.target.dataset.index)].finishDate=event.target.value;
+      }
+      if (event.target.classList.contains('entry-notes')){
+        state.availability[Number(event.target.dataset.index)].notes=event.target.value;
+      }
+      if (event.target.dataset.field==='name'){
+        state.staff[Number(event.target.dataset.index)].name=event.target.value;
+      }
+      if (event.target.dataset.field==='role'){
+        state.staff[Number(event.target.dataset.index)].role=event.target.value;
+      }
+      if (event.target.dataset.field==='seniority'){
+        state.staff[Number(event.target.dataset.index)].seniorityRank=Number(event.target.value);
+      }
+      if (event.target.dataset.field==='mio'){
+        state.staff[Number(event.target.dataset.index)].mioEligible = event.target.value === 'true';
+        populateMioOptions();
+      }
+      if (event.target.dataset.field==='weekend'){
+        state.staff[Number(event.target.dataset.index)].weekendRule = event.target.value;
+      }
+      if (event.target.dataset.field==='fixedDay'){
+        state.staff[Number(event.target.dataset.index)].fixedDayOff = event.target.value;
+      }
+      if (event.target.dataset.skill){
+        state.staff[Number(event.target.dataset.index)].skills[event.target.dataset.skill]=Number(event.target.value);
+      }
+    };
+
+    document.addEventListener('input', (event)=>{
+      updateStateFromControl(event);
+      if (event.target.id === 'weekStart' || event.target.id === 'event' || event.target.id === 'extraCover' || event.target.id === 'mioChef' || event.target.dataset.field || event.target.dataset.skill) {
+        renderResults();
+      }
+    });
+    document.addEventListener('change', (event)=>{
+      updateStateFromControl(event);
+      if (event.target.id === 'weekStart' || event.target.id === 'event' || event.target.id === 'extraCover' || event.target.id === 'mioChef' || event.target.dataset.field || event.target.dataset.skill) {
+        renderResults();
+      }
+    });
+
+    renderRuleSummary();
+    resetSampleData();
+  </script>
 </body>
 </html>
