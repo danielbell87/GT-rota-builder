@@ -61,11 +61,19 @@
       <div class="grid">
         <label>Week commencing<input id="weekStart" type="date" min="2024-01-01" step="7"></label>
         <label>MIO chef<select id="mioChef"></select></label>
-        <label>Busy service / event<input id="event" type="text" placeholder="e.g. private dining"></label>
-        <label>Additional GT chef request<input id="extraCover" type="text" placeholder="e.g. extra larder"></label>
         <label>Any rule changes?<textarea id="changes" placeholder="e.g. Aled prefers Pass; Charlie off Tuesday"></textarea><div class="small"><a href="requirements/rota-rules.md" target="_blank" rel="noopener">View saved rota rules</a></div><div id="ruleSummary" class="small" style="margin-top:6px;min-height:1.3em"></div></label>
       </div>
-      <h3 style="margin-bottom:6px">Leave and unavailable</h3>
+
+      <h3 style="margin-bottom:6px">Daily staffing overrides</h3>
+      <p class="small" style="margin-bottom:12px">Adjust chef requirements for specific days (e.g., private events, catering requests). Leave blank to use default (4 Mon-Wed, 5 Thu-Sun).</p>
+      <table>
+        <thead>
+          <tr><th>Day</th><th>Base Chefs</th><th>Event Name</th><th>Extra Chefs</th><th>Total</th></tr>
+        </thead>
+        <tbody id="dailyOverridesBody"></tbody>
+      </table>
+
+      <h3 style="margin-bottom:6px" style="margin-top:14px">Leave and unavailable</h3>
       <table>
         <thead>
           <tr><th>Chef</th><th>Type</th><th>Start date</th><th>Finish date</th><th>Notes</th><th></th></tr>
@@ -159,7 +167,8 @@
       staff: JSON.parse(JSON.stringify(initialStaff)),
       availability: [
         {chef:'Aled', type:'Annual Leave', startDate:defaultWeek, finishDate:defaultWeek, notes:'Example'},
-      ]
+      ],
+      dailyOverrides: {}
     };
 
     function getDefaultSkills(){
@@ -309,15 +318,38 @@
     function resetSampleData(){
       state.staff = JSON.parse(JSON.stringify(initialStaff));
       state.availability = [];
+      state.dailyOverrides = {};
       document.getElementById('weekStart').value = normalizeWeekStart(defaultWeek);
       document.getElementById('mioChef').value = '';
-      document.getElementById('event').value = '';
-      document.getElementById('extraCover').value = '';
       document.getElementById('changes').value = '';
       renderRuleSummary();
+      renderDailyOverrides();
       renderStaff();
       renderAvailability();
       renderResults();
+    }
+
+    function renderDailyOverrides(){
+      const body = document.getElementById('dailyOverridesBody');
+      body.innerHTML = '';
+      const daysOfWeek = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+      const baseChefCounts = {Monday:4, Tuesday:4, Wednesday:4, Thursday:5, Friday:5, Saturday:5, Sunday:5};
+      daysOfWeek.forEach(day => {
+        const baseCount = baseChefCounts[day];
+        const override = state.dailyOverrides?.[day] || {};
+        const extraChefs = override.extraChefs || 0;
+        const eventName = override.eventName || '';
+        const totalCount = baseCount + extraChefs;
+        const row = document.createElement('tr');
+        row.dataset.day = day;
+        row.innerHTML = `
+          <td>${day}</td>
+          <td style="text-align:center;font-weight:600">${baseCount}</td>
+          <td><input type="text" data-event-name placeholder="e.g. Private Event" value="${eventName}" style="width:100%;padding:8px;border:1px solid #304560;background:#0b1422;border-radius:6px;color:#f2f5f9"></td>
+          <td style="width:100px"><input type="number" data-extra-chefs min="0" max="3" value="${extraChefs}" style="width:100%;padding:8px;border:1px solid #304560;background:#0b1422;border-radius:6px;color:#f2f5f9;text-align:center"></td>
+          <td style="text-align:center;font-weight:600;background:#0b1422;border-radius:6px;padding:8px">${totalCount}</td>`;
+        body.appendChild(row);
+      });
     }
 
     function renderStaff(){
@@ -410,12 +442,20 @@
 
     function collectInputs(){
       const rawWeek = document.getElementById('weekStart').value || defaultWeek;
+      const dailyOverrides = {};
+      document.querySelectorAll('[data-day]').forEach(row => {
+        const day = row.dataset.day;
+        const eventName = row.querySelector('[data-event-name]').value;
+        const extraChefs = parseInt(row.querySelector('[data-extra-chefs]').value) || 0;
+        if (eventName || extraChefs > 0) {
+          dailyOverrides[day] = {eventName, extraChefs};
+        }
+      });
       return {
         weekStart: normalizeWeekStart(rawWeek),
         mioChef: document.getElementById('mioChef').value,
-        event: document.getElementById('event').value,
-        extraCover: document.getElementById('extraCover').value,
         changes: document.getElementById('changes').value,
+        dailyOverrides: dailyOverrides,
         availability: state.availability
       };
     }
@@ -443,37 +483,29 @@
       return score;
     }
 
-    function getWeeklyContextAdjustments(inputs){
-      const text = `${inputs.event||''} ${inputs.extraCover||''}`.toLowerCase();
-      let extraChefs = 0;
-      const extraSections = [];
-      if (/(busy|private|service|event|extra|cover|need|needed|staff|heavy)/.test(text)) {
-        extraChefs += 1;
-      }
-      const sectionHints = ['pass','sauce','garnish','larder','pastry','breakfast','mio'];
-      sectionHints.forEach(section => {
-        if (text.includes(section)) {
-          extraSections.push(normalizeSection(section));
-        }
-      });
-      return {extraChefs, extraSections: [...new Set(extraSections)]};
+    function getWeeklyContextAdjustments(inputs, dayName){
+      const dayOverride = inputs.dailyOverrides?.[dayName];
+      return {
+        eventName: dayOverride?.eventName || '',
+        extraChefs: dayOverride?.extraChefs || 0,
+        extraSections: []
+      };
     }
 
-    function getRequiredChefCount(dayName, weeklyAdjustments){
-      // Mon-Wed: 4 chefs + any event override. Thu-Sun: 5 chefs
+    function getRequiredChefCount(dayName, inputs){
+      // Base count: 4 for Mon-Wed, 5 for Thu-Sun
       const baseCount = ['Monday','Tuesday','Wednesday'].includes(dayName) ? 4 : 5;
-      const eventExtra = (weeklyAdjustments?.extraChefs || 0);
-      // Only apply event extra on Mon-Wed if it applies
-      const isMonWed = ['Monday','Tuesday','Wednesday'].includes(dayName);
-      return isMonWed ? baseCount + eventExtra : baseCount;
+      // Get per-day override from daily overrides
+      const adjustment = getWeeklyContextAdjustments(inputs, dayName);
+      const extraChefs = adjustment.extraChefs || 0;
+      return baseCount + extraChefs;
     }
 
-    function getCoreSections(dayName, weeklyAdjustments){
+    function getCoreSections(dayName, inputs){
       const sections = ['Monday','Tuesday','Wednesday'].includes(dayName)
         ? ['Sauce','Garnish','Larder','Pastry']
         : ['Pass','Sauce','Garnish','Larder','Pastry'];
-      const extraSections = weeklyAdjustments?.extraSections || [];
-      return [...extraSections.filter(section => section && !sections.includes(section)), ...sections];
+      return sections;
     }
 
     function getMioPlacement(dayName){
@@ -561,7 +593,6 @@
       const ruleOverrides = getRuleOverrides(inputs.changes);
       const chefDayCounts = {};
       const seniorCoreNames = ['Aled','Charlie','Adam','Connor'];
-      const weeklyAdjustments = getWeeklyContextAdjustments(inputs);
 
       let mioAssigned = false;
       let mioChefName = inputs.mioChef;
@@ -569,8 +600,8 @@
       for(let i=0;i<dates.length;i++){
         const current = dates[i];
         const dayName = current.dayName;
-        const requiredChefs = getRequiredChefCount(dayName, weeklyAdjustments);
-        const coreSections = getCoreSections(dayName, weeklyAdjustments);
+        const requiredChefs = getRequiredChefCount(dayName, inputs);
+        const coreSections = getCoreSections(dayName, inputs);
 
         const available = state.staff.filter(staff=>{
           if (isUnavailable(staff, current.date, dayName, ruleOverrides)) return false;
@@ -704,7 +735,6 @@
       const breakfastCount = rota.filter(item=>item.assignments.some(a=>a.section==='Breakfast')).length;
       const requiredDays = rota.length;
       if (breakfastCount < 7) issues.push('Some days are missing breakfast coverage');
-      if (weeklyAdjustments.extraChefs > 0 && requiredDays < 7) issues.push('Weekly input requested extra cover but the plan was not fully built');
       if (!mioAssigned) issues.push('MIO assignment was not created');
       
       // Validate breakfast constraint: no chef should work breakfast more than once per week
@@ -724,13 +754,12 @@
         }
       });
       
-      // Validate Monday-Wednesday has max 4 chefs (unless event override)
+      // Validate Monday-Wednesday staffing matches the override
       rota.slice(0, 3).forEach(day=>{
-        if (day.chefs.length > 4) {
-          const eventHasOverride = weeklyAdjustments.extraChefs > 0;
-          if (!eventHasOverride) {
-            issues.push(`${day.dayName}: ${day.chefs.length} chefs assigned (Mon-Wed max 4 unless event)`);
-          }
+        const dayOverride = inputs.dailyOverrides?.[day.dayName];
+        const expectedCount = ['Monday','Tuesday','Wednesday'].includes(day.dayName) ? (4 + (dayOverride?.extraChefs || 0)) : 5;
+        if (day.chefs.length > expectedCount) {
+          issues.push(`${day.dayName}: ${day.chefs.length} chefs assigned (expected ${expectedCount})`);
         }
       });
 
@@ -772,8 +801,12 @@
         ruleNotes.push(`Avoided sections: ${Object.entries(overrides.avoidedSections).map(([name, sections])=>`${name} → ${Object.entries(sections).map(([section])=>section).join(', ')}`).join('; ')}`);
       }
       const weeklyAdjustments = getWeeklyContextAdjustments(inputs);
-      if (weeklyAdjustments.extraChefs > 0 || weeklyAdjustments.extraSections.length) {
-        ruleNotes.push(`Weekly inputs: extra staffing ${weeklyAdjustments.extraChefs > 0 ? `+${weeklyAdjustments.extraChefs}` : '0'}; focus sections ${weeklyAdjustments.extraSections.length ? weeklyAdjustments.extraSections.join(', ') : 'none'}`);
+      const hasOverrides = Object.keys(inputs.dailyOverrides || {}).length > 0;
+      if (hasOverrides) {
+        const overrideText = Object.entries(inputs.dailyOverrides).map(([day, override]) => {
+          return `${day}: +${override.extraChefs} (${override.eventName || 'event'})`;
+        }).join(', ');
+        ruleNotes.push(`Daily overrides: ${overrideText}`);
       }
       if (inputs.mioChef) {
         ruleNotes.push(`MIO selection: ${inputs.mioChef}`);
@@ -844,6 +877,24 @@
       renderResults();
     });
 
+    document.addEventListener('change', (event)=>{
+      if (event.target.dataset.eventName !== undefined || event.target.dataset.extraChefs !== undefined) {
+        const row = event.target.closest('[data-day]');
+        if (row) {
+          const day = row.dataset.day;
+          const eventName = row.querySelector('[data-event-name]').value;
+          const extraChefs = parseInt(row.querySelector('[data-extra-chefs]').value) || 0;
+          if (eventName || extraChefs > 0) {
+            state.dailyOverrides[day] = {eventName, extraChefs};
+          } else {
+            delete state.dailyOverrides[day];
+          }
+          renderDailyOverrides();
+          renderResults();
+        }
+      }
+    });
+
     document.getElementById('changes').addEventListener('input', ()=>{
       renderRuleSummary();
       renderResults();
@@ -910,13 +961,13 @@
 
     document.addEventListener('input', (event)=>{
       updateStateFromControl(event);
-      if (event.target.id === 'weekStart' || event.target.id === 'event' || event.target.id === 'extraCover' || event.target.id === 'mioChef' || event.target.dataset.field || event.target.dataset.skill) {
+      if (event.target.id === 'weekStart' || event.target.id === 'mioChef' || event.target.dataset.field || event.target.dataset.skill) {
         renderResults();
       }
     });
     document.addEventListener('change', (event)=>{
       updateStateFromControl(event);
-      if (event.target.id === 'weekStart' || event.target.id === 'event' || event.target.id === 'extraCover' || event.target.id === 'mioChef' || event.target.dataset.field || event.target.dataset.skill) {
+      if (event.target.id === 'weekStart' || event.target.id === 'mioChef' || event.target.dataset.field || event.target.dataset.skill) {
         renderResults();
       }
     });
