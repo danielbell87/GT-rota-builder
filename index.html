@@ -524,6 +524,12 @@
       return bonus;
     }
 
+    function getSoftRulePenalty(staffName, dayName){
+      if (staffName === 'Aled' && ['Saturday','Sunday'].includes(dayName)) return 8;
+      if (staffName === 'Charlie' && dayName === 'Tuesday') return 8;
+      return 0;
+    }
+
     function isSenior(staff){
       // Sous Chef or higher: seniority >= 6
       return (staff.seniorityRank || 0) >= 6;
@@ -584,18 +590,48 @@
       return new Set(selected);
     }
 
-    function createCoreDayPlan(available, dayName, requiredChefs, coreSections, ruleOverrides, shifts, seniorCoreNames){
+    function getMioCorePlan(inputs, dates, ruleOverrides, mioWeekdayPlan){
+      if (!inputs.mioChef) return new Set();
+      const mioStaff = state.staff.find(staff => staff.name === inputs.mioChef);
+      if (!mioStaff) return new Set();
+
+      const selected = [];
+      const preferredOrder = ['Saturday','Sunday','Thursday','Friday'];
+      const allDays = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+      const orderedDays = preferredOrder.concat(allDays.filter(day=>!preferredOrder.includes(day)));
+
+      for (const dayName of orderedDays) {
+        if (selected.length >= 2) break;
+        if (mioWeekdayPlan.has(dayName)) continue;
+        const date = dates.find(item=>item.dayName===dayName);
+        if (!date) continue;
+        if (isUnavailable(mioStaff, date.date, dayName, ruleOverrides)) continue;
+        selected.push(dayName);
+      }
+
+      return new Set(selected);
+    }
+
+    function createCoreDayPlan(available, dayName, requiredChefs, coreSections, ruleOverrides, shifts, seniorCoreNames, targetShiftsByChef, remainingAvailableByChef){
       if (available.length < coreSections.length) return null;
       const assignments = [];
       const selected = [];
       const remaining = available.slice();
 
+      function getUrgencyScore(staff){
+        const target = targetShiftsByChef[staff.name] || 4;
+        const worked = shifts[staff.name] || 0;
+        const needed = Math.max(target - worked, 0);
+        const remainingDays = Math.max(remainingAvailableByChef[staff.name] || 1, 1);
+        return (needed / remainingDays) * 20 + (needed * 2);
+      }
+
       for (const section of coreSections) {
         const sectionCandidates = remaining.filter(staff=>!selected.includes(staff.name)).sort((a,b)=>{
           const seniorBonusA = seniorCoreNames.includes(a.name) ? 1 : 0;
           const seniorBonusB = seniorCoreNames.includes(b.name) ? 1 : 0;
-          const aScore = (getSectionScore(a, section, ruleOverrides) * 10) + seniorBonusA + getSeniorityBonus(a, dayName) - (shifts[a.name]||0);
-          const bScore = (getSectionScore(b, section, ruleOverrides) * 10) + seniorBonusB + getSeniorityBonus(b, dayName) - (shifts[b.name]||0);
+          const aScore = (getSectionScore(a, section, ruleOverrides) * 10) + seniorBonusA + getSeniorityBonus(a, dayName) + getUrgencyScore(a) - getSoftRulePenalty(a.name, dayName) - (shifts[a.name]||0);
+          const bScore = (getSectionScore(b, section, ruleOverrides) * 10) + seniorBonusB + getSeniorityBonus(b, dayName) + getUrgencyScore(b) - getSoftRulePenalty(b.name, dayName) - (shifts[b.name]||0);
           return bScore - aScore;
         });
         const best = sectionCandidates[0];
@@ -609,14 +645,44 @@
         const extraCandidates = remaining.filter(staff=>!selected.includes(staff.name)).sort((a,b)=>{
           const seniorBonusA = seniorCoreNames.includes(a.name) ? 1 : 0;
           const seniorBonusB = seniorCoreNames.includes(b.name) ? 1 : 0;
-          const aScore = seniorBonusA + getSeniorityBonus(a, dayName) - (shifts[a.name]||0);
-          const bScore = seniorBonusB + getSeniorityBonus(b, dayName) - (shifts[b.name]||0);
+          const aScore = seniorBonusA + getSeniorityBonus(a, dayName) + getUrgencyScore(a) - getSoftRulePenalty(a.name, dayName) - (shifts[a.name]||0);
+          const bScore = seniorBonusB + getSeniorityBonus(b, dayName) + getUrgencyScore(b) - getSoftRulePenalty(b.name, dayName) - (shifts[b.name]||0);
           return bScore - aScore;
         });
         const extra = extraCandidates[0];
         if (!extra) return null;
         selected.push(extra.name);
         remaining.splice(remaining.indexOf(extra),1);
+      }
+
+      // If a float chef has a higher weighted skill for a section, swap them onto section and move incumbent to float.
+      let changed = true;
+      while (changed) {
+        changed = false;
+        const coreAssigned = assignments.map(item=>item.chef);
+        const floatChefs = selected.filter(name=>!coreAssigned.includes(name));
+        if (!floatChefs.length) break;
+        let bestImprovement = null;
+
+        floatChefs.forEach(floatName=>{
+          const floatStaff = available.find(staff=>staff.name===floatName);
+          if (!floatStaff) return;
+          assignments.forEach((assignment, index)=>{
+            const incumbentStaff = available.find(staff=>staff.name===assignment.chef);
+            if (!incumbentStaff) return;
+            const floatScore = getSectionScore(floatStaff, assignment.section, ruleOverrides);
+            const incumbentScore = getSectionScore(incumbentStaff, assignment.section, ruleOverrides);
+            const improvement = floatScore - incumbentScore;
+            if (improvement > 0 && (!bestImprovement || improvement > bestImprovement.improvement)) {
+              bestImprovement = {index, floatName, improvement};
+            }
+          });
+        });
+
+        if (bestImprovement) {
+          assignments[bestImprovement.index].chef = bestImprovement.floatName;
+          changed = true;
+        }
       }
 
       return {chefs:selected, assignments};
@@ -643,46 +709,60 @@
       const mioChefName = inputs.mioChef;
       const mioStaff = state.staff.find(staff=>staff.name===mioChefName);
       const mioWeekdayPlan = getMioWeekdayPlan(inputs, dates, ruleOverrides);
-      const weekendMioDay = (()=>{
-        if (!mioStaff) return null;
-        const saturday = dates.find(item=>item.dayName==='Saturday');
-        const sunday = dates.find(item=>item.dayName==='Sunday');
-        if (saturday && !isUnavailable(mioStaff, saturday.date, 'Saturday', ruleOverrides)) return 'Saturday';
-        if (sunday && !isUnavailable(mioStaff, sunday.date, 'Sunday', ruleOverrides)) return 'Sunday';
-        return null;
-      })();
-      let weekendMioAssigned = false;
+      const mioCorePlan = getMioCorePlan(inputs, dates, ruleOverrides, mioWeekdayPlan);
+      let mioCoreAssignedCount = 0;
+      const targetShiftsByChef = Object.fromEntries(state.staff.map(staff=>[staff.name, staff.name===mioChefName ? 5 : 4]));
 
       for(let i=0;i<dates.length;i++){
         const current = dates[i];
         const dayName = current.dayName;
-        const requiredChefs = getRequiredChefCount(dayName, inputs);
+        const minimumChefs = getRequiredChefCount(dayName, inputs);
         const coreSections = getCoreSections(dayName, inputs);
+        const remainingDates = dates.slice(i);
 
         const mioIsOnMioShiftToday = mioWeekdayPlan.has(dayName);
 
+        const remainingAvailableByChef = Object.fromEntries(state.staff.map(staff=>{
+          const count = remainingDates.filter(day=>{
+            if (isUnavailable(staff, day.date, day.dayName, ruleOverrides)) return false;
+            if (staff.name===mioChefName && mioWeekdayPlan.has(day.dayName)) return false;
+            if (staff.name===mioChefName && !mioCorePlan.has(day.dayName)) return false;
+            return true;
+          }).length;
+          return [staff.name, count];
+        }));
+
         const available = state.staff.filter(staff=>{
           if (isUnavailable(staff, current.date, dayName, ruleOverrides)) return false;
-          if (staff.name==='Aled' && ['Saturday','Sunday'].includes(dayName)) return false;
-          if (staff.name==='Charlie' && dayName==='Tuesday') return false;
           if (staff.name===mioChefName && mioIsOnMioShiftToday) return false;
-          if (staff.name===mioChefName && dayName!==weekendMioDay) return false;
-          if ((shifts[staff.name]||0) >= 4) return false;
+          if (staff.name===mioChefName && !mioCorePlan.has(dayName)) return false;
+          const maxShifts = targetShiftsByChef[staff.name] || 4;
+          if ((shifts[staff.name]||0) >= maxShifts) return false;
           return true;
         });
+
+        const mustWorkToday = available.filter(staff=>{
+          const target = targetShiftsByChef[staff.name] || 4;
+          const worked = shifts[staff.name] || 0;
+          const needed = Math.max(target - worked, 0);
+          const remainingAvailable = Math.max(remainingAvailableByChef[staff.name] || 0, 0);
+          return needed > 0 && needed >= remainingAvailable;
+        });
+
+        const requiredChefs = Math.max(minimumChefs, mustWorkToday.length);
 
         if (available.length < requiredChefs) {
           validation.push({day:dayName, message:'Not enough available chefs to satisfy minimum staffing', severity:'bad'});
         }
 
-        const dayPlan = createCoreDayPlan(available, dayName, requiredChefs, coreSections, ruleOverrides, shifts, seniorCoreNames);
+        const dayPlan = createCoreDayPlan(available, dayName, requiredChefs, coreSections, ruleOverrides, shifts, seniorCoreNames, targetShiftsByChef, remainingAvailableByChef);
         if (!dayPlan) {
           validation.push({day:dayName, message:'Could not build a valid day plan', severity:'bad'});
           continue;
         }
 
-        // Ensure the selected MIO chef works one weekend GT section (not breakfast) when available.
-        if (mioStaff && weekendMioDay && dayName===weekendMioDay && !weekendMioAssigned && !isUnavailable(mioStaff, current.date, dayName, ruleOverrides)) {
+        // Ensure the selected MIO chef is placed on planned core-section days.
+        if (mioStaff && mioCorePlan.has(dayName) && !isUnavailable(mioStaff, current.date, dayName, ruleOverrides)) {
           const alreadyAssigned = dayPlan.assignments.some(assignment=>assignment.chef===mioChefName);
           if (!alreadyAssigned) {
             const replaceable = dayPlan.assignments
@@ -699,7 +779,9 @@
               dayPlan.chefs = dayPlan.assignments.map(assignment=>assignment.chef);
             }
           }
-          weekendMioAssigned = dayPlan.assignments.some(assignment=>assignment.chef===mioChefName && assignment.section!=='Breakfast' && assignment.section!=='MIO');
+          if (dayPlan.assignments.some(assignment=>assignment.chef===mioChefName && assignment.section!=='Breakfast' && assignment.section!=='MIO')) {
+            mioCoreAssignedCount += 1;
+          }
         }
 
         // Breakfast can only be assigned to a chef already working a core section that day.
@@ -716,7 +798,7 @@
           const breakfastChef = breakfastCandidates.slice().sort((a,b)=>{
             const aPref = a.preferredBreakfast===dayName?10:0;
             const bPref = b.preferredBreakfast===dayName?10:0;
-            return (getSectionScore(b,'Breakfast', ruleOverrides)+bPref) - (getSectionScore(a,'Breakfast', ruleOverrides)+aPref);
+            return (getSectionScore(b,'Breakfast', ruleOverrides)+bPref-getSoftRulePenalty(b.name, dayName)) - (getSectionScore(a,'Breakfast', ruleOverrides)+aPref-getSoftRulePenalty(a.name, dayName));
           })[0];
           dayPlan.assignments.push({chef:breakfastChef.name, section:'Breakfast'});
           breakfastCounts[breakfastChef.name] = (breakfastCounts[breakfastChef.name]||0) + 1;
@@ -747,6 +829,13 @@
           if (!hasSenior) {
             validation.push({day:dayName, message:'No Sous Chef or higher assigned (daily minimum required)', severity:'warn'});
           }
+
+          if (['Saturday','Sunday'].includes(dayName) && dayAssignments.chefs.includes('Aled')) {
+            validation.push({day:dayName, message:'Soft rule broken: Aled prefers not to work weekends', severity:'warn'});
+          }
+          if (dayName === 'Tuesday' && dayAssignments.chefs.includes('Charlie')) {
+            validation.push({day:dayName, message:'Soft rule broken: Charlie prefers not to work Tuesdays', severity:'warn'});
+          }
         }
       }
 
@@ -757,8 +846,8 @@
       if (mioChefName && !rota.some(item=>item.assignments.some(assignment=>assignment.chef===mioChefName && assignment.section==='MIO'))) {
         issues.push('MIO assignment was not created');
       }
-      if (mioChefName && weekendMioDay && !weekendMioAssigned) {
-        issues.push(`${mioChefName} could not be placed on ${weekendMioDay} GT section`);
+      if (mioChefName && mioCorePlan.size > 0 && mioCoreAssignedCount < mioCorePlan.size) {
+        issues.push(`${mioChefName} could not be placed on all planned GT core-section days`);
       }
       
       // Validate breakfast constraint: no chef should work breakfast more than once per week
@@ -766,15 +855,15 @@
         if (count > 1) issues.push(`${chef} worked breakfast ${count} times (max 1 per week)`);
       });
       
-      // Validate 4-day work week: each chef should work exactly 4 days (unless unavailable)
+      // Validate weekly work caps: 4 days for most chefs, 5 for the selected MIO chef.
       Object.entries(shifts).forEach(([chef, shiftCount])=>{
-        const availableDays = 7; // All 7 days
         const unavailable = state.availability.filter(entry=>
           entry.chef === chef && (entry.type === 'Annual Leave' || entry.type === 'Unavailable')
         ).length > 0;
-        if (shiftCount !== 4 && !unavailable) {
-          if (shiftCount < 4) issues.push(`${chef} only works ${shiftCount} days (should be 4)`);
-          if (shiftCount > 4) issues.push(`${chef} works ${shiftCount} days (max 4)`);
+        const target = chef===mioChefName ? 5 : 4;
+        if (shiftCount !== target && !unavailable) {
+          if (shiftCount < target) issues.push(`${chef} only works ${shiftCount} days (should be ${target})`);
+          if (shiftCount > target) issues.push(`${chef} works ${shiftCount} days (max ${target})`);
         }
       });
       
@@ -840,7 +929,8 @@
       if (inputs.mioChef) {
         ruleNotes.push(`MIO selection: ${inputs.mioChef}`);
       }
-      ruleNotes.push(`Work week rule: Each chef must work exactly 4 days (unless on leave)`);
+      ruleNotes.push(`Soft rule: Aled prefers not to work weekends; Charlie prefers not to work Tuesdays`);
+      ruleNotes.push(`Work week rule: Selected MIO chef works 5 days (3 MIO + 2 core); others work 4 days unless on leave`);
       ruleNotes.push(`Monday-Wednesday: Max 4 chefs (5 Thu-Sun); No Pass section Mon-Wed; Float for overflow help`);
       const rulesApplied = ruleNotes.length ? ruleNotes.map(note=>`<div class="small">• ${note}</div>`).join('') : '<div class="small">• No extra rules were applied.</div>';
       
@@ -887,7 +977,7 @@
       }).join('');
       container.innerHTML=`
         <div class="summary-grid">
-          <div class="card"><h3 style="margin-bottom:6px">Weekly context</h3><div class="small">Week commencing: ${formatWeekCommencing(inputs.weekStart)}<br>MIO chef: ${inputs.mioChef || 'None'}<br>Target: ${inputs.weekStart ? 'Mon-Wed: 4 chefs, Thu-Sun: 5 chefs' : 'Set the week start to see staffing targets'}<br>Cap: 4 shifts per chef</div></div>
+          <div class="card"><h3 style="margin-bottom:6px">Weekly context</h3><div class="small">Week commencing: ${formatWeekCommencing(inputs.weekStart)}<br>MIO chef: ${inputs.mioChef || 'None'}<br>Target: ${inputs.weekStart ? 'Mon-Wed: 4 chefs, Thu-Sun: 5 chefs' : 'Set the week start to see staffing targets'}<br>Cap: ${inputs.mioChef ? 'MIO chef 5 shifts, others 4' : '4 shifts per chef'}</div></div>
           <div class="card"><h3 style="margin-bottom:6px">Hours rota</h3><div class="row">${summaryCards}</div></div>
         </div>
         <h3 style="margin-top:16px">Rules applied</h3>
