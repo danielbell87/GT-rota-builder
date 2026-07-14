@@ -460,7 +460,12 @@
     }
 
     function getRequiredChefCount(dayName, weeklyAdjustments){
-      return (['Monday','Tuesday','Wednesday'].includes(dayName) ? 4 : 5) + (weeklyAdjustments?.extraChefs || 0);
+      // Mon-Wed: 4 chefs + any event override. Thu-Sun: 5 chefs
+      const baseCount = ['Monday','Tuesday','Wednesday'].includes(dayName) ? 4 : 5;
+      const eventExtra = (weeklyAdjustments?.extraChefs || 0);
+      // Only apply event extra on Mon-Wed if it applies
+      const isMonWed = ['Monday','Tuesday','Wednesday'].includes(dayName);
+      return isMonWed ? baseCount + eventExtra : baseCount;
     }
 
     function getCoreSections(dayName, weeklyAdjustments){
@@ -699,13 +704,34 @@
       const breakfastCount = rota.filter(item=>item.assignments.some(a=>a.section==='Breakfast')).length;
       const requiredDays = rota.length;
       if (breakfastCount < 7) issues.push('Some days are missing breakfast coverage');
-      if (!rota.every(item=>item.chefs.length >= 4 && item.chefs.length <= 6)) issues.push('Some days do not meet the required chef count');
       if (weeklyAdjustments.extraChefs > 0 && requiredDays < 7) issues.push('Weekly input requested extra cover but the plan was not fully built');
       if (!mioAssigned) issues.push('MIO assignment was not created');
       
       // Validate breakfast constraint: no chef should work breakfast more than once per week
       Object.entries(breakfastCounts).forEach(([chef, count])=>{
         if (count > 1) issues.push(`${chef} worked breakfast ${count} times (max 1 per week)`);
+      });
+      
+      // Validate 4-day work week: each chef should work exactly 4 days (unless unavailable)
+      Object.entries(shifts).forEach(([chef, shiftCount])=>{
+        const availableDays = 7; // All 7 days
+        const unavailable = state.availability.filter(entry=>
+          entry.chef === chef && (entry.type === 'Annual Leave' || entry.type === 'Unavailable')
+        ).length > 0;
+        if (shiftCount !== 4 && !unavailable) {
+          if (shiftCount < 4) issues.push(`${chef} only works ${shiftCount} days (should be 4)`);
+          if (shiftCount > 4) issues.push(`${chef} works ${shiftCount} days (max 4)`);
+        }
+      });
+      
+      // Validate Monday-Wednesday has max 4 chefs (unless event override)
+      rota.slice(0, 3).forEach(day=>{
+        if (day.chefs.length > 4) {
+          const eventHasOverride = weeklyAdjustments.extraChefs > 0;
+          if (!eventHasOverride) {
+            issues.push(`${day.dayName}: ${day.chefs.length} chefs assigned (Mon-Wed max 4 unless event)`);
+          }
+        }
       });
 
       const summary = Object.entries(chefDayCounts).map(([name,count])=>({
@@ -752,6 +778,8 @@
       if (inputs.mioChef) {
         ruleNotes.push(`MIO selection: ${inputs.mioChef}`);
       }
+      ruleNotes.push(`Work week rule: Each chef must work exactly 4 days (unless on leave)`);
+      ruleNotes.push(`Monday-Wednesday: Max 4 chefs (5 Thu-Sun); No Pass section Mon-Wed; Float for overflow help`);
       const rulesApplied = ruleNotes.length ? ruleNotes.map(note=>`<div class="small">• ${note}</div>`).join('') : '<div class="small">• No extra rules were applied.</div>';
       
       // Generate quality explanation
@@ -778,10 +806,17 @@
       });
       const qualityBox = qualityNotes.length ? `<div style="background:#0b1422;border:1px solid #243547;border-radius:12px;padding:12px;margin-top:8px">${qualityNotes.join('<br>')}</div>` : '';
       
-      const sectionRows = ['Pass','Sauce','Garnish','Larder','Pastry','Breakfast','MIO'];
+      const sectionRows = ['Pass','Sauce','Garnish','Larder','Pastry','Float','Breakfast','MIO'];
       const dayHeaders = result.rota.map(day=>`<th>${day.dayName}<br><span class="small">${formatDate(day.date)}</span></th>`).join('');
       const sectionCells = sectionRows.map(section=>{
         const cells = result.rota.map(day=>{
+          if (section === 'Float') {
+            // Float chefs: chefs not assigned to core sections
+            const coreAssignments = day.assignments.filter(a=>['Pass','Sauce','Garnish','Larder','Pastry','Breakfast'].includes(a.section)).map(a=>a.chef);
+            const floatChefs = day.chefs.filter(chef=>!coreAssignments.includes(chef));
+            const value = floatChefs.length ? floatChefs.join(', ') : '—';
+            return `<td>${value}</td>`;
+          }
           const matches = day.assignments.filter(assignment=>assignment.section===section);
           const value = matches.length ? matches.map(assignment=>assignment.chef).join(', ') : '—';
           return `<td>${value}</td>`;

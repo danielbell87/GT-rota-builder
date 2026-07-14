@@ -8,18 +8,21 @@ These are treated as hard requirements and should be enforced before any soft pr
 2. At least one of Aled, Charlie, Adam, or Connor works each day.
 3. Aled does not work Saturday or Sunday.
 4. Charlie is always off Tuesday.
-5. Monday to Wednesday require 4 GT chefs.
-6. Thursday to Sunday require 5 GT chefs.
-7. Required sections must be covered by an eligible chef.
-8. A breakfast chef must also appear on a core section for that day.
-9. The rota must respect fixed availability, annual leave, and section eligibility.
-10. The rota must not invent sickness or make up unavailable time; only the provided leave/unavailability data should be used.
-11. Exactly one eligible junior chef is assigned to MIO each week.
-12. MIO pattern is Monday–Wednesday at MIO and Saturday–Sunday at GT.
-13. If a chef is unavailable on a normal MIO day, the MIO assignment may move only to Thursday or Friday, per the AI prompt.
-14. The rota must preserve the workbook's layout, formulas, and rules when updated.
-15. At least one Sous Chef or higher must work in the kitchen each day.
-16. Chefs marked as "MIO not eligible" must never be assigned to MIO.
+5. **Each chef must work exactly 4 days per week** (unless on annual leave or unavailable).
+6. **Monday to Wednesday require 4 GT chefs** (not 5) unless an event requires extra cover (specified in event field).
+7. **Thursday to Sunday require 5 GT chefs**.
+8. **Pass section is NOT required Monday-Wednesday** (only Sauce, Garnish, Larder, Pastry).
+9. **Float section**: When all core sections (Pass/Sauce/Garnish/Larder/Pastry) are assigned, additional chefs are rotated to "Float" to provide flexible support across sections.
+10. Required sections must be covered by an eligible chef.
+11. A breakfast chef must also appear on a core section for that day.
+12. The rota must respect fixed availability, annual leave, and section eligibility.
+13. The rota must not invent sickness or make up unavailable time; only the provided leave/unavailability data should be used.
+14. Exactly one eligible junior chef is assigned to MIO each week.
+15. MIO pattern is Monday–Wednesday at MIO and Saturday–Sunday at GT.
+16. If a chef is unavailable on a normal MIO day, the MIO assignment may move only to Thursday or Friday, per the AI prompt.
+17. The rota must preserve the workbook's layout, formulas, and rules when updated.
+18. At least one Sous Chef or higher must work in the kitchen each day.
+19. Chefs marked as "MIO not eligible" must never be assigned to MIO.
 
 ## Soft preferences
 
