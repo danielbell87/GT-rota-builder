@@ -6,7 +6,7 @@ function setupState() {
   resetStateToDefaults();
   const state = getState();
   state.weeklyInputs.weekStart = '2026-07-13';
-  state.weeklyInputs.mioChef = 'Adam';
+  state.weeklyInputs.mioChef = 'Dan';
   state.weeklyInputs.changes = '';
   state.weeklyInputs.availability = [];
   state.weeklyInputs.dailyOverrides = {};
@@ -25,6 +25,7 @@ export async function runValidationTests(assert) {
   });
 
   const validation = validateRotaHardRules({ rota: result.rota, state, inputs: state.weeklyInputs, summary: result.summary });
+  assert((result.status === 'ok') === isRotaValid(validation), 'Solver status ok is only returned when hard validation passes');
   assert(validation.length > 0, 'Validator returns structured hard-rule checks');
   assert(validation.every((v) => v.ruleId && typeof v.passed === 'boolean' && v.severity === 'hard'), 'Validator result shape is correct');
 

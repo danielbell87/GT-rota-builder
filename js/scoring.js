@@ -1,4 +1,4 @@
-import { ROLE_WEIGHT, SCORING_WEIGHTS } from './constants.js';
+import { ROLE_WEIGHT, SCORING_WEIGHTS, SHIFT_LENGTHS } from './constants.js';
 
 export function getSectionScore(staff, section, ruleOverrides) {
   let score = staff.skills?.[section] ?? 0;
@@ -42,18 +42,13 @@ export function getQualityScore(staff, section) {
 }
 
 export function getHoursForDay(dayName, isBreakfast = false) {
-  if (isBreakfast) {
-    if (dayName === 'Sunday') return 12.5;
-    if (dayName === 'Saturday') return 14.5;
-    return 14;
-  }
-  if (dayName === 'Sunday') return 11;
-  if (dayName === 'Saturday') return 12.5;
-  return 11.5;
+  const base = SHIFT_LENGTHS.regularByDay?.[dayName] ?? 11.5;
+  if (isBreakfast) return base;
+  return base;
 }
 
 export function getHoursForAssignment(dayName, section) {
-  if (section === 'MIO') return 9;
+  if (section === 'MIO') return SHIFT_LENGTHS.mio;
   return getHoursForDay(dayName, section === 'Breakfast');
 }
 

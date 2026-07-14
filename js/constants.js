@@ -20,9 +20,16 @@ export const MIO_SEQUENCE = {
 };
 
 export const SHIFT_LENGTHS = {
-  regular: { MonFri: 11.5, Saturday: 12.5, Sunday: 11 },
-  breakfast: { MonFri: 14, Saturday: 14.5, Sunday: 12.5 },
-  mio: 9,
+  regularByDay: {
+    Monday: 11.5,
+    Tuesday: 11.5,
+    Wednesday: 12.5,
+    Thursday: 12.5,
+    Friday: 12.5,
+    Saturday: 12.5,
+    Sunday: 10.5
+  },
+  mio: 8.5,
   annualLeaveCreditPerDay: 12
 };
 

@@ -12,7 +12,7 @@ export function isUnavailable(staff, date, dayName, ruleOverrides) {
     if (entry.chef !== staff.name) return false;
     if (entry.type !== 'Annual Leave' && entry.type !== 'Unavailable') return false;
     const start = entry.startDate || entry.date;
-    const finish = entry.finishDate || entry.date;
+    const finish = entry.type === 'Annual Leave' ? (entry.finishDate || entry.date) : (entry.startDate || entry.date);
     const current = parseLocalDate(date);
     const startDate = parseLocalDate(start);
     const finishDate = parseLocalDate(finish);
@@ -70,6 +70,7 @@ function getChef(staff, name) {
 export function validateRotaHardRules({ rota, state, inputs, summary }) {
   const results = [];
   const leavesByDate = {};
+  const weeklyDates = new Set(rota.map((day) => day.date));
 
   state.weeklyInputs.availability.forEach((entry) => {
     if (entry.type !== 'Annual Leave') return;
@@ -159,19 +160,30 @@ export function validateRotaHardRules({ rota, state, inputs, summary }) {
     results.push(createResult('H015', mioWeekdays >= 1, `${mioChef}: should receive weekday MIO assignment`));
   }
 
-  const hoursByChef = Object.fromEntries((summary || []).map((item) => [item.name, item.hours]));
+  const summaryByChef = Object.fromEntries((summary || []).map((item) => [item.name, item]));
+  const leaveDatesByChef = {};
   state.weeklyInputs.availability.forEach((entry) => {
     if (entry.type !== 'Annual Leave') return;
-    const chef = entry.chef;
     const start = parseLocalDate(entry.startDate || entry.date);
     const finish = parseLocalDate(entry.finishDate || entry.date);
-    const days = Math.floor((finish - start) / (1000 * 60 * 60 * 24)) + 1;
-    const expectedCredit = days * 12;
-    results.push(createResult('H018', expectedCredit >= 12, `${chef}: annual leave credits calculated at 12h/day`));
+    for (let d = new Date(start); d <= finish; d.setDate(d.getDate() + 1)) {
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      if (!weeklyDates.has(dateStr)) continue;
+      if (!leaveDatesByChef[entry.chef]) leaveDatesByChef[entry.chef] = new Set();
+      leaveDatesByChef[entry.chef].add(dateStr);
+    }
   });
 
-  Object.entries(hoursByChef).forEach(([chef, hours]) => {
-    results.push(createResult('H017', hours >= 0, `${chef}: target hour check evaluated (${hours.toFixed(1)}h)`));
+  Object.entries(leaveDatesByChef).forEach(([chef, dateSet]) => {
+    const leaveDays = Math.min(dateSet.size, 4);
+    const expectedCredit = leaveDays * 12;
+    const actualCredit = summaryByChef[chef]?.annualLeaveHours || 0;
+    results.push(createResult('H018', actualCredit === expectedCredit, `${chef}: annual leave credit ${actualCredit}h (expected ${expectedCredit}h)`));
+  });
+
+  Object.values(summaryByChef).forEach((item) => {
+    const total = item.totalCreditedHours ?? item.hours ?? 0;
+    results.push(createResult('H017', total >= 0, `${item.name}: target hour check evaluated (${Number(total).toFixed(1)}h)`));
   });
 
   return results;

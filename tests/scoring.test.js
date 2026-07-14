@@ -9,7 +9,7 @@ function baseState() {
   resetStateToDefaults();
   const state = getState();
   state.weeklyInputs.weekStart = '2026-07-13';
-  state.weeklyInputs.mioChef = 'Adam';
+  state.weeklyInputs.mioChef = 'Dan';
   state.weeklyInputs.changes = '';
   state.weeklyInputs.dailyOverrides = {};
   state.weeklyInputs.availability = [];
