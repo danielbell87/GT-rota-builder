@@ -487,6 +487,16 @@
       return bonus;
     }
 
+    function isSenior(staff){
+      // Sous Chef or higher: seniority >= 6
+      return (staff.seniorityRank || 0) >= 6;
+    }
+
+    function getQualityScore(staff, section){
+      // Return the base quality score (0-3) for a chef on a section
+      return staff.skills?.[section] ?? 0;
+    }
+
     function getHoursForDay(dayName, isBreakfast = false){
       if (isBreakfast) {
         // Breakfast starts at 7:30am (ends at usual time with 30min unpaid)
@@ -651,7 +661,12 @@
           const mioStaff = state.staff.find(s=>s.name===inputs.mioChef);
           const placement = getMioPlacement(dayName);
           if (mioStaff && !isUnavailable(mioStaff,current.date,dayName,ruleOverrides) && (shifts[mioStaff.name]||0) < 4) {
-            if (placement === 'MIO' && !mioAssigned) {
+            // Check MIO eligibility: must have mioEligible flag AND be junior (seniority 1-3)
+            if (!mioStaff.mioEligible) {
+              validation.push({day:dayName, message:`${inputs.mioChef} is marked as MIO not eligible`, severity:'warn'});
+            } else if ((mioStaff.seniorityRank || 0) > 3) {
+              validation.push({day:dayName, message:`${inputs.mioChef} has seniority ${mioStaff.seniorityRank} (must be 1-3 for MIO)`, severity:'warn'});
+            } else if (placement === 'MIO' && !mioAssigned) {
               rota[rota.length-1].assignments.push({chef:inputs.mioChef, section:'MIO'});
               rota[rota.length-1].chefs.push(inputs.mioChef);
               shifts[inputs.mioChef] = (shifts[inputs.mioChef]||0)+1;
@@ -664,6 +679,18 @@
               shifts[inputs.mioChef] = (shifts[inputs.mioChef]||0)+1;
               chefDayCounts[inputs.mioChef] = (chefDayCounts[inputs.mioChef]||0)+1;
             }
+          }
+        }
+
+        // Validate seniority: at least one Sous Chef or higher must work each day
+        const dayAssignments = rota[rota.length-1];
+        if (dayAssignments) {
+          const hasSenior = dayAssignments.chefs.some(name=>{
+            const staff = state.staff.find(s=>s.name===name);
+            return isSenior(staff);
+          });
+          if (!hasSenior) {
+            validation.push({day:dayName, message:'No Sous Chef or higher assigned (daily minimum required)', severity:'warn'});
           }
         }
       }
@@ -726,6 +753,31 @@
         ruleNotes.push(`MIO selection: ${inputs.mioChef}`);
       }
       const rulesApplied = ruleNotes.length ? ruleNotes.map(note=>`<div class="small">• ${note}</div>`).join('') : '<div class="small">• No extra rules were applied.</div>';
+      
+      // Generate quality explanation
+      const qualityExplanation = [];
+      const qualityScores = {}; // Track quality scores per chef
+      result.rota.forEach(day=>{
+        day.assignments.forEach(assignment=>{
+          const chef = state.staff.find(s=>s.name===assignment.chef);
+          if (!chef || assignment.section === 'MIO' || assignment.section === 'Breakfast') return;
+          const quality = getQualityScore(chef, assignment.section);
+          if (!qualityScores[chef.name]) qualityScores[chef.name] = [];
+          qualityScores[chef.name].push({section:assignment.section, day:day.dayName, quality});
+        });
+      });
+      const qualityNotes = [];
+      Object.entries(qualityScores).forEach(([name, assignments])=>{
+        const scores = {3:[], 2:[], 1:[], 0:[]};
+        assignments.forEach(a=>{scores[a.quality].push(`${a.section}`)});
+        const parts = [];
+        if (scores[3].length) parts.push(`preferred: ${scores[3].join(', ')}`);
+        if (scores[2].length) parts.push(`proficient: ${scores[2].join(', ')}`);
+        if (scores[1].length) parts.push(`training: ${scores[1].join(', ')}`);
+        if (parts.length) qualityNotes.push(`<span class="small"><strong>${name}</strong>: ${parts.join('; ')}</span>`);
+      });
+      const qualityBox = qualityNotes.length ? `<div style="background:#0b1422;border:1px solid #243547;border-radius:12px;padding:12px;margin-top:8px">${qualityNotes.join('<br>')}</div>` : '';
+      
       const sectionRows = ['Pass','Sauce','Garnish','Larder','Pastry','Breakfast','MIO'];
       const dayHeaders = result.rota.map(day=>`<th>${day.dayName}<br><span class="small">${formatDate(day.date)}</span></th>`).join('');
       const sectionCells = sectionRows.map(section=>{
@@ -745,6 +797,8 @@
         <div>${rulesApplied}</div>
         <h3 style="margin-top:16px">Validation</h3>
         <div>${validationCards||'<span class="pill good">No issues detected</span>'}</div>
+        <h3 style="margin-top:16px">Section assignments quality</h3>
+        ${qualityBox||'<div class="small">No section assignments to analyze</div>'}
         <h3 style="margin-top:16px">Rota</h3>
         <table class="rota-table"><thead><tr><th>Section</th>${dayHeaders}</tr></thead><tbody>${sectionCells}</tbody></table>`;
     }
