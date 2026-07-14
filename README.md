@@ -15,7 +15,7 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 
 ## How to Use
 
-1. Open `GT Rota builder.html` in a web browser
+1. Open `GT Rota builder.html` or `index.html` in a web browser
 2. Enter the week commencing date
 3. Configure staff availability and skills
 4. Select a MIO (Management Improvement Officer) chef if needed
@@ -47,13 +47,44 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 
 ```
 gt-rota-builder/
-├── GT Rota builder.html      # Main application (all CSS/JS embedded)
-├── README.md                 # This file
-├── requirements/             # Supporting documentation
-│   ├── data-model.md
-│   ├── rota-rules.md
-│   ├── acceptance-tests.md
-│   └── workbook-map.md
+├── GT Rota builder.html      # Legacy-compatible entry page
+├── index.html                # Primary app entry page
+├── styles.css                # Shared stylesheet
+├── SPECIFICATION.md
+├── PROJECT_STATE.md
+├── CHANGELOG.md
+├── archive/
+│   └── GT-Rota-Builder-before-refactor.html
+├── js/
+│   ├── app.js                # Entry point and event orchestration
+│   ├── state.js              # Single source of runtime state
+│   ├── constants.js          # Shared constants and weights
+│   ├── solver.js             # Core rota generation algorithm
+│   ├── validation.js         # Hard-rule validation
+│   ├── scoring.js            # Soft preference scoring
+│   ├── weekly-inputs.js      # Weekly input normalization
+│   ├── staff.js              # Staff mutations and validation
+│   ├── history.js            # Published history upsert logic
+│   ├── render.js             # DOM rendering only
+│   ├── storage.js            # localStorage persistence + migrations
+│   ├── rules.js              # Natural-language rule parsing
+│   ├── utils.js              # Date and formatting utilities
+│   └── main.js               # Compatibility shim
+├── data/
+│   ├── default-staff.js
+│   └── default-rules.js
+├── tests/
+│   ├── index.html
+│   ├── run-tests.js
+│   ├── validation.test.js
+│   ├── solver.test.js
+│   └── scoring.test.js
+├── README.md
+└── requirements/
+  ├── data-model.md
+  ├── rota-rules.md
+  ├── acceptance-tests.md
+  └── workbook-map.md
 ```
 
 ## Configuration
@@ -68,7 +99,7 @@ Example: `Aled prefers Pass; Charlie off Tuesday; Dan breakfast eligible`
 
 ## Technology
 
-- Pure HTML5 with embedded CSS and JavaScript
+- Pure HTML5, CSS, and modular JavaScript (ES modules)
 - No external dependencies or build tools required
 - Runs entirely in the browser
 - Data managed in-memory (no persistence)
@@ -77,8 +108,8 @@ Example: `Aled prefers Pass; Charlie off Tuesday; Dan breakfast eligible`
 
 To modify the application:
 
-1. Open `GT Rota builder.html` in a text editor
-2. Edit the embedded JavaScript and CSS as needed
+1. Open `GT Rota builder.html` or `index.html` in a text editor
+2. Edit modules under `js/`, defaults under `data/`, and styles in `styles.css`
 3. Reload in browser to test changes
 4. Commit changes to git: `git add . && git commit -m "description"`
 
@@ -91,6 +122,31 @@ python3 -m http.server 8000
 ```
 
 Then open `http://127.0.0.1:8000/GT%20Rota%20builder.html` in your browser.
+
+To run the browser test suite open:
+
+`http://127.0.0.1:8000/tests/`
+
+Click **Run full suite**.
+
+## GitHub Pages Deployment
+
+1. Push repository to GitHub.
+2. In repository settings, enable GitHub Pages from the default branch root.
+3. Ensure `index.html` remains at repository root.
+4. Use only relative asset/module paths (already configured).
+
+## Saved Data and Compatibility
+
+Saved browser data is persisted with migration-safe localStorage keys.
+
+- Primary state: `gtRota.state.v2`
+- History: `gtRota.history.v1`
+- Legacy compatibility keys preserved:
+  - `gtRota.mioEligibilityByChef`
+  - `gtRota.staffProfilesByChef`
+
+No external API keys or secrets are required.
 
 ## Recent Updates
 
