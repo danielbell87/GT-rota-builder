@@ -14,6 +14,7 @@
 - MIO assignment and eligibility handling
 - Hard-rule validation pass/fail model
 - Soft-preference scoring with hard-failure cap
+- Strong soft preference for senior chef on Pass Thursday-Sunday, with structured soft validation
 - Published history upsert (week+chef uniqueness)
 - Browser test page and modular tests
 

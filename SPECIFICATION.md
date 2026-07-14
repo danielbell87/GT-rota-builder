@@ -11,7 +11,7 @@ Generate a weekly GT kitchen rota from staff capabilities, availability, hard co
 - Soft preference: affects score and explanation but does not override hard rules
 
 ## Staff Model
-Each chef includes name, role, hierarchy/seniority, MIO eligibility, section strengths, fixed day constraints, and notes.
+Each chef includes name, role, hierarchy/seniority, structured senior flag, MIO eligibility, section strengths, fixed day constraints, and notes.
 
 ## Week Model
 Weekly inputs include week commencing date, selected MIO chef, daily demand overrides, leave/unavailability entries, and free-text rule notes.
@@ -44,6 +44,12 @@ Implemented as structured hard validation checks in `js/validation.js` and rule 
 
 ## Soft Preferences
 Soft scoring in `js/scoring.js` evaluates section quality fit, breakfast fairness, weekend fairness, and additional preference penalties/bonuses without permitting hard-rule breaches.
+
+Senior-on-Pass preference is implemented as a strong soft rule:
+- Thursday to Sunday, prefer assigning Pass to an available senior chef.
+- Prioritize higher Pass skill among available senior chefs.
+- Allow non-senior Pass coverage only when no valid senior placement exists without violating hard rules.
+- Configurable via `data/default-rules.js` rule id `prefer-senior-on-pass` (weight 12).
 
 ## Scoring Approach
 - Compute soft score from assignment quality and fairness metrics

@@ -4,7 +4,7 @@ import { getRuleOverrides } from './rules.js';
 import { formatDate, formatWeekCommencing } from './utils.js';
 import { getQualityScore, scoreSoftPreferences } from './scoring.js';
 import { buildRota } from './solver.js';
-import { validateRotaHardRules, isRotaValid } from './validation.js?v=20260714';
+import { validateRotaHardRules, validateRotaSoftRules, isRotaValid } from './validation.js?v=20260714';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
 
 export function openAddChefModal() {
@@ -134,6 +134,7 @@ export function renderResultsPanel() {
   }
 
   const hardValidation = validateRotaHardRules({ rota: solveResult.rota, state, inputs, summary: solveResult.summary });
+  const softValidation = validateRotaSoftRules({ rota: solveResult.rota, state, inputs });
   const softScore = scoreSoftPreferences({ state, rota: solveResult.rota, hardValidation });
   const valid = isRotaValid(hardValidation);
   state.generatedRotas.current = solveResult;
@@ -142,6 +143,7 @@ export function renderResultsPanel() {
 
   const summaryCards = solveResult.summary.map((item) => `<div class="card"><strong>${item.name}</strong><div class="small">${item.hours.toFixed(1)} hrs this week</div></div>`).join('');
   const validationCards = hardValidation.map((item) => `<div class="pill ${item.passed ? 'good' : 'bad'}">${item.ruleId}: ${item.message}</div>`).join('');
+  const softValidationCards = softValidation.map((item) => `<div class="pill ${item.passed ? 'good' : 'warn'}">${item.ruleId}: ${item.message}</div>`).join('');
 
   const ruleNotes = [];
   const overrides = getRuleOverrides(inputs.changes);
@@ -190,6 +192,9 @@ export function renderResultsPanel() {
   }).join('');
 
   const scoreLine = `<div class="small">Soft score: ${softScore.score.toFixed(1)}${softScore.capped ? ' (capped due to hard-rule failure)' : ''}</div>`;
+  const scoreExplanations = softScore.explanation?.length
+    ? `<div class="small">${softScore.explanation.map((line) => `• ${line}`).join('<br>')}</div>`
+    : '<div class="small">• No soft-rule trade-offs detected.</div>';
 
   container.innerHTML = `
     <div class="summary-grid">
@@ -200,6 +205,10 @@ export function renderResultsPanel() {
     <div>${ruleNotes.length ? ruleNotes.map((note) => `<div class="small">• ${note}</div>`).join('') : '<div class="small">• No extra rules were applied.</div>'}</div>
     <h3 class="mt-16">Validation</h3>
     <div>${validationCards || '<span class="pill good">No issues detected</span>'}</div>
+    <h3 class="mt-16">Soft preference checks</h3>
+    <div>${softValidationCards || '<span class="pill good">No soft preference checks to report</span>'}</div>
+    <h3 class="mt-16">Scoring explanations</h3>
+    <div>${scoreExplanations}</div>
     <h3 class="mt-16">Section assignments quality</h3>
     ${qualityNotes.length ? `<div class="quality-box">${qualityNotes.join('<br>')}</div>` : '<div class="small">No section assignments to analyze</div>'}
     <h3 class="mt-16">Rota</h3>

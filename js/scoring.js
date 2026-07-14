@@ -26,7 +26,15 @@ export function getSoftRulePenalty(staffName, dayName) {
 }
 
 export function isSenior(staff) {
+  if (staff?.senior === true) return true;
+  if (staff?.seniorStatus === true) return true;
   return getRoleWeight(staff) >= ROLE_WEIGHT['Sous Chef'];
+}
+
+function getSoftRuleWeight(state, ruleId, fallbackWeight) {
+  const rules = state?.settings?.rules || [];
+  const rule = rules.find((item) => item.id === ruleId && item.type === 'soft' && item.enabled !== false);
+  return typeof rule?.weight === 'number' ? rule.weight : fallbackWeight;
 }
 
 export function getQualityScore(staff, section) {
@@ -53,6 +61,7 @@ export function scoreSoftPreferences({ state, rota, hardValidation }) {
   const hardFailed = hardValidation.some((result) => !result.passed);
   let score = 100;
   const explanations = [];
+  const seniorOnPassWeight = getSoftRuleWeight(state, 'prefer-senior-on-pass', 12);
 
   const breakfastCounts = {};
   rota.forEach((day) => {
@@ -102,6 +111,42 @@ export function scoreSoftPreferences({ state, rota, hardValidation }) {
       explanations.push('Weekend load distribution is uneven.');
     }
   }
+
+  rota
+    .filter((day) => ['Thursday', 'Friday', 'Saturday', 'Sunday'].includes(day.dayName))
+    .forEach((day) => {
+      const passAssignments = day.assignments.filter((assignment) => assignment.section === 'Pass');
+      if (!passAssignments.length) return;
+
+      const passAssignment = passAssignments[0];
+      const passChef = state.staff.find((chef) => chef.name === passAssignment.chef);
+      const passChefIsSenior = isSenior(passChef);
+      const seniorChefsOnDay = day.chefs
+        .map((name) => state.staff.find((chef) => chef.name === name))
+        .filter((chef) => chef && isSenior(chef));
+
+      if (!seniorChefsOnDay.length) {
+        explanations.push(`${day.dayName}: Pass covered by ${passAssignment.chef} with no senior chef available on GT.`);
+        return;
+      }
+
+      if (!passChefIsSenior) {
+        const availableSeniorNames = seniorChefsOnDay.map((chef) => chef.name).join(', ');
+        score -= seniorOnPassWeight;
+        explanations.push(`${day.dayName}: Pass assigned to ${passAssignment.chef} while senior coverage was available (${availableSeniorNames}).`);
+        return;
+      }
+
+      score += seniorOnPassWeight;
+      explanations.push(`${day.dayName}: Senior chef ${passAssignment.chef} assigned to Pass.`);
+
+      const passChefScore = getQualityScore(passChef, 'Pass');
+      const bestSeniorPassScore = Math.max(...seniorChefsOnDay.map((chef) => getQualityScore(chef, 'Pass')));
+      if (passChefScore < bestSeniorPassScore) {
+        score -= 2;
+        explanations.push(`${day.dayName}: A higher Pass-skilled senior was available than ${passAssignment.chef}.`);
+      }
+    });
 
   if (hardFailed) {
     return {

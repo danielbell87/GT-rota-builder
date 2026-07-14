@@ -9,6 +9,7 @@ Fields:
 - id: unique identifier
 - name: full name
 - role: job role or title
+- senior: boolean
 - seniority_rank: numeric seniority value
 - contract_hours: target or contractual weekly hours
 - mio_eligible: boolean

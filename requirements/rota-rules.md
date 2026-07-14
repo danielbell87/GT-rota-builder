@@ -40,6 +40,7 @@ These are scoring and quality objectives rather than hard blocking rules.
 10. Friday, Saturday, and Sunday duties should rotate fairly among interchangeable chefs.
 11. Friday–Sunday should preferably include at least two senior chefs.
 12. The rota should be efficient and avoid deliberate overstaffing unless needed for coverage.
+13. Thursday to Sunday, Pass should be assigned to an available senior chef where this can be achieved without breaking hard constraints.
 
 ## Important notes from the workbook
 

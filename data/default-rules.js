@@ -30,5 +30,13 @@ export const DEFAULT_RULES = [
   { id: 'S009', title: 'Brooke pastry/larder', description: 'Prefer Brooke 3x Pastry, 1x Larder.', type: 'soft', enabled: true, weight: 2 },
   { id: 'S010', title: 'Aled Monday breakfast', description: 'Prefer Aled for Monday breakfast.', type: 'soft', enabled: true, weight: 1 },
   { id: 'S011', title: 'Charlie Sunday breakfast', description: 'Prefer Charlie for Sunday breakfast.', type: 'soft', enabled: true, weight: 1 },
-  { id: 'S012', title: 'Dan/Fred Fri/Sat alternation', description: 'Prefer alternating Friday and Saturday off where feasible.', type: 'soft', enabled: true, weight: 1 }
+  { id: 'S012', title: 'Dan/Fred Fri/Sat alternation', description: 'Prefer alternating Friday and Saturday off where feasible.', type: 'soft', enabled: true, weight: 1 },
+  {
+    id: 'prefer-senior-on-pass',
+    title: 'Prioritise senior chef on Pass',
+    description: 'Thursday to Sunday, assign Pass to an available senior chef wherever this can be achieved without breaking a hard rule.',
+    type: 'soft',
+    enabled: true,
+    weight: 12
+  }
 ];

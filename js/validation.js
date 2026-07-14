@@ -1,5 +1,7 @@
 import { CORE_SECTIONS, ROLE_WEIGHT } from './constants.js';
 import { parseLocalDate } from './utils.js';
+import { getRuleOverrides } from './rules.js';
+import { isSenior } from './scoring.js';
 
 export function isUnavailable(staff, date, dayName, ruleOverrides) {
   const availability = ruleOverrides._availability || [];
@@ -171,6 +173,61 @@ export function validateRotaHardRules({ rota, state, inputs, summary }) {
   Object.entries(hoursByChef).forEach(([chef, hours]) => {
     results.push(createResult('H017', hours >= 0, `${chef}: target hour check evaluated (${hours.toFixed(1)}h)`));
   });
+
+  return results;
+}
+
+export function validateRotaSoftRules({ rota, state, inputs }) {
+  const results = [];
+  const ruleOverrides = {
+    ...(getRuleOverrides(inputs?.changes || '')),
+    _availability: state?.weeklyInputs?.availability || []
+  };
+
+  rota
+    .filter((day) => ['Thursday', 'Friday', 'Saturday', 'Sunday'].includes(day.dayName))
+    .forEach((day) => {
+      const passAssignments = findAssignmentsBySection(day, 'Pass');
+      if (!passAssignments.length) {
+        results.push({
+          ruleId: 'prefer-senior-on-pass',
+          passed: false,
+          severity: 'soft',
+          message: `${day.dayName}: Pass is missing so senior-on-Pass preference cannot be met`
+        });
+        return;
+      }
+
+      const passChef = getChef(state.staff, passAssignments[0].chef);
+      const availableSeniors = state.staff.filter((chef) => isSenior(chef) && !isUnavailable(chef, day.date, day.dayName, ruleOverrides));
+
+      if (isSenior(passChef)) {
+        results.push({
+          ruleId: 'prefer-senior-on-pass',
+          passed: true,
+          severity: 'soft',
+          message: `${day.dayName}: senior chef ${passChef.name} assigned to Pass`
+        });
+        return;
+      }
+
+      if (!availableSeniors.length) {
+        results.push({
+          ruleId: 'prefer-senior-on-pass',
+          passed: true,
+          severity: 'soft',
+          message: `${day.dayName}: non-senior on Pass accepted (no available senior chef)`
+        });
+        return;
+      }
+
+      results.push({
+        ruleId: 'prefer-senior-on-pass',
+        passed: false,
+        severity: 'soft',
+        message: `${day.dayName}: non-senior on Pass while available seniors were ${availableSeniors.map((chef) => chef.name).join(', ')}`
+      });
+    });
 
   return results;
 }

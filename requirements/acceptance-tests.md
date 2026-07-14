@@ -86,3 +86,9 @@ These tests are designed to prove that each hard rule is enforced.
 - Given a week and chef that already have an existing history row,
 - when the history update process runs,
 - then the existing row must be updated rather than duplicated.
+
+## 18. Senior-on-Pass soft preference
+- Given a Thursday-to-Sunday day where at least one senior chef is validly assignable,
+- when rota scoring and soft validation run,
+- then assigning a non-senior to Pass must be flagged as a soft preference miss and receive a strong scoring penalty,
+- and no hard rule should be broken solely to force a senior onto Pass.

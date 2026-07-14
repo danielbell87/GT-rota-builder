@@ -1,5 +1,6 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota } from '../js/solver.js';
+import { isSenior } from '../js/scoring.js';
 
 function setupBaseState() {
   resetStateToDefaults();
@@ -55,6 +56,16 @@ export async function runSolverTests(assert) {
 
   const thuSunPass = base.rota.filter((d) => ['Thursday', 'Friday', 'Saturday', 'Sunday'].includes(d.dayName)).every((day) => day.assignments.some((a) => a.section === 'Pass'));
   assert(thuSunPass, 'Thursday to Sunday have Pass covered');
+
+  const thuSunSeniorOnPass = base.rota
+    .filter((d) => ['Thursday', 'Friday', 'Saturday', 'Sunday'].includes(d.dayName))
+    .every((day) => {
+      const passAssignment = day.assignments.find((a) => a.section === 'Pass');
+      if (!passAssignment) return false;
+      const passChef = state.staff.find((staff) => staff.name === passAssignment.chef);
+      return !!passChef && isSenior(passChef);
+    });
+  assert(thuSunSeniorOnPass, 'Thursday to Sunday prefer senior chef on Pass in baseline rota');
 
   const maxGtDays = Object.values(base.rota.reduce((acc, day) => {
     day.chefs.forEach((name) => { acc[name] = (acc[name] || 0) + 1; });

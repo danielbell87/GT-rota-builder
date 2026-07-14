@@ -29,6 +29,7 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 - 4-6 chefs per day depending on weekday/weekend
 - Breakfast coverage every day
 - MIO assignment when specified
+- Pass must be covered Thursday to Sunday
 
 ### Breakfast Shifts
 - One breakfast shift per chef per week (hard limit)
@@ -42,6 +43,12 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 - Monday-Friday: 11.5 hours
 - Saturday: 12.5 hours
 - Sunday: 11 hours
+
+### Senior On Pass Preference (Soft Rule)
+- Thursday to Sunday, Pass is strongly weighted toward an available senior chef.
+- Senior status is determined from structured staff data using the senior flag.
+- If no valid senior assignment is available without breaking hard rules, non-senior Pass coverage is allowed.
+- Weight is configurable in rule metadata via rule id prefer-senior-on-pass (default weight 12).
 
 ## File Structure
 

@@ -30,6 +30,17 @@ export async function runScoringTests(assert) {
   const hard = validateRotaHardRules({ rota: solve.rota, state, inputs: state.weeklyInputs, summary: solve.summary });
   const score = scoreSoftPreferences({ state, rota: solve.rota, hardValidation: hard });
   assert(typeof score.score === 'number', 'Scoring returns numeric soft score');
+  assert(score.explanation.some((line) => line.includes('Senior chef') && line.includes('Pass')), 'Scoring explanation includes senior-on-Pass preference details');
+
+  const forcedNonSeniorPass = JSON.parse(JSON.stringify(solve.rota));
+  const friday = forcedNonSeniorPass.find((day) => day.dayName === 'Friday');
+  if (friday) {
+    const pass = friday.assignments.find((a) => a.section === 'Pass');
+    if (pass) pass.chef = 'Dan';
+    if (!friday.chefs.includes('Dan')) friday.chefs.push('Dan');
+  }
+  const forcedScore = scoreSoftPreferences({ state, rota: forcedNonSeniorPass, hardValidation: hard });
+  assert(forcedScore.score < score.score, 'Non-senior on Pass is penalized as a strong soft preference');
 
   const broken = JSON.parse(JSON.stringify(hard));
   broken.push({ ruleId: 'H999', passed: false, severity: 'hard', message: 'forced fail' });

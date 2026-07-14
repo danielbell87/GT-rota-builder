@@ -69,7 +69,16 @@ function getMioCorePlan(state, inputs, dates, ruleOverrides, mioWeekdayPlan) {
   return new Set(selected);
 }
 
-function createCoreDayPlan(available, dayName, requiredChefs, coreSections, ruleOverrides, shifts, seniorCoreNames, targetShiftsByChef, remainingAvailableByChef) {
+function getPassPreferenceScore(staff, section, dayName, ruleOverrides) {
+  if (section !== 'Pass') return 0;
+  if (!['Thursday', 'Friday', 'Saturday', 'Sunday'].includes(dayName)) return 0;
+  const sectionStrength = getSectionScore(staff, 'Pass', ruleOverrides);
+  const passPreferred = (staff.preferredSections || []).includes('Pass') ? 1 : 0;
+  const seniorBonus = isSenior(staff) ? 120 : 0;
+  return seniorBonus + (sectionStrength * 40) + (passPreferred * 12);
+}
+
+function createCoreDayPlan(available, dayName, requiredChefs, coreSections, ruleOverrides, shifts, targetShiftsByChef, remainingAvailableByChef) {
   if (available.length < coreSections.length) return null;
   const assignments = [];
   const selected = [];
@@ -85,10 +94,10 @@ function createCoreDayPlan(available, dayName, requiredChefs, coreSections, rule
 
   for (const section of coreSections) {
     const sectionCandidates = remaining.filter((staff) => !selected.includes(staff.name)).sort((a, b) => {
-      const seniorBonusA = seniorCoreNames.includes(a.name) ? 1 : 0;
-      const seniorBonusB = seniorCoreNames.includes(b.name) ? 1 : 0;
-      const aScore = (getSectionScore(a, section, ruleOverrides) * 10) + seniorBonusA + getRoleBonus(a, dayName) + getUrgencyScore(a) - getSoftRulePenalty(a.name, dayName) - (shifts[a.name] || 0);
-      const bScore = (getSectionScore(b, section, ruleOverrides) * 10) + seniorBonusB + getRoleBonus(b, dayName) + getUrgencyScore(b) - getSoftRulePenalty(b.name, dayName) - (shifts[b.name] || 0);
+      const seniorBonusA = isSenior(a) ? 1 : 0;
+      const seniorBonusB = isSenior(b) ? 1 : 0;
+      const aScore = (getSectionScore(a, section, ruleOverrides) * 10) + seniorBonusA + getRoleBonus(a, dayName) + getUrgencyScore(a) + getPassPreferenceScore(a, section, dayName, ruleOverrides) - getSoftRulePenalty(a.name, dayName) - (shifts[a.name] || 0);
+      const bScore = (getSectionScore(b, section, ruleOverrides) * 10) + seniorBonusB + getRoleBonus(b, dayName) + getUrgencyScore(b) + getPassPreferenceScore(b, section, dayName, ruleOverrides) - getSoftRulePenalty(b.name, dayName) - (shifts[b.name] || 0);
       return bScore - aScore;
     });
     const best = sectionCandidates[0];
@@ -100,8 +109,8 @@ function createCoreDayPlan(available, dayName, requiredChefs, coreSections, rule
 
   while (selected.length < requiredChefs) {
     const extraCandidates = remaining.filter((staff) => !selected.includes(staff.name)).sort((a, b) => {
-      const seniorBonusA = seniorCoreNames.includes(a.name) ? 1 : 0;
-      const seniorBonusB = seniorCoreNames.includes(b.name) ? 1 : 0;
+      const seniorBonusA = isSenior(a) ? 1 : 0;
+      const seniorBonusB = isSenior(b) ? 1 : 0;
       const aScore = seniorBonusA + getRoleBonus(a, dayName) + getUrgencyScore(a) - getSoftRulePenalty(a.name, dayName) - (shifts[a.name] || 0);
       const bScore = seniorBonusB + getRoleBonus(b, dayName) + getUrgencyScore(b) - getSoftRulePenalty(b.name, dayName) - (shifts[b.name] || 0);
       return bScore - aScore;
@@ -128,7 +137,9 @@ function createCoreDayPlan(available, dayName, requiredChefs, coreSections, rule
         if (!incumbentStaff) return;
         const floatScore = getSectionScore(floatStaff, assignment.section, ruleOverrides);
         const incumbentScore = getSectionScore(incumbentStaff, assignment.section, ruleOverrides);
-        const improvement = floatScore - incumbentScore;
+        const floatPriority = getPassPreferenceScore(floatStaff, assignment.section, dayName, ruleOverrides);
+        const incumbentPriority = getPassPreferenceScore(incumbentStaff, assignment.section, dayName, ruleOverrides);
+        const improvement = (floatScore - incumbentScore) + ((floatPriority - incumbentPriority) / 100);
         if (improvement > 0 && (!bestImprovement || improvement > bestImprovement.improvement)) {
           bestImprovement = { index, floatName, improvement };
         }
@@ -162,7 +173,6 @@ export function buildRota(inputs) {
   const dayPlans = [];
   const ruleOverrides = { ...getRuleOverrides(inputs.changes), _availability: state.weeklyInputs.availability };
   const chefDayCounts = {};
-  const seniorCoreNames = ['Aled', 'Charlie', 'Adam', 'Connor'];
   const mioChefName = inputs.mioChef;
   const mioStaff = state.staff.find((staff) => staff.name === mioChefName);
   const mioWeekdayPlan = getMioWeekdayPlan(state, inputs, dates, ruleOverrides);
@@ -212,7 +222,7 @@ export function buildRota(inputs) {
       validation.push({ day: dayName, message: 'Not enough available chefs to satisfy minimum staffing', severity: 'bad' });
     }
 
-    const dayPlan = createCoreDayPlan(available, dayName, requiredChefs, coreSections, ruleOverrides, shifts, seniorCoreNames, targetShiftsByChef, remainingAvailableByChef);
+    const dayPlan = createCoreDayPlan(available, dayName, requiredChefs, coreSections, ruleOverrides, shifts, targetShiftsByChef, remainingAvailableByChef);
     if (!dayPlan) {
       validation.push({ day: dayName, message: 'Could not build a valid day plan', severity: 'bad' });
       continue;
