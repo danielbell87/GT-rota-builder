@@ -584,32 +584,42 @@
       return new Set(selected);
     }
 
-    function createFallbackDayPlan(available, dayName, requiredChefs, coreSections, ruleOverrides){
-      const ranked = available.slice().sort((a,b)=>{
-        const aScore = getSectionScore(a,'Breakfast', ruleOverrides) + (a.preferredBreakfast===dayName?10:0) + getSeniorityBonus(a, dayName);
-        const bScore = getSectionScore(b,'Breakfast', ruleOverrides) + (b.preferredBreakfast===dayName?10:0) + getSeniorityBonus(b, dayName);
-        return bScore - aScore;
-      });
-      const selectedStaff = ranked.slice(0, requiredChefs);
-      if (selectedStaff.length < requiredChefs) return null;
+    function createCoreDayPlan(available, dayName, requiredChefs, coreSections, ruleOverrides, shifts, seniorCoreNames){
+      if (available.length < coreSections.length) return null;
       const assignments = [];
       const selected = [];
-      const breakfastChef = selectedStaff[0];
-      assignments.push({chef:breakfastChef.name, section:'Breakfast'});
-      selected.push(breakfastChef.name);
-      const remainingSections = coreSections.filter(section => section !== 'Breakfast').slice(0, requiredChefs - 1);
-      remainingSections.forEach(section => {
-        const candidates = selectedStaff.filter(staff => !selected.includes(staff.name));
-        if (!candidates.length) return;
-        const best = candidates.sort((a,b)=>{
-          const aScore = getSectionScore(a, section, ruleOverrides) + (a.preferredBreakfast===dayName?1:0) + getSeniorityBonus(a, dayName);
-          const bScore = getSectionScore(b, section, ruleOverrides) + (b.preferredBreakfast===dayName?1:0) + getSeniorityBonus(b, dayName);
+      const remaining = available.slice();
+
+      for (const section of coreSections) {
+        const sectionCandidates = remaining.filter(staff=>!selected.includes(staff.name)).sort((a,b)=>{
+          const seniorBonusA = seniorCoreNames.includes(a.name) ? 1 : 0;
+          const seniorBonusB = seniorCoreNames.includes(b.name) ? 1 : 0;
+          const aScore = (getSectionScore(a, section, ruleOverrides) * 10) + seniorBonusA + getSeniorityBonus(a, dayName) - (shifts[a.name]||0);
+          const bScore = (getSectionScore(b, section, ruleOverrides) * 10) + seniorBonusB + getSeniorityBonus(b, dayName) - (shifts[b.name]||0);
           return bScore - aScore;
-        })[0];
+        });
+        const best = sectionCandidates[0];
+        if (!best) return null;
         assignments.push({chef:best.name, section});
         selected.push(best.name);
-      });
-      return {chefs:selectedStaff.map(staff=>staff.name), assignments};
+        remaining.splice(remaining.indexOf(best),1);
+      }
+
+      while (selected.length < requiredChefs) {
+        const extraCandidates = remaining.filter(staff=>!selected.includes(staff.name)).sort((a,b)=>{
+          const seniorBonusA = seniorCoreNames.includes(a.name) ? 1 : 0;
+          const seniorBonusB = seniorCoreNames.includes(b.name) ? 1 : 0;
+          const aScore = seniorBonusA + getSeniorityBonus(a, dayName) - (shifts[a.name]||0);
+          const bScore = seniorBonusB + getSeniorityBonus(b, dayName) - (shifts[b.name]||0);
+          return bScore - aScore;
+        });
+        const extra = extraCandidates[0];
+        if (!extra) return null;
+        selected.push(extra.name);
+        remaining.splice(remaining.indexOf(extra),1);
+      }
+
+      return {chefs:selected, assignments};
     }
 
     function buildRota(inputs){
@@ -665,80 +675,14 @@
           validation.push({day:dayName, message:'Not enough available chefs to satisfy minimum staffing', severity:'bad'});
         }
 
-        // Breakfast candidates: eligible for breakfast AND haven't worked breakfast yet this week
-        const breakfastCandidates = available.filter(s=>s.breakfastEligible && (breakfastCounts[s.name]||0) === 0 && s.name!==mioChefName);
-        let breakfastChef = null;
-        const breakfastScores = breakfastCandidates.slice().sort((a,b)=>{
-          const aPref = a.preferredBreakfast===dayName?10:0;
-          const bPref = b.preferredBreakfast===dayName?10:0;
-          return (getSectionScore(b,'Breakfast', ruleOverrides)+bPref) - (getSectionScore(a,'Breakfast', ruleOverrides)+aPref);
-        });
-
-        for (const chef of breakfastScores) {
-          const selected = [chef.name];
-          const selectedStaff = [chef];
-          const remaining = available.filter(s=>s.name!==chef.name);
-          const usedSections = [];
-          // Breakfast is their only assignment for the day (counts as 1 of their 4 shifts)
-          const dayAssignments = [{chef:chef.name, section:'Breakfast'}];
-
-          // Fill remaining core sections with other chefs (requiredChefs - 1 more)
-          let remainingSections = coreSections.slice();
-          let selectedSenior = seniorCoreNames.includes(chef.name);
-          let okay = true;
-          for (let slot=0; slot<requiredChefs-1; slot++) {
-            if (remainingSections.length===0) break;
-            const section = remainingSections[0];
-            const sectionCandidates = remaining.filter(s=>!selected.includes(s.name)).sort((a,b)=>{
-              const seniorBonus = seniorCoreNames.includes(a.name)?1:0;
-              const seniorBonusB = seniorCoreNames.includes(b.name)?1:0;
-              const aScore = (getSectionScore(a, section, ruleOverrides) * 10) + seniorBonus + (a.preferredBreakfast===dayName?1:0) + getSeniorityBonus(a, dayName) - (shifts[a.name]||0);
-              const bScore = (getSectionScore(b, section, ruleOverrides) * 10) + seniorBonusB + (b.preferredBreakfast===dayName?1:0) + getSeniorityBonus(b, dayName) - (shifts[b.name]||0);
-              return bScore - aScore;
-            });
-            const best = sectionCandidates[0];
-            if (!best) { okay=false; break; }
-            selected.push(best.name);
-            selectedStaff.push(best);
-            dayAssignments.push({chef:best.name, section:section});
-            remainingSections = remainingSections.slice(1);
-            selectedSenior = selectedSenior || seniorCoreNames.includes(best.name);
-            remaining.splice(remaining.indexOf(best),1);
-          }
-
-          if (!selectedSenior) {
-            const seniorCandidate = selectedStaff.find(s=>seniorCoreNames.includes(s.name));
-            if (!seniorCandidate) {
-              okay = false;
-            }
-          }
-
-          if (!okay) continue;
-
-          if (selected.length !== requiredChefs) {
-            continue;
-          }
-
-          breakfastChef = chef.name;
-          breakfastCounts[chef.name] = (breakfastCounts[chef.name]||0) + 1; // Track breakfast shift
-          dayPlans.push({dayName, date:current.date, assignments:dayAssignments, chefs:selected});
-          break;
-        }
-
-        if (!breakfastChef) {
-          const fallbackPlan = createFallbackDayPlan(available, dayName, requiredChefs, coreSections, ruleOverrides);
-          if (fallbackPlan) {
-            breakfastChef = fallbackPlan.assignments[0]?.chef || fallbackPlan.chefs[0];
-            dayPlans.push({dayName, date:current.date, assignments:fallbackPlan.assignments, chefs:fallbackPlan.chefs});
-          } else {
-            validation.push({day:dayName, message:'Could not build a valid day plan', severity:'bad'});
-            continue;
-          }
+        const dayPlan = createCoreDayPlan(available, dayName, requiredChefs, coreSections, ruleOverrides, shifts, seniorCoreNames);
+        if (!dayPlan) {
+          validation.push({day:dayName, message:'Could not build a valid day plan', severity:'bad'});
+          continue;
         }
 
         // Ensure the selected MIO chef works one weekend GT section (not breakfast) when available.
         if (mioStaff && weekendMioDay && dayName===weekendMioDay && !weekendMioAssigned && !isUnavailable(mioStaff, current.date, dayName, ruleOverrides)) {
-          const dayPlan = dayPlans[dayPlans.length-1];
           const alreadyAssigned = dayPlan.assignments.some(assignment=>assignment.chef===mioChefName);
           if (!alreadyAssigned) {
             const replaceable = dayPlan.assignments
@@ -757,6 +701,28 @@
           }
           weekendMioAssigned = dayPlan.assignments.some(assignment=>assignment.chef===mioChefName && assignment.section!=='Breakfast' && assignment.section!=='MIO');
         }
+
+        // Breakfast can only be assigned to a chef already working a core section that day.
+        const coreAssignedNames = dayPlan.assignments.map(assignment=>assignment.chef);
+        const breakfastCandidates = coreAssignedNames.map(name=>state.staff.find(staff=>staff.name===name)).filter(staff=>
+          staff &&
+          staff.breakfastEligible &&
+          (breakfastCounts[staff.name]||0) === 0 &&
+          staff.name!==mioChefName
+        );
+        if (!breakfastCandidates.length) {
+          validation.push({day:dayName, message:'No eligible breakfast chef from core section assignments', severity:'warn'});
+        } else {
+          const breakfastChef = breakfastCandidates.slice().sort((a,b)=>{
+            const aPref = a.preferredBreakfast===dayName?10:0;
+            const bPref = b.preferredBreakfast===dayName?10:0;
+            return (getSectionScore(b,'Breakfast', ruleOverrides)+bPref) - (getSectionScore(a,'Breakfast', ruleOverrides)+aPref);
+          })[0];
+          dayPlan.assignments.push({chef:breakfastChef.name, section:'Breakfast'});
+          breakfastCounts[breakfastChef.name] = (breakfastCounts[breakfastChef.name]||0) + 1;
+        }
+
+        dayPlans.push({dayName, date:current.date, assignments:dayPlan.assignments, chefs:dayPlan.chefs});
 
         const selectedChefs = dayPlans[dayPlans.length-1].chefs;
         selectedChefs.forEach(name=>{
@@ -828,13 +794,18 @@
       }));
 
       rota.forEach(day=>{
+        const hoursByChef = {};
         day.assignments.forEach(assignment=>{
-          let entry = summary.find(item=>item.name===assignment.chef);
+          const assignmentHours = getHoursForAssignment(day.dayName, assignment.section);
+          hoursByChef[assignment.chef] = Math.max(hoursByChef[assignment.chef] || 0, assignmentHours);
+        });
+        Object.entries(hoursByChef).forEach(([chef, hours])=>{
+          let entry = summary.find(item=>item.name===chef);
           if (!entry) {
-            entry = {name:assignment.chef, count:0, hours:0};
+            entry = {name:chef, count:0, hours:0};
             summary.push(entry);
           }
-          entry.hours += getHoursForAssignment(day.dayName, assignment.section);
+          entry.hours += hours;
         });
       });
 
