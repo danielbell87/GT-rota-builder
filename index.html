@@ -171,6 +171,48 @@
       dailyOverrides: {}
     };
 
+    const MIO_ELIGIBILITY_STORAGE_KEY = 'gtRota.mioEligibilityByChef';
+
+    function getPersistedMioEligibilityMap(){
+      try {
+        const raw = localStorage.getItem(MIO_ELIGIBILITY_STORAGE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+
+    function savePersistedMioEligibilityMap(map){
+      try {
+        localStorage.setItem(MIO_ELIGIBILITY_STORAGE_KEY, JSON.stringify(map));
+      } catch {
+        // Ignore storage failures; app should still function without persistence.
+      }
+    }
+
+    function applyPersistedMioEligibility(){
+      const persisted = getPersistedMioEligibilityMap();
+      state.staff.forEach(staff=>{
+        if (Object.prototype.hasOwnProperty.call(persisted, staff.name)) {
+          staff.mioEligible = !!persisted[staff.name];
+        }
+      });
+    }
+
+    function persistMioEligibilityForChef(name, value){
+      if (!name) return;
+      const persisted = getPersistedMioEligibilityMap();
+      persisted[name] = !!value;
+      savePersistedMioEligibilityMap(persisted);
+    }
+
+    function persistAllMioEligibility(){
+      const persisted = Object.fromEntries(state.staff.map(staff=>[staff.name, !!staff.mioEligible]));
+      savePersistedMioEligibilityMap(persisted);
+    }
+
     function getDefaultSkills(){
       return Object.fromEntries(sections.map(section => [section, 0]));
     }
@@ -317,6 +359,8 @@
 
     function resetSampleData(){
       state.staff = JSON.parse(JSON.stringify(initialStaff));
+      applyPersistedMioEligibility();
+      persistAllMioEligibility();
       state.availability = [];
       state.dailyOverrides = {};
       document.getElementById('weekStart').value = normalizeWeekStart(defaultWeek);
@@ -839,6 +883,43 @@
         }
       }
 
+      // Backfill under-target chefs onto available days as float shifts.
+      // This helps satisfy 4-day (or MIO 5-day) targets when minimum staffing selection misses someone.
+      const couldNotBackfill = [];
+      state.staff.forEach(staff=>{
+        const name = staff.name;
+        const unavailableForWeek = state.availability.some(entry=>
+          entry.chef === name && (entry.type === 'Annual Leave' || entry.type === 'Unavailable')
+        );
+        if (unavailableForWeek) return;
+
+        const target = targetShiftsByChef[name] || 4;
+        while ((shifts[name] || 0) < target) {
+          const candidateDays = rota.filter(day=>{
+            if (day.chefs.includes(name)) return false;
+            if (isUnavailable(staff, day.date, day.dayName, ruleOverrides)) return false;
+            if (name===mioChefName && mioWeekdayPlan.has(day.dayName)) return false;
+            if (name===mioChefName && !mioCorePlan.has(day.dayName)) return false;
+            return true;
+          }).sort((a,b)=>{
+            const aSoftPenalty = getSoftRulePenalty(name, a.dayName);
+            const bSoftPenalty = getSoftRulePenalty(name, b.dayName);
+            if (aSoftPenalty !== bSoftPenalty) return aSoftPenalty - bSoftPenalty;
+            return a.chefs.length - b.chefs.length;
+          });
+
+          const selectedDay = candidateDays[0];
+          if (!selectedDay) {
+            couldNotBackfill.push(name);
+            break;
+          }
+
+          selectedDay.chefs.push(name);
+          shifts[name] = (shifts[name] || 0) + 1;
+          chefDayCounts[name] = (chefDayCounts[name] || 0) + 1;
+        }
+      });
+
       const issues = []; 
       const breakfastCount = rota.filter(item=>item.assignments.some(a=>a.section==='Breakfast')).length;
       const requiredDays = rota.length;
@@ -866,6 +947,11 @@
           if (shiftCount > target) issues.push(`${chef} works ${shiftCount} days (max ${target})`);
         }
       });
+
+      if (couldNotBackfill.length) {
+        const unique = [...new Set(couldNotBackfill)];
+        issues.push(`Could not backfill float shifts to target days for: ${unique.join(', ')}`);
+      }
       
       // Validate Monday-Wednesday staffing matches the override
       rota.slice(0, 3).forEach(day=>{
@@ -1018,7 +1104,7 @@
       renderRuleSummary();
       renderResults();
     });
-    document.getElementById('addAvailabilityBtn').addEventListener('click', ()=>{state.availability.push({chef:state.staff[0].name,type:'Unavailable',startDate:defaultWeek,finishDate:defaultWeek,notes:''});renderAvailability();});
+    document.getElementById('addAvailabilityBtn').addEventListener('click', ()=>{state.availability.push({chef:state.staff[0].name,type:'Unavailable',startDate:defaultWeek,finishDate:defaultWeek,notes:''});renderAvailability();renderResults();});
     document.getElementById('addChefBtn').addEventListener('click', openAddChefModal);
     document.getElementById('cancelChefBtn').addEventListener('click', closeAddChefModal);
     document.getElementById('saveChefBtn').addEventListener('click', saveNewChef);
@@ -1028,6 +1114,7 @@
         const index=Number(button.getAttribute('data-remove'));
         state.availability.splice(index,1);
         renderAvailability();
+        renderResults();
       }
       const removeChefButton=event.target.closest('button[data-remove-chef]');
       if (removeChefButton){
@@ -1055,7 +1142,15 @@
         state.availability[Number(event.target.dataset.index)].notes=event.target.value;
       }
       if (event.target.dataset.field==='name'){
-        state.staff[Number(event.target.dataset.index)].name=event.target.value;
+        const index = Number(event.target.dataset.index);
+        const oldName = state.staff[index].name;
+        state.staff[index].name=event.target.value;
+        const persisted = getPersistedMioEligibilityMap();
+        if (oldName && Object.prototype.hasOwnProperty.call(persisted, oldName)) {
+          persisted[state.staff[index].name] = persisted[oldName];
+          delete persisted[oldName];
+          savePersistedMioEligibilityMap(persisted);
+        }
       }
       if (event.target.dataset.field==='role'){
         state.staff[Number(event.target.dataset.index)].role=event.target.value;
@@ -1065,6 +1160,8 @@
       }
       if (event.target.dataset.field==='mio'){
         state.staff[Number(event.target.dataset.index)].mioEligible = event.target.value === 'true';
+        const staff = state.staff[Number(event.target.dataset.index)];
+        persistMioEligibilityForChef(staff?.name, staff?.mioEligible);
         populateMioOptions();
       }
       if (event.target.dataset.field==='weekend'){
@@ -1076,17 +1173,33 @@
       if (event.target.dataset.skill){
         state.staff[Number(event.target.dataset.index)].skills[event.target.dataset.skill]=Number(event.target.value);
       }
+
+      if (event.target.dataset.field) {
+        persistAllMioEligibility();
+      }
     };
 
     document.addEventListener('input', (event)=>{
       updateStateFromControl(event);
-      if (event.target.id === 'weekStart' || event.target.id === 'mioChef' || event.target.dataset.field || event.target.dataset.skill) {
+      const isAvailabilityControl =
+        event.target.classList.contains('entry-chef') ||
+        event.target.classList.contains('entry-type') ||
+        event.target.classList.contains('entry-start-date') ||
+        event.target.classList.contains('entry-finish-date') ||
+        event.target.classList.contains('entry-notes');
+      if (event.target.id === 'weekStart' || event.target.id === 'mioChef' || event.target.dataset.field || event.target.dataset.skill || isAvailabilityControl) {
         renderResults();
       }
     });
     document.addEventListener('change', (event)=>{
       updateStateFromControl(event);
-      if (event.target.id === 'weekStart' || event.target.id === 'mioChef' || event.target.dataset.field || event.target.dataset.skill) {
+      const isAvailabilityControl =
+        event.target.classList.contains('entry-chef') ||
+        event.target.classList.contains('entry-type') ||
+        event.target.classList.contains('entry-start-date') ||
+        event.target.classList.contains('entry-finish-date') ||
+        event.target.classList.contains('entry-notes');
+      if (event.target.id === 'weekStart' || event.target.id === 'mioChef' || event.target.dataset.field || event.target.dataset.skill || isAvailabilityControl) {
         renderResults();
       }
     });
