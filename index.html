@@ -93,7 +93,7 @@
       <p class="small" style="margin-top:8px;margin-bottom:8px">Use the strength values to show how strong each chef is on each section: 0 = not suitable, 1 = limited, 2 = capable, 3 = preferred.</p>
       <table>
         <thead>
-          <tr><th>Name</th><th>Role</th><th>Seniority</th><th>MIO eligible</th><th>Weekend rule</th><th>Fixed day off</th><th></th></tr>
+          <tr><th>Name</th><th>Role</th><th>MIO eligible</th><th>Weekend rule</th><th>Fixed day off</th><th></th></tr>
         </thead>
         <tbody id="staffBody"></tbody>
       </table>
@@ -111,7 +111,6 @@
       <div class="grid">
         <label>Name<input id="newChefName" type="text"></label>
         <label>Role<select id="newChefRole"></select></label>
-        <label>Seniority<select id="newChefSeniority">${seniorityOptions.map(option=>`<option value="${option.value}">${option.label}</option>`).join('')}</select></label>
         <label>MIO eligible<select id="newChefMio"><option value="true">Yes</option><option value="false">No</option></select></label>
         <label>Weekend rule<select id="newChefWeekendRule"><option value="">None</option><option>Works weekends</option><option>Does not work weekends</option></select></label>
         <label>Fixed day off<select id="newChefFixedDayOff"><option value="">None</option><option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option><option>Saturday</option><option>Sunday</option></select></label>
@@ -138,18 +137,14 @@
     const defaultWeek = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
 
     const chefRoles = ['Executive Chef','Head Chef','Sous Chef','Chef de Partie','Demi Chef de Partie','Commis Chef'];
-    const seniorityOptions = [
-      {value:1,label:'1 - Junior'},
-      {value:2,label:'2 - Commis'},
-      {value:3,label:'3 - Junior CDP'},
-      {value:4,label:'4 - CDP'},
-      {value:5,label:'5 - Senior CDP'},
-      {value:6,label:'6 - Junior Sous'},
-      {value:7,label:'7 - Sous'},
-      {value:8,label:'8 - Senior Sous'},
-      {value:9,label:'9 - Head Chef'},
-      {value:10,label:'10 - Executive Chef'}
-    ];
+    const roleWeight = {
+      'Commis Chef': 1,
+      'Demi Chef de Partie': 2,
+      'Chef de Partie': 3,
+      'Sous Chef': 4,
+      'Head Chef': 5,
+      'Executive Chef': 6
+    };
     const initialStaff = [
       {name:'Aled', role:'Executive Chef', seniorityRank:1, breakfastEligible:true, weekendRule:'Does not work weekends', fixedDayOff:'', skills:{Pass:3,Sauce:1,Garnish:1,Larder:1,Pastry:3,Breakfast:3}, preferredBreakfast:'Monday', notes:'Prefers pass or pastry'},
       {name:'Charlie', role:'Head Chef', seniorityRank:2, breakfastEligible:true, weekendRule:'Works weekends', fixedDayOff:'Tuesday', skills:{Pass:3,Sauce:2,Garnish:2,Larder:2,Pastry:2,Breakfast:2}, preferredBreakfast:'Sunday', notes:'Can work any section'},
@@ -172,6 +167,7 @@
     };
 
     const MIO_ELIGIBILITY_STORAGE_KEY = 'gtRota.mioEligibilityByChef';
+    const STAFF_PROFILE_STORAGE_KEY = 'gtRota.staffProfilesByChef';
 
     function getPersistedMioEligibilityMap(){
       try {
@@ -211,6 +207,64 @@
     function persistAllMioEligibility(){
       const persisted = Object.fromEntries(state.staff.map(staff=>[staff.name, !!staff.mioEligible]));
       savePersistedMioEligibilityMap(persisted);
+    }
+
+    function getPersistedStaffProfilesMap(){
+      try {
+        const raw = localStorage.getItem(STAFF_PROFILE_STORAGE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+
+    function savePersistedStaffProfilesMap(map){
+      try {
+        localStorage.setItem(STAFF_PROFILE_STORAGE_KEY, JSON.stringify(map));
+      } catch {
+        // Ignore storage failures.
+      }
+    }
+
+    function applyPersistedStaffProfiles(){
+      const persisted = getPersistedStaffProfilesMap();
+      state.staff.forEach(staff=>{
+        const profile = persisted[staff.name];
+        if (!profile || typeof profile !== 'object') return;
+        if (profile.role) staff.role = profile.role;
+        if (typeof profile.mioEligible === 'boolean') staff.mioEligible = profile.mioEligible;
+        if (typeof profile.weekendRule === 'string') staff.weekendRule = profile.weekendRule;
+        if (typeof profile.fixedDayOff === 'string') staff.fixedDayOff = profile.fixedDayOff;
+        if (profile.skills && typeof profile.skills === 'object') {
+          staff.skills = {...(staff.skills||{}), ...profile.skills};
+        }
+      });
+    }
+
+    function persistAllStaffProfiles(){
+      const persisted = Object.fromEntries(state.staff.map(staff=>[
+        staff.name,
+        {
+          role: staff.role,
+          mioEligible: !!staff.mioEligible,
+          weekendRule: staff.weekendRule || '',
+          fixedDayOff: staff.fixedDayOff || '',
+          skills: {...(staff.skills||{})}
+        }
+      ]));
+      savePersistedStaffProfilesMap(persisted);
+    }
+
+    function renamePersistedStaffProfile(oldName, newName){
+      if (!oldName || !newName || oldName === newName) return;
+      const persisted = getPersistedStaffProfilesMap();
+      if (Object.prototype.hasOwnProperty.call(persisted, oldName)) {
+        persisted[newName] = persisted[oldName];
+        delete persisted[oldName];
+        savePersistedStaffProfilesMap(persisted);
+      }
     }
 
     function getDefaultSkills(){
@@ -359,7 +413,9 @@
 
     function resetSampleData(){
       state.staff = JSON.parse(JSON.stringify(initialStaff));
+      applyPersistedStaffProfiles();
       applyPersistedMioEligibility();
+      persistAllStaffProfiles();
       persistAllMioEligibility();
       state.availability = [];
       state.dailyOverrides = {};
@@ -404,7 +460,6 @@
         row.innerHTML=`
           <td><input data-field="name" data-index="${index}" value="${staff.name}" /></td>
           <td><select data-field="role" data-index="${index}">${chefRoles.map(role=>`<option value="${role}" ${staff.role===role?'selected':''}>${role}</option>`).join('')}</select></td>
-          <td><select data-field="seniority" data-index="${index}">${seniorityOptions.map(option=>`<option value="${option.value}" ${staff.seniorityRank===option.value?'selected':''}>${option.label}</option>`).join('')}</select></td>
           <td><select data-field="mio" data-index="${index}"><option value="true" ${staff.mioEligible?'selected':''}>Yes</option><option value="false" ${!staff.mioEligible?'selected':''}>No</option></select></td>
           <td><select data-field="weekend" data-index="${index}"><option value="" ${!staff.weekendRule?'selected':''}>None</option><option ${staff.weekendRule==='Works weekends'?'selected':''}>Works weekends</option><option ${staff.weekendRule==='Does not work weekends'?'selected':''}>Does not work weekends</option></select></td>
           <td><select data-field="fixedDay" data-index="${index}"><option value="" ${!staff.fixedDayOff?'selected':''}>None</option><option value="Monday" ${staff.fixedDayOff==='Monday'?'selected':''}>Monday</option><option value="Tuesday" ${staff.fixedDayOff==='Tuesday'?'selected':''}>Tuesday</option><option value="Wednesday" ${staff.fixedDayOff==='Wednesday'?'selected':''}>Wednesday</option><option value="Thursday" ${staff.fixedDayOff==='Thursday'?'selected':''}>Thursday</option><option value="Friday" ${staff.fixedDayOff==='Friday'?'selected':''}>Friday</option><option value="Saturday" ${staff.fixedDayOff==='Saturday'?'selected':''}>Saturday</option><option value="Sunday" ${staff.fixedDayOff==='Sunday'?'selected':''}>Sunday</option></select></td>
@@ -449,7 +504,6 @@
     function openAddChefModal(){
       document.getElementById('newChefName').value='';
       document.getElementById('newChefRole').innerHTML = chefRoles.map(role=>`<option>${role}</option>`).join('');
-      document.getElementById('newChefSeniority').value='3';
       document.getElementById('newChefMio').value='true';
       document.getElementById('newChefWeekendRule').value='';
       document.getElementById('newChefFixedDayOff').value='';
@@ -469,7 +523,6 @@
       state.staff.push({
         name,
         role: document.getElementById('newChefRole').value,
-        seniorityRank: Number(document.getElementById('newChefSeniority').value),
         breakfastEligible:true,
         mioEligible: document.getElementById('newChefMio').value === 'true',
         weekendRule: document.getElementById('newChefWeekendRule').value,
@@ -478,6 +531,8 @@
         preferredBreakfast:'',
         notes:''
       });
+      persistAllStaffProfiles();
+      persistAllMioEligibility();
       closeAddChefModal();
       renderStaff();
       renderAvailability();
@@ -559,12 +614,15 @@
       return 'Off';
     }
 
-    function getSeniorityBonus(staff, dayName){
-      const seniority = staff.seniorityRank || 0;
-      let bonus = 0;
-      if (['Friday','Saturday','Sunday'].includes(dayName) && seniority >= 7) bonus += 2;
-      if (['Friday','Saturday','Sunday'].includes(dayName) && seniority >= 6) bonus += 1;
-      if (seniority >= 8) bonus += 1;
+    function getRoleWeight(staff){
+      return roleWeight[staff?.role] || 0;
+    }
+
+    function getRoleBonus(staff, dayName){
+      const rank = getRoleWeight(staff);
+      let bonus = rank * 0.4;
+      if (['Friday','Saturday','Sunday'].includes(dayName) && rank >= roleWeight['Sous Chef']) bonus += 1;
+      if (rank >= roleWeight['Head Chef']) bonus += 1;
       return bonus;
     }
 
@@ -575,8 +633,8 @@
     }
 
     function isSenior(staff){
-      // Sous Chef or higher: seniority >= 6
-      return (staff.seniorityRank || 0) >= 6;
+      // Sous Chef or higher
+      return getRoleWeight(staff) >= roleWeight['Sous Chef'];
     }
 
     function getQualityScore(staff, section){
@@ -674,8 +732,8 @@
         const sectionCandidates = remaining.filter(staff=>!selected.includes(staff.name)).sort((a,b)=>{
           const seniorBonusA = seniorCoreNames.includes(a.name) ? 1 : 0;
           const seniorBonusB = seniorCoreNames.includes(b.name) ? 1 : 0;
-          const aScore = (getSectionScore(a, section, ruleOverrides) * 10) + seniorBonusA + getSeniorityBonus(a, dayName) + getUrgencyScore(a) - getSoftRulePenalty(a.name, dayName) - (shifts[a.name]||0);
-          const bScore = (getSectionScore(b, section, ruleOverrides) * 10) + seniorBonusB + getSeniorityBonus(b, dayName) + getUrgencyScore(b) - getSoftRulePenalty(b.name, dayName) - (shifts[b.name]||0);
+          const aScore = (getSectionScore(a, section, ruleOverrides) * 10) + seniorBonusA + getRoleBonus(a, dayName) + getUrgencyScore(a) - getSoftRulePenalty(a.name, dayName) - (shifts[a.name]||0);
+          const bScore = (getSectionScore(b, section, ruleOverrides) * 10) + seniorBonusB + getRoleBonus(b, dayName) + getUrgencyScore(b) - getSoftRulePenalty(b.name, dayName) - (shifts[b.name]||0);
           return bScore - aScore;
         });
         const best = sectionCandidates[0];
@@ -689,8 +747,8 @@
         const extraCandidates = remaining.filter(staff=>!selected.includes(staff.name)).sort((a,b)=>{
           const seniorBonusA = seniorCoreNames.includes(a.name) ? 1 : 0;
           const seniorBonusB = seniorCoreNames.includes(b.name) ? 1 : 0;
-          const aScore = seniorBonusA + getSeniorityBonus(a, dayName) + getUrgencyScore(a) - getSoftRulePenalty(a.name, dayName) - (shifts[a.name]||0);
-          const bScore = seniorBonusB + getSeniorityBonus(b, dayName) + getUrgencyScore(b) - getSoftRulePenalty(b.name, dayName) - (shifts[b.name]||0);
+          const aScore = seniorBonusA + getRoleBonus(a, dayName) + getUrgencyScore(a) - getSoftRulePenalty(a.name, dayName) - (shifts[a.name]||0);
+          const bScore = seniorBonusB + getRoleBonus(b, dayName) + getUrgencyScore(b) - getSoftRulePenalty(b.name, dayName) - (shifts[b.name]||0);
           return bScore - aScore;
         });
         const extra = extraCandidates[0];
@@ -1120,6 +1178,8 @@
       if (removeChefButton){
         const index=Number(removeChefButton.getAttribute('data-remove-chef'));
         state.staff.splice(index,1);
+        persistAllStaffProfiles();
+        persistAllMioEligibility();
         renderStaff();
         renderAvailability();
         renderResults();
@@ -1145,6 +1205,7 @@
         const index = Number(event.target.dataset.index);
         const oldName = state.staff[index].name;
         state.staff[index].name=event.target.value;
+        renamePersistedStaffProfile(oldName, state.staff[index].name);
         const persisted = getPersistedMioEligibilityMap();
         if (oldName && Object.prototype.hasOwnProperty.call(persisted, oldName)) {
           persisted[state.staff[index].name] = persisted[oldName];
@@ -1154,9 +1215,6 @@
       }
       if (event.target.dataset.field==='role'){
         state.staff[Number(event.target.dataset.index)].role=event.target.value;
-      }
-      if (event.target.dataset.field==='seniority'){
-        state.staff[Number(event.target.dataset.index)].seniorityRank=Number(event.target.value);
       }
       if (event.target.dataset.field==='mio'){
         state.staff[Number(event.target.dataset.index)].mioEligible = event.target.value === 'true';
@@ -1174,7 +1232,8 @@
         state.staff[Number(event.target.dataset.index)].skills[event.target.dataset.skill]=Number(event.target.value);
       }
 
-      if (event.target.dataset.field) {
+      if (event.target.dataset.field || event.target.dataset.skill) {
+        persistAllStaffProfiles();
         persistAllMioEligibility();
       }
     };
