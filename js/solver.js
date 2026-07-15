@@ -21,6 +21,8 @@ const PASS_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
 const MIO_PRIMARY_DAYS = ['Monday', 'Tuesday', 'Wednesday'];
 const MIO_FALLBACK_DAYS = ['Thursday', 'Friday'];
 
+export const SOLVER_ENGINE_VERSION = '2026-07-15-8d8aeb0';
+
 function buildWeekDates(weekStart) {
   const start = parseLocalDate(weekStart);
   const dates = [];

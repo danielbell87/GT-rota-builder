@@ -1,6 +1,7 @@
 import { runSolverTests } from './solver.test.js';
 import { runValidationTests } from './validation.test.js';
 import { runScoringTests } from './scoring.test.js';
+import { SOLVER_ENGINE_VERSION } from '../js/solver.js';
 
 const summaryEl = document.getElementById('testSummary');
 const resultsEl = document.getElementById('testResults');
@@ -21,7 +22,7 @@ async function runAllTests() {
 
   const passed = results.filter((r) => r.passed).length;
   const failed = results.length - passed;
-  summaryEl.textContent = `Total: ${results.length} | Passed: ${passed} | Failed: ${failed}`;
+  summaryEl.textContent = `Engine: ${SOLVER_ENGINE_VERSION} | Total: ${results.length} | Passed: ${passed} | Failed: ${failed}`;
   resultsEl.innerHTML = results.map((r) => `<div class="pill ${r.passed ? 'good' : 'bad'}">${r.passed ? 'PASS' : 'FAIL'}: ${r.title}${r.details ? ` (${r.details})` : ''}</div>`).join('');
 }
 
