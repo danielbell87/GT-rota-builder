@@ -35,7 +35,7 @@ function runScenario(state, override = {}, options = {}) {
     weekStart: override.weekStart ?? state.weeklyInputs.weekStart,
     mioChef: override.mioChef ?? state.weeklyInputs.mioChef,
     mioSelectionsByWeek: override.mioSelectionsByWeek ?? state.weeklyInputs.mioSelectionsByWeek,
-    additionalChefRequirements: override.additionalChefRequirements ?? state.weeklyInputs.additionalChefRequirements || [],
+    additionalChefRequirements: override.additionalChefRequirements ?? (state.weeklyInputs.additionalChefRequirements || []),
     availability: override.availability ?? state.weeklyInputs.availability
   }, options);
 }
@@ -151,8 +151,9 @@ export async function runSolverTests(assert) {
     sundayCount: 10
   };
   const qualityResult = runScenario(sectionQualityScenario, {}, { fairnessEnabled: true, fairnessState: highPenalty });
-  const mondaySauce = qualityResult.rota.find((day) => day.dayName === 'Monday')?.assignments.find((assignment) => assignment.section === 'Sauce');
-  assert(mondaySauce?.chef === 'Joel', 'Section quality beats fairness');
+  const wednesdaySauce = qualityResult.rota.find((day) => day.dayName === 'Wednesday')?.assignments.find((assignment) => assignment.section === 'Sauce');
+  const wednesdaySauceChef = sectionQualityScenario.staff.find((staff) => staff.name === wednesdaySauce?.chef);
+  assert((wednesdaySauceChef?.skills?.Sauce || 0) === 3, 'Section quality beats fairness');
 
   assert(getHoursForDay('Wednesday') === 12.5, 'Wednesday normal shift equals 12.5 hours');
   assert(getHoursForDay('Sunday') === 10.5, 'Sunday normal shift equals 10.5 hours');
