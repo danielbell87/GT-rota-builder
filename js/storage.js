@@ -1,4 +1,5 @@
 import { getState, syncCompatibilityViews } from './state.js';
+import { normalizeWeekStart } from './utils.js';
 
 export const STORAGE_KEYS = {
   schemaVersion: 'gtRota.schemaVersion',
@@ -8,7 +9,7 @@ export const STORAGE_KEYS = {
   staffProfilesByChef: 'gtRota.staffProfilesByChef'
 };
 
-const CURRENT_SCHEMA_VERSION = 3;
+const CURRENT_SCHEMA_VERSION = 4;
 
 function safeParse(raw, fallback) {
   if (!raw) return fallback;
@@ -18,6 +19,29 @@ function safeParse(raw, fallback) {
   } catch {
     return fallback;
   }
+}
+
+function normalizeWeeklyInputsShape(weeklyInputs = {}, fallbackWeekStart = '') {
+  const normalizedWeekStart = normalizeWeekStart(weeklyInputs.weekStart || fallbackWeekStart || getState().weeklyInputs.weekStart);
+  const parsedWeeks = Number.parseInt(weeklyInputs.numWeeks, 10);
+  const normalizedSelections = weeklyInputs.weeklyMioSelections && typeof weeklyInputs.weeklyMioSelections === 'object'
+    ? { ...weeklyInputs.weeklyMioSelections }
+    : {};
+
+  if (weeklyInputs.mioChef && !normalizedSelections[normalizedWeekStart]) {
+    normalizedSelections[normalizedWeekStart] = weeklyInputs.mioChef;
+  }
+
+  return {
+    weekStart: normalizedWeekStart,
+    numWeeks: Math.max(1, Math.min(8, parsedWeeks || 1)),
+    mioChef: weeklyInputs.mioChef || normalizedSelections[normalizedWeekStart] || '',
+    weeklyMioSelections: normalizedSelections,
+    status: weeklyInputs.status || 'Draft',
+    dailyOverrides: weeklyInputs.dailyOverrides && typeof weeklyInputs.dailyOverrides === 'object' ? weeklyInputs.dailyOverrides : {},
+    availability: Array.isArray(weeklyInputs.availability) ? weeklyInputs.availability : [],
+    additionalChefRequirements: Array.isArray(weeklyInputs.additionalChefRequirements) ? weeklyInputs.additionalChefRequirements : []
+  };
 }
 
 export function getPersistedMioEligibilityMap() {
@@ -120,69 +144,67 @@ export function renamePersistedMioEligibility(oldName, newName) {
   }
 }
 
+function migrateLegacyAdditionalChefRequests(saved) {
+  if (!saved?.weeklyInputs) return saved;
+
+  const { dailyOverrides, weekStart, additionalChefRequirements } = saved.weeklyInputs;
+  const hasOldExtra = dailyOverrides && Object.values(dailyOverrides).some((override) => override && (override.extraChefs || 0) > 0);
+  const alreadyMigrated = Array.isArray(additionalChefRequirements) && additionalChefRequirements.length > 0;
+  if (!hasOldExtra || alreadyMigrated || !weekStart) return saved;
+
+  const normalizedWeekStart = normalizeWeekStart(weekStart);
+  const weekDate = new Date(`${normalizedWeekStart}T00:00:00`);
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dayToDate = {};
+  for (let i = 0; i < 7; i += 1) {
+    const d = new Date(weekDate);
+    d.setDate(weekDate.getDate() + i);
+    dayToDate[dayNames[d.getDay()]] = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  const converted = [];
+  Object.entries(dailyOverrides).forEach(([dayName, override]) => {
+    const count = override && typeof override.extraChefs === 'number' ? override.extraChefs : 0;
+    if (count > 0 && dayToDate[dayName]) {
+      converted.push({ date: dayToDate[dayName], count });
+    }
+  });
+
+  if (converted.length) {
+    saved.weeklyInputs.additionalChefRequirements = converted;
+  }
+
+  Object.keys(saved.weeklyInputs.dailyOverrides || {}).forEach((day) => {
+    const entry = saved.weeklyInputs.dailyOverrides[day];
+    if (!entry) return;
+    delete entry.extraChefs;
+    if (!Object.keys(entry).filter((key) => key !== 'extraChefs' && entry[key]).length) {
+      delete saved.weeklyInputs.dailyOverrides[day];
+    }
+  });
+
+  return saved;
+}
+
 export function migrateStorageIfNeeded() {
   const current = Number(localStorage.getItem(STORAGE_KEYS.schemaVersion) || 0);
   if (current >= CURRENT_SCHEMA_VERSION) return;
-
-  if (current < 1) {
-    // Legacy-only installations rely on profile and MIO keys; keep them untouched.
-  }
 
   if (current < 2) {
     const appState = getState();
     saveAppState(appState);
   }
 
-  if (current < 3) {
-    // Migrate day-based dailyOverrides.extraChefs to date-based additionalChefRequirements
-    const raw = localStorage.getItem(STORAGE_KEYS.appState);
-    if (raw) {
-      try {
-        const saved = JSON.parse(raw);
-        if (saved && saved.weeklyInputs) {
-          const { dailyOverrides, weekStart, additionalChefRequirements } = saved.weeklyInputs;
-          const hasOldExtra = dailyOverrides && Object.values(dailyOverrides).some((o) => o && (o.extraChefs || 0) > 0);
-          const alreadyMigrated = Array.isArray(additionalChefRequirements) && additionalChefRequirements.length > 0;
-          if (hasOldExtra && !alreadyMigrated && weekStart) {
-            // Build day-name → date map from weekStart
-            const parts = weekStart.split('-').map(Number);
-            const weekDate = new Date(parts[0], parts[1] - 1, parts[2]);
-            const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-            const dayToDate = {};
-            for (let i = 0; i < 7; i += 1) {
-              const d = new Date(weekDate);
-              d.setDate(weekDate.getDate() + i);
-              const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-              dayToDate[dayNames[d.getDay()]] = ds;
-            }
-            const converted = [];
-            Object.entries(dailyOverrides).forEach(([dayName, override]) => {
-              const count = override && typeof override.extraChefs === 'number' ? override.extraChefs : 0;
-              if (count > 0 && dayToDate[dayName]) {
-                converted.push({ date: dayToDate[dayName], count });
-              }
-            });
-            if (converted.length) {
-              saved.weeklyInputs.additionalChefRequirements = converted;
-            }
-            // Clear extraChefs from dailyOverrides to avoid double-counting.
-            // Remove any entries that are now empty (had only extraChefs).
-            Object.keys(saved.weeklyInputs.dailyOverrides).forEach((day) => {
-              const entry = saved.weeklyInputs.dailyOverrides[day];
-              if (entry) {
-                delete entry.extraChefs;
-                if (!Object.keys(entry).filter((k) => k !== 'extraChefs' && entry[k]).length) {
-                  delete saved.weeklyInputs.dailyOverrides[day];
-                }
-              }
-            });
-            localStorage.setItem(STORAGE_KEYS.appState, JSON.stringify(saved));
-          }
-        }
-      } catch {
-        // Ignore migration errors; corrupt saved data will be overwritten on next save.
-      }
+  let saved = safeParse(localStorage.getItem(STORAGE_KEYS.appState), null);
+  if (saved && typeof saved === 'object') {
+    if (current < 3) {
+      saved = migrateLegacyAdditionalChefRequests(saved);
     }
+    if (current < 4) {
+      const fallbackWeekStart = saved.weeklyInputs?.weekStart || getState().weeklyInputs.weekStart;
+      saved.weeklyInputs = normalizeWeeklyInputsShape(saved.weeklyInputs, fallbackWeekStart);
+    }
+    localStorage.setItem(STORAGE_KEYS.appState, JSON.stringify(saved));
   }
 
   localStorage.setItem(STORAGE_KEYS.schemaVersion, String(CURRENT_SCHEMA_VERSION));
@@ -194,7 +216,10 @@ export function loadAppState() {
   if (persisted && typeof persisted === 'object') {
     if (Array.isArray(persisted.staff)) state.staff = persisted.staff;
     if (persisted.weeklyInputs && typeof persisted.weeklyInputs === 'object') {
-      state.weeklyInputs = { ...state.weeklyInputs, ...persisted.weeklyInputs };
+      state.weeklyInputs = {
+        ...state.weeklyInputs,
+        ...normalizeWeeklyInputsShape(persisted.weeklyInputs, state.weeklyInputs.weekStart)
+      };
     }
     if (persisted.settings && typeof persisted.settings === 'object') {
       state.settings = { ...state.settings, ...persisted.settings };
@@ -218,7 +243,7 @@ export function saveAppState(state) {
     localStorage.setItem(STORAGE_KEYS.appState, JSON.stringify({
       staff: state.staff,
       settings: state.settings,
-      weeklyInputs: state.weeklyInputs,
+      weeklyInputs: normalizeWeeklyInputsShape(state.weeklyInputs, state.weeklyInputs.weekStart),
       generatedRotas: state.generatedRotas,
       history: state.history,
       uiState: state.uiState

@@ -1,6 +1,6 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota } from '../js/solver.js';
-import { validateRotaHardRules } from '../js/validation.js?v=20260714';
+import { validateRotaHardRules } from '../js/validation.js?v=20260716b';
 import {
   addAdditionalChefRequest,
   updateAdditionalChefRequest,
@@ -11,8 +11,8 @@ import {
 
 // Week of 2026-07-13 (Mon) → 2026-07-19 (Sun)
 const WEEK_START = '2026-07-13';
-const FRIDAY_DATE = '2026-07-18';
-const SATURDAY_DATE = '2026-07-19';
+const FRIDAY_DATE = '2026-07-17';
+const SATURDAY_DATE = '2026-07-18';
 const PREV_FRIDAY = '2026-07-10'; // outside the week
 
 function setupBaseState() {
@@ -209,7 +209,7 @@ export async function runAdditionalChefTests(assert) {
       if (count > 0 && dayToDate[dayName]) converted.push({ date: dayToDate[dayName], count });
     });
     assert(converted.length === 1, 'T14a: Migration converts only non-zero extraChefs');
-    assert(converted[0].date === FRIDAY_DATE, 'T14b: Migrated date is correct (2026-07-18)');
+    assert(converted[0].date === FRIDAY_DATE, 'T14b: Migrated date is correct (2026-07-17)');
     assert(converted[0].count === 2, 'T14c: Migrated count is correct');
     assert(!converted.some((r) => r.date === SATURDAY_DATE), 'T14d: Zero-count Saturday not migrated');
   }

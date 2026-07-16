@@ -4,33 +4,42 @@ import { DEFAULT_RULES } from '../data/default-rules.js';
 const today = new Date();
 const defaultWeek = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
-const initialState = {
-  staff: JSON.parse(JSON.stringify(DEFAULT_STAFF)),
-  settings: {
-    rules: JSON.parse(JSON.stringify(DEFAULT_RULES))
-  },
-  weeklyInputs: {
+function buildDefaultWeeklyInputs() {
+  return {
     weekStart: defaultWeek,
-    mioChef: '',
-    status: 'Draft',
     numWeeks: 1,
+    mioChef: '',
+    weeklyMioSelections: {},
+    status: 'Draft',
     dailyOverrides: {},
     availability: [],
     additionalChefRequirements: []
-  },
-  generatedRotas: {
-    current: null
-  },
-  history: [],
-  uiState: {
-    validation: [],
-    softScore: null,
-    lastError: ''
-  },
-  availability: [],
-  dailyOverrides: {}
-};
+  };
+}
 
+function buildInitialState() {
+  return {
+    staff: JSON.parse(JSON.stringify(DEFAULT_STAFF)),
+    settings: {
+      rules: JSON.parse(JSON.stringify(DEFAULT_RULES))
+    },
+    weeklyInputs: buildDefaultWeeklyInputs(),
+    generatedRotas: {
+      current: null
+    },
+    history: [],
+    uiState: {
+      validation: [],
+      softScore: null,
+      lastError: '',
+      selectedResultWeekIndex: 0
+    },
+    availability: [],
+    dailyOverrides: {}
+  };
+}
+
+const initialState = buildInitialState();
 const appState = JSON.parse(JSON.stringify(initialState));
 
 export function getState() {
@@ -42,7 +51,7 @@ export function getDefaultWeek() {
 }
 
 export function resetStateToDefaults() {
-  const fresh = JSON.parse(JSON.stringify(initialState));
+  const fresh = buildInitialState();
   Object.keys(appState).forEach((key) => {
     delete appState[key];
   });
@@ -62,6 +71,17 @@ export function setMioChef(name) {
   appState.weeklyInputs.mioChef = name;
 }
 
+export function setWeeklyMioChef(weekStart, chefName) {
+  if (!weekStart) return;
+  if (!appState.weeklyInputs.weeklyMioSelections || typeof appState.weeklyInputs.weeklyMioSelections !== 'object') {
+    appState.weeklyInputs.weeklyMioSelections = {};
+  }
+  appState.weeklyInputs.weeklyMioSelections[weekStart] = chefName || '';
+  if (weekStart === appState.weeklyInputs.weekStart) {
+    appState.weeklyInputs.mioChef = chefName || '';
+  }
+}
+
 export function setStatus(status) {
   appState.weeklyInputs.status = status;
 }
@@ -76,8 +96,9 @@ export function setDailyOverrides(overrides) {
   syncCompatibilityViews();
 }
 
-export function setNumWeeks(n) {
-  appState.weeklyInputs.numWeeks = Math.max(1, Math.min(8, Number(n) || 1));
+export function setNumWeeks(value) {
+  const parsed = Number.parseInt(value, 10);
+  appState.weeklyInputs.numWeeks = Math.max(1, Math.min(8, parsed || 1));
 }
 
 export function setAdditionalChefRequirements(entries) {

@@ -78,8 +78,9 @@ export function validateRotaHardRules({ rota, state, inputs, summary }) {
   const results = [];
   const leavesByDate = {};
   const weeklyDates = new Set(rota.map((day) => day.date));
+  const availability = inputs?.availability || state.weeklyInputs.availability || [];
 
-  state.weeklyInputs.availability.forEach((entry) => {
+  availability.forEach((entry) => {
     if (entry.type !== 'Annual Leave') return;
     const start = parseLocalDate(entry.startDate || entry.date);
     const finish = parseLocalDate(entry.finishDate || entry.date);
@@ -184,7 +185,7 @@ export function validateRotaHardRules({ rota, state, inputs, summary }) {
 
   const summaryByChef = Object.fromEntries((summary || []).map((item) => [item.name, item]));
   const leaveDatesByChef = {};
-  state.weeklyInputs.availability.forEach((entry) => {
+  availability.forEach((entry) => {
     if (entry.type !== 'Annual Leave') return;
     const start = parseLocalDate(entry.startDate || entry.date);
     const finish = parseLocalDate(entry.finishDate || entry.date);
@@ -214,7 +215,7 @@ export function validateRotaHardRules({ rota, state, inputs, summary }) {
 export function validateRotaSoftRules({ rota, state, inputs }) {
   const results = [];
   const ruleOverrides = {
-    _availability: state?.weeklyInputs?.availability || []
+    _availability: inputs?.availability || state?.weeklyInputs?.availability || []
   };
 
   rota

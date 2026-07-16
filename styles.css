@@ -385,6 +385,57 @@ th {
   margin-top: 8px;
 }
 
+.hidden {
+  display: none !important;
+}
+
+.weekly-mio-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.weekly-mio-item {
+  background: #0b1422;
+  border: 1px solid #243547;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.week-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 16px 0 12px;
+}
+
+.week-tab {
+  background: #22324a;
+  color: var(--text);
+}
+
+.week-tab.active {
+  background: var(--accent);
+  color: #072235;
+}
+
+.week-panels {
+  margin-top: 12px;
+}
+
+.fairness-table {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.desktop-only {
+  display: block;
+}
+
+.mobile-only {
+  display: none;
+}
+
 /* validation */
 .validation-hard-fail {
   border-color: var(--bad);
@@ -435,5 +486,16 @@ th {
 
   .controls {
     gap: 6px;
+  }
+
+  .desktop-only {
+    display: none;
+  }
+
+  .mobile-only {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 16px;
   }
 }
