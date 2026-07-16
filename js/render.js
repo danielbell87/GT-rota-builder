@@ -190,9 +190,10 @@ export function renderResultsPanel() {
   const numWeeks = inputs.numWeeks || 1;
   const weekResults = buildMultiWeekRota(inputs, numWeeks);
 
-  // Keep current rota pointing to the first feasible week (backward compatibility)
+  // Keep current rota pointing to the first feasible week for downstream consumers (e.g. publish).
+  // Set to null when all weeks are infeasible so callers can distinguish clearly.
   const firstOk = weekResults.find((r) => r.status === 'ok');
-  state.generatedRotas.current = firstOk || weekResults[0];
+  state.generatedRotas.current = firstOk || null;
 
   // Populate uiState with first feasible week's validation for external consumers
   if (firstOk) {
@@ -205,30 +206,16 @@ export function renderResultsPanel() {
     state.uiState.softScore = null;
   }
 
-  if (numWeeks === 1) {
-    const solveResult = weekResults[0];
-    if (solveResult.status === 'infeasible') {
-      container.innerHTML = `<div class="pill bad">No feasible rota could be generated with current hard constraints.</div>`;
-      return;
-    }
-    const weekInputs = { ...inputs, weekStart: solveResult.weekStart };
-    container.innerHTML = renderWeekHtml(solveResult, state, weekInputs);
-    return;
-  }
-
-  // Multi-week display
-  const allInfeasible = weekResults.every((r) => r.status === 'infeasible');
-  if (allInfeasible) {
-    container.innerHTML = `<div class="pill bad">No feasible rota could be generated for any week with current hard constraints.</div>`;
-    return;
-  }
-
+  // Unified rendering: single-week omits the week heading; multi-week adds a labelled section per week.
   container.innerHTML = weekResults.map((weekResult, i) => {
-    const weekLabel = `Week ${i + 1} — ${formatWeekCommencing(weekResult.weekStart)}`;
     const weekInputs = { ...inputs, weekStart: weekResult.weekStart };
-    const weekBody = weekResult.status === 'infeasible'
-      ? `<div class="pill bad">No feasible rota could be generated for this week with current hard constraints.</div>`
-      : renderWeekHtml(weekResult, state, weekInputs);
+    const isInfeasible = weekResult.status === 'infeasible';
+    const infeasibleMsg = numWeeks === 1
+      ? '<div class="pill bad">No feasible rota could be generated with current hard constraints.</div>'
+      : '<div class="pill bad">No feasible rota could be generated for this week with current hard constraints.</div>';
+    const weekBody = isInfeasible ? infeasibleMsg : renderWeekHtml(weekResult, state, weekInputs);
+    if (numWeeks === 1) return weekBody;
+    const weekLabel = `Week ${i + 1} — ${formatWeekCommencing(weekResult.weekStart)}`;
     return `<div class="multi-week-section"><h3 class="multi-week-heading">${weekLabel}</h3>${weekBody}</div>`;
   }).join('');
 }

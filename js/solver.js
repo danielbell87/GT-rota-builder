@@ -24,8 +24,8 @@ const MIO_GT_FALLBACK_DAYS = ['Thursday', 'Friday', 'Monday', 'Tuesday', 'Wednes
 
 export const SOLVER_ENGINE_VERSION = '2026-07-16-multi-week-rota';
 
-// Bias applied per GT day the leader worked more than a candidate across prior weeks.
-// Small enough to not override section skill differences, but enough to break ties.
+// Bias applied per GT day the chef with the most prior-week GT days worked more than a candidate.
+// Small enough to not override section skill differences, but enough to break ties fairly.
 const CROSS_WEEK_BIAS_WEIGHT = 0.5;
 
 function getGtTargetForChef(chefName, mioChefName) {
@@ -33,7 +33,8 @@ function getGtTargetForChef(chefName, mioChefName) {
 }
 
 function getCrossWeekBias(name, priorGtDays, maxPrior) {
-  if (!maxPrior) return 0;
+  // Returns 0 when no prior history exists (maxPrior === 0), which is the correct default.
+  if (maxPrior === 0) return 0;
   return (maxPrior - ((priorGtDays || {})[name] || 0)) * CROSS_WEEK_BIAS_WEIGHT;
 }
 

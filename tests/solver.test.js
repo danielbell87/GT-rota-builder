@@ -159,7 +159,7 @@ export async function runSolverTests(assert) {
   assert(getHoursForAssignment('Monday', 'MIO') === 8.5, 'MIO shift equals 8.5 hours');
   assert(getHoursForDay('Thursday', true) === getHoursForDay('Thursday'), 'Breakfast does not increase paid hours');
 
-  // Multi-week rota generation tests
+  // ─── Multi-week rota generation ────────────────────────────────────────────
   const multiWeekState = setupBaseState();
   const multiWeekInputs = {
     weekStart: multiWeekState.weeklyInputs.weekStart,
