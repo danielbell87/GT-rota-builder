@@ -359,7 +359,8 @@ function createDayPlan({
   fairnessContext,
   currentWeekDaysByChef
 }) {
-  if (requiredChefs < coreSections.length || candidates.length < requiredChefs) return null;
+  if (requiredChefs < coreSections.length) return null;
+  if (candidates.length < requiredChefs) return null;
 
   const assignments = [];
   const selectedNames = new Set();
@@ -423,8 +424,7 @@ function createDayPlan({
   const coreChefs = assignments.map((assignment) => assignment.chef);
   const breakfastChef = coreChefs
     .map((name) => state.staff.find((staff) => staff.name === name))
-    .filter(Boolean)
-    .filter((staff) => staff.breakfastEligible)
+    .filter((staff) => staff && staff.breakfastEligible)
     .sort((a, b) => {
       const countA = breakfastCounts[a.name] || 0;
       const countB = breakfastCounts[b.name] || 0;

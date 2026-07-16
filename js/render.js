@@ -20,6 +20,15 @@ function getRequiredElement(id) {
   return element;
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
 function getEligibleMioChefs(state) {
   return state.staff.filter((staff) => staff.mioEligible);
 }
@@ -121,7 +130,7 @@ export function renderMioControls() {
   const weeks = ensureWeeklyMioSelections();
   const eligible = getEligibleMioChefs(state);
 
-  singleSelect.innerHTML = eligible.map((chef) => `<option value="${chef.name}" ${state.weeklyInputs.mioChef === chef.name ? 'selected' : ''}>${chef.name}</option>`).join('');
+  singleSelect.innerHTML = eligible.map((chef) => `<option value="${escapeHtml(chef.name)}" ${state.weeklyInputs.mioChef === chef.name ? 'selected' : ''}>${escapeHtml(chef.name)}</option>`).join('');
 
   if (state.weeklyInputs.numWeeks === 1) {
     singleControl.classList.remove('hidden');
@@ -137,9 +146,9 @@ export function renderMioControls() {
     <div class="weekly-mio-grid">
       ${weeks.map((week) => `
         <label class="weekly-mio-item">
-          <span>Week ${week.weekIndex + 1} · ${week.label}</span>
+          <span>Week ${week.weekIndex + 1} · ${escapeHtml(week.label)}</span>
           <select data-weekly-mio-start="${week.weekStart}">
-            ${eligible.map((chef) => `<option value="${chef.name}" ${week.chefName === chef.name ? 'selected' : ''}>${chef.name}</option>`).join('')}
+            ${eligible.map((chef) => `<option value="${escapeHtml(chef.name)}" ${week.chefName === chef.name ? 'selected' : ''}>${escapeHtml(chef.name)}</option>`).join('')}
           </select>
         </label>`).join('')}
     </div>`;
@@ -152,7 +161,7 @@ export function renderStaffTable() {
   state.staff.forEach((chef, index) => {
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td><input data-field="name" data-index="${index}" value="${chef.name}" /></td>
+      <td><input data-field="name" data-index="${index}" value="${escapeHtml(chef.name)}" /></td>
       <td><select data-field="role" data-index="${index}">${CHEF_ROLES.map((role) => `<option value="${role}" ${chef.role === role ? 'selected' : ''}>${role}</option>`).join('')}</select></td>
       <td><select data-field="mio" data-index="${index}"><option value="true" ${chef.mioEligible ? 'selected' : ''}>Yes</option><option value="false" ${!chef.mioEligible ? 'selected' : ''}>No</option></select></td>
       <td><select data-field="weekend" data-index="${index}"><option value="" ${!chef.weekendRule ? 'selected' : ''}>None</option><option ${chef.weekendRule === 'Works weekends' ? 'selected' : ''}>Works weekends</option><option ${chef.weekendRule === 'Does not work weekends' ? 'selected' : ''}>Does not work weekends</option></select></td>
@@ -179,11 +188,11 @@ export function renderAvailabilityTable() {
   state.weeklyInputs.availability.forEach((entry, index) => {
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td><select class="entry-chef" data-index="${index}">${state.staff.map((staff) => `<option value="${staff.name}" ${entry.chef === staff.name ? 'selected' : ''}>${staff.name}</option>`).join('')}</select></td>
+      <td><select class="entry-chef" data-index="${index}">${state.staff.map((staff) => `<option value="${escapeHtml(staff.name)}" ${entry.chef === staff.name ? 'selected' : ''}>${escapeHtml(staff.name)}</option>`).join('')}</select></td>
       <td><select class="entry-type" data-index="${index}"><option ${entry.type === 'Annual Leave' ? 'selected' : ''}>Annual Leave</option><option ${entry.type === 'Unavailable' ? 'selected' : ''}>Unavailable</option></select></td>
       <td><input class="entry-start-date" type="date" min="${horizon.start}" max="${horizon.end}" data-index="${index}" value="${entry.startDate || ''}"></td>
       <td><input class="entry-finish-date" type="date" min="${horizon.start}" max="${horizon.end}" data-index="${index}" value="${entry.finishDate || ''}"></td>
-      <td><input class="entry-notes" type="text" data-index="${index}" value="${entry.notes || ''}"></td>
+      <td><input class="entry-notes" type="text" data-index="${index}" value="${escapeHtml(entry.notes || '')}"></td>
       <td><button class="danger" data-remove="${index}">Remove</button></td>`;
     body.appendChild(row);
   });
@@ -195,7 +204,7 @@ function renderWeekHtml(solveResult, state, inputs) {
   const softScore = scoreSoftPreferences({ state, rota: solveResult.rota, hardValidation });
   const valid = isRotaValid(hardValidation);
 
-  const summaryCards = solveResult.summary.map((item) => `<div class="card"><strong>${item.name}</strong><div class="small">${item.hours.toFixed(1)} hrs this week</div></div>`).join('');
+  const summaryCards = solveResult.summary.map((item) => `<div class="card"><strong>${escapeHtml(item.name)}</strong><div class="small">${item.hours.toFixed(1)} hrs this week</div></div>`).join('');
   const validationCards = hardValidation.map((item) => `<div class="pill ${item.passed ? 'good' : 'bad'}">${item.ruleId}: ${item.message}</div>`).join('');
   const softValidationCards = softValidation.map((item) => `<div class="pill ${item.passed ? 'good' : 'warn'}">${item.ruleId}: ${item.message}</div>`).join('');
 
@@ -212,7 +221,7 @@ function renderWeekHtml(solveResult, state, inputs) {
       .join(', ');
     ruleNotes.push(`Additional chefs: ${reqText}`);
   }
-  if (inputs.mioChef) ruleNotes.push(`MIO selection: ${inputs.mioChef}`);
+  if (inputs.mioChef) ruleNotes.push(`MIO selection: ${escapeHtml(inputs.mioChef)}`);
 
   const qualityScores = {};
   solveResult.rota.forEach((day) => {
@@ -232,7 +241,7 @@ function renderWeekHtml(solveResult, state, inputs) {
     if (byQuality[3].length) parts.push(`preferred: ${byQuality[3].join(', ')}`);
     if (byQuality[2].length) parts.push(`proficient: ${byQuality[2].join(', ')}`);
     if (byQuality[1].length) parts.push(`training: ${byQuality[1].join(', ')}`);
-    return parts.length ? `<span class="small"><strong>${name}</strong>: ${parts.join('; ')}</span>` : '';
+    return parts.length ? `<span class="small"><strong>${escapeHtml(name)}</strong>: ${escapeHtml(parts.join('; '))}</span>` : '';
   }).filter(Boolean);
 
   const dayHeaders = solveResult.rota.map((day) => `<th>${day.dayName}<br><span class="small">${formatDate(day.date)}</span></th>`).join('');
@@ -241,10 +250,10 @@ function renderWeekHtml(solveResult, state, inputs) {
       if (section === 'Float') {
         const coreAssignments = day.assignments.filter((assignment) => [...CORE_SECTIONS, 'Breakfast'].includes(assignment.section)).map((assignment) => assignment.chef);
         const floatChefs = day.chefs.filter((chef) => !coreAssignments.includes(chef));
-        return `<td>${floatChefs.length ? floatChefs.join(', ') : '—'}</td>`;
+        return `<td>${floatChefs.length ? escapeHtml(floatChefs.join(', ')) : '—'}</td>`;
       }
       const matches = day.assignments.filter((assignment) => assignment.section === section);
-      return `<td>${matches.length ? matches.map((assignment) => assignment.chef).join(', ') : '—'}</td>`;
+      return `<td>${matches.length ? escapeHtml(matches.map((assignment) => assignment.chef).join(', ')) : '—'}</td>`;
     }).join('');
     return `<tr><th>${section}</th>${cells}</tr>`;
   }).join('');
@@ -256,7 +265,7 @@ function renderWeekHtml(solveResult, state, inputs) {
 
   return `
     <div class="summary-grid">
-      <div class="card"><h3 class="mb-6">Weekly context</h3><div class="small">Week commencing: ${formatWeekCommencing(inputs.weekStart)}<br>MIO chef: ${inputs.mioChef || 'None'}<br>Status: ${inputs.status}</div></div>
+      <div class="card"><h3 class="mb-6">Weekly context</h3><div class="small">Week commencing: ${formatWeekCommencing(inputs.weekStart)}<br>MIO chef: ${escapeHtml(inputs.mioChef || 'None')}<br>Status: ${escapeHtml(inputs.status)}</div></div>
       <div class="card"><h3 class="mb-6">Hours rota</h3><div class="row">${summaryCards}</div>${scoreLine}<div class="small">Hard validation: ${valid ? 'PASS' : 'FAIL'}</div></div>
     </div>
     <h3 class="mt-16">Rules applied</h3>
