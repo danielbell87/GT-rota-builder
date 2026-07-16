@@ -4,15 +4,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>GT Rota Builder</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=20260716b" />
 </head>
 <body>
   <div class="wrap">
     <div class="panel">
       <h1>GT Rota Builder</h1>
-      <p>Generate a weekly rota from the workbook rules: fixed availability, annual leave, unavailability, breakfast cover, section skill scores, and the 4-day working cap.</p>
-      <div class="controls">
+      <p>Generate a rota across one to eight weeks from the workbook rules: fixed availability, annual leave, unavailability, breakfast cover, section skill scores, and the 4-day working cap.</p>
+      <div class="controls space-between">
         <span class="small">Changes update the rota live.</span>
+        <span class="small">Build <span id="buildVersion">2026.07.16.2</span></span>
       </div>
     </div>
 
@@ -20,12 +21,16 @@
       <h2>Weekly inputs</h2>
       <div class="grid">
         <label>Week commencing<input id="weekStart" type="date" min="2024-01-01" step="7"></label>
-        <label>MIO chef<select id="mioChef"></select></label>
         <label>Number of weeks<select id="numWeeks"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option></select></label>
+        <div id="singleMioControl">
+          <label>MIO chef<select id="mioChef"></select></label>
+        </div>
       </div>
+      <p id="planningHorizonLabel" class="small mt-10"></p>
+      <div id="weeklyMioSelectors" class="hidden"></div>
 
       <h3 class="mb-6">Additional chefs</h3>
-      <p class="small mb-12">Request extra GT chefs for a specific date this week (e.g., private events, catering).</p>
+      <p class="small mb-12">Request extra GT chefs for any exact date inside the selected planning horizon.</p>
       <div id="additionalChefList"></div>
       <div class="controls mt-10">
         <button id="addAdditionalChefBtn" class="secondary">Add additional chef</button>
@@ -106,6 +111,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/app.js?v=20260716b"></script>
 </body>
 </html>

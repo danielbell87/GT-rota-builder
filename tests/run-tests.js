@@ -2,6 +2,7 @@ import { runSolverTests } from './solver.test.js';
 import { runValidationTests } from './validation.test.js';
 import { runScoringTests } from './scoring.test.js';
 import { runAdditionalChefTests } from './additional-chef.test.js';
+import { runUiTests } from './ui.test.js';
 import { SOLVER_ENGINE_VERSION } from '../js/solver.js';
 
 const summaryEl = document.getElementById('testSummary');
@@ -21,6 +22,7 @@ async function runAllTests() {
   await runValidationTests(assert);
   await runScoringTests(assert);
   await runAdditionalChefTests(assert);
+  await runUiTests(assert);
 
   const passed = results.filter((r) => r.passed).length;
   const failed = results.length - passed;

@@ -1,6 +1,6 @@
-import { WEEKDAYS } from './constants.js';
+import { WEEKDAYS, DAY_FAIRNESS_WEIGHTS, SHIFT_LENGTHS } from './constants.js';
 import { getState } from './state.js';
-import { parseLocalDate } from './utils.js';
+import { parseLocalDate, toDateString, getWeekStartAtOffset, normalizeWeekStart } from './utils.js';
 import {
   getSectionScore,
   getRoleBonus,
@@ -14,7 +14,8 @@ import {
   getRequiredChefCount,
   getCoreSections,
   validateRotaHardRules
-} from './validation.js?v=20260714';
+} from './validation.js?v=20260716b';
+import { filterAvailabilityForWeek, filterAdditionalChefRequirementsForWeek } from './weekly-inputs.js';
 
 const PASS_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
 const MIO_PRIMARY_DAYS = ['Monday', 'Tuesday', 'Wednesday'];
@@ -22,58 +23,54 @@ const MIO_FALLBACK_DAYS = ['Thursday', 'Friday'];
 const MIO_GT_PRIMARY_DAYS = ['Saturday', 'Sunday'];
 const MIO_GT_FALLBACK_DAYS = ['Thursday', 'Friday', 'Monday', 'Tuesday', 'Wednesday'];
 
-export const SOLVER_ENGINE_VERSION = '2026-07-16-multi-week-rota';
+export const SOLVER_ENGINE_VERSION = '2026-07-16-multi-week-integration';
 
-// Bias applied per GT day the chef with the most prior-week GT days worked more than a candidate.
-// Small enough to not override section skill differences, but enough to break ties fairly.
-const CROSS_WEEK_BIAS_WEIGHT = 0.5;
+function clampNumWeeks(value) {
+  return Math.max(1, Math.min(8, Number.parseInt(value, 10) || 1));
+}
 
 function getGtTargetForChef(chefName, mioChefName) {
   return chefName === mioChefName ? 2 : 4;
 }
 
-function getCrossWeekBias(name, priorGtDays, maxPrior) {
-  return (maxPrior - ((priorGtDays || {})[name] || 0)) * CROSS_WEEK_BIAS_WEIGHT;
-}
-
-function maxPriorGtDays(priorGtDays) {
-  const values = Object.values(priorGtDays || {});
-  return values.length ? Math.max(...values) : 0;
-}
-
 function buildWeekDates(weekStart) {
-  const start = parseLocalDate(weekStart);
+  const start = parseLocalDate(normalizeWeekStart(weekStart));
   const dates = [];
   for (let i = 0; i < 7; i += 1) {
-    const d = new Date(start);
-    d.setDate(start.getDate() + i);
-    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    dates.push({ date: dateStr, dayName: WEEKDAYS[d.getDay()] });
+    const date = new Date(start);
+    date.setDate(start.getDate() + i);
+    dates.push({
+      date: toDateString(date),
+      dayName: WEEKDAYS[date.getDay()]
+    });
   }
   return dates;
 }
 
-function getAnnualLeaveDatesByChef(state, weekDateSet) {
+function getAvailabilityEntries(inputs, state) {
+  return Array.isArray(inputs?.availability) ? inputs.availability : (state.weeklyInputs.availability || []);
+}
+
+function getAnnualLeaveDatesByChef(availability, weekDateSet) {
   const leaveDatesByChef = {};
-  (state.weeklyInputs.availability || []).forEach((entry) => {
+  (availability || []).forEach((entry) => {
     if (entry.type !== 'Annual Leave') return;
     const start = parseLocalDate(entry.startDate || entry.date);
     const finish = parseLocalDate(entry.finishDate || entry.date);
     if (!leaveDatesByChef[entry.chef]) leaveDatesByChef[entry.chef] = new Set();
-    for (let d = new Date(start); d <= finish; d.setDate(d.getDate() + 1)) {
-      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    for (let date = new Date(start); date <= finish; date.setDate(date.getDate() + 1)) {
+      const dateStr = toDateString(date);
       if (weekDateSet.has(dateStr)) leaveDatesByChef[entry.chef].add(dateStr);
     }
   });
   return leaveDatesByChef;
 }
 
-function getAnnualLeaveHoursByChef(state, weekDateSet) {
-  const leaveDatesByChef = getAnnualLeaveDatesByChef(state, weekDateSet);
-  const result = Object.fromEntries(state.staff.map((staff) => [staff.name, 0]));
+function getAnnualLeaveHoursByChef(staff, availability, weekDateSet) {
+  const leaveDatesByChef = getAnnualLeaveDatesByChef(availability, weekDateSet);
+  const result = Object.fromEntries(staff.map((member) => [member.name, 0]));
   Object.entries(leaveDatesByChef).forEach(([chef, dateSet]) => {
-    const creditedDays = Math.min(dateSet.size, 4);
-    result[chef] = creditedDays * 12;
+    result[chef] = Math.min(dateSet.size, 4) * SHIFT_LENGTHS.annualLeaveCreditPerDay;
   });
   return result;
 }
@@ -92,12 +89,12 @@ function getMioDayPlan(state, dates, mioChefName, ruleOverrides) {
 
   if (selected.length < 3) {
     MIO_FALLBACK_DAYS.forEach((dayName) => {
-      if (selected.length >= 3) return;
-      if (selected.includes(dayName)) return;
-      const date = dates.find((item) => item.dayName === dayName);
-      if (!date) return;
-      if (!isUnavailable(staff, date.date, dayName, ruleOverrides)) selected.push(dayName);
-    });
+    if (selected.length >= 3) return;
+    if (selected.includes(dayName)) return;
+    const date = dates.find((item) => item.dayName === dayName);
+    if (!date) return;
+    if (!isUnavailable(staff, date.date, dayName, ruleOverrides)) selected.push(dayName);
+  });
   }
 
   return new Set(selected);
@@ -162,54 +159,164 @@ function chooseSeniorPassPlan({ state, dates, ruleOverrides, mioChefName, mioDay
   return forcedByDay;
 }
 
-function pickBestForSection({ section, dayName, candidates, selectedNames, ruleOverrides, gtDaysByChef, mioChefName, priorGtDays }) {
-  const maxPrior = maxPriorGtDays(priorGtDays);
+function createFairnessContext(staff) {
+  return {
+    stats: Object.fromEntries(staff.map((member) => [member.name, {
+      name: member.name,
+      fridayCount: 0,
+      saturdayCount: 0,
+      sundayCount: 0,
+      weightedBurden: 0,
+      repeatedSaturdaySundayPairCount: 0,
+      repeatedFullWeekendCount: 0,
+      repeatedExactPatternCount: 0
+    }])),
+    previousWeekPatterns: {}
+  };
+}
 
+function getFairnessProfile(name, dayName, fairnessContext, currentWeekDaysByChef) {
+  if (!fairnessContext) {
+    return {
+      weightedBurden: 0,
+      fridayCount: 0,
+      saturdayCount: 0,
+      sundayCount: 0,
+      repeatedSaturdaySundayPair: 0,
+      repeatedFullWeekend: 0,
+      repeatedExactPattern: 0,
+      overlapCount: 0
+    };
+  }
+
+  const stats = fairnessContext.stats[name] || {
+    weightedBurden: 0,
+    fridayCount: 0,
+    saturdayCount: 0,
+    sundayCount: 0,
+    repeatedSaturdaySundayPairCount: 0,
+    repeatedFullWeekendCount: 0,
+    repeatedExactPatternCount: 0
+  };
+  const previous = fairnessContext.previousWeekPatterns[name];
+  const projectedDays = new Set([...(currentWeekDaysByChef?.[name] || []), dayName]);
+  const projectedDayNames = WEEKDAYS.filter((item) => projectedDays.has(item));
+  const signature = projectedDayNames.join('|');
+  const repeatedSaturdaySundayPair = previous?.saturdaySundayPair && projectedDays.has('Saturday') && projectedDays.has('Sunday') ? 1 : 0;
+  const repeatedFullWeekend = previous?.fullWeekend && projectedDays.has('Friday') && projectedDays.has('Saturday') && projectedDays.has('Sunday') ? 1 : 0;
+  const repeatedExactPattern = previous?.signature === signature && projectedDayNames.length === (previous?.dayNames?.length || -1) ? 1 : 0;
+  const overlapCount = previous?.dayNames?.filter((item) => projectedDays.has(item)).length || 0;
+
+  return {
+    weightedBurden: stats.weightedBurden,
+    fridayCount: stats.fridayCount,
+    saturdayCount: stats.saturdayCount,
+    sundayCount: stats.sundayCount,
+    repeatedSaturdaySundayPair,
+    repeatedFullWeekend,
+    repeatedExactPattern,
+    overlapCount
+  };
+}
+
+export function compareFairnessTieBreak(a, b, dayName, fairnessContext, currentWeekDaysByChef = {}) {
+  if (!fairnessContext) return 0;
+  const fairnessA = getFairnessProfile(a.name || a, dayName, fairnessContext, currentWeekDaysByChef);
+  const fairnessB = getFairnessProfile(b.name || b, dayName, fairnessContext, currentWeekDaysByChef);
+
+  const comparisons = [
+    fairnessA.weightedBurden - fairnessB.weightedBurden,
+    fairnessA.repeatedSaturdaySundayPair - fairnessB.repeatedSaturdaySundayPair,
+    fairnessA.repeatedFullWeekend - fairnessB.repeatedFullWeekend,
+    fairnessA.repeatedExactPattern - fairnessB.repeatedExactPattern,
+    fairnessA.overlapCount - fairnessB.overlapCount
+  ];
+
+  if (dayName === 'Friday') comparisons.unshift(fairnessA.fridayCount - fairnessB.fridayCount);
+  if (dayName === 'Saturday') comparisons.unshift(fairnessA.saturdayCount - fairnessB.saturdayCount);
+  if (dayName === 'Sunday') comparisons.unshift(fairnessA.sundayCount - fairnessB.sundayCount);
+
+  for (const comparison of comparisons) {
+    if (comparison !== 0) return comparison;
+  }
+
+  return (a.name || a).localeCompare(b.name || b);
+}
+
+function updateFairnessContext(fairnessContext, rota) {
+  if (!fairnessContext) return [];
+  const weekDaysByChef = {};
+
+  rota.forEach((day) => {
+    day.chefs.forEach((chefName) => {
+      if (!weekDaysByChef[chefName]) weekDaysByChef[chefName] = new Set();
+      weekDaysByChef[chefName].add(day.dayName);
+    });
+  });
+
+  Object.entries(fairnessContext.stats).forEach(([name, stats]) => {
+    const dayNames = WEEKDAYS.filter((dayName) => weekDaysByChef[name]?.has(dayName));
+    if (dayNames.includes('Friday')) stats.fridayCount += 1;
+    if (dayNames.includes('Saturday')) stats.saturdayCount += 1;
+    if (dayNames.includes('Sunday')) stats.sundayCount += 1;
+    stats.weightedBurden += dayNames.reduce((total, dayName) => total + (DAY_FAIRNESS_WEIGHTS[dayName] || 0), 0);
+
+    const previous = fairnessContext.previousWeekPatterns[name];
+    const saturdaySundayPair = dayNames.includes('Saturday') && dayNames.includes('Sunday');
+    const fullWeekend = dayNames.includes('Friday') && saturdaySundayPair;
+    const signature = dayNames.join('|');
+
+    if (previous?.saturdaySundayPair && saturdaySundayPair) stats.repeatedSaturdaySundayPairCount += 1;
+    if (previous?.fullWeekend && fullWeekend) stats.repeatedFullWeekendCount += 1;
+    if (previous?.signature && previous.signature === signature) stats.repeatedExactPatternCount += 1;
+
+    fairnessContext.previousWeekPatterns[name] = {
+      dayNames,
+      saturdaySundayPair,
+      fullWeekend,
+      signature
+    };
+  });
+
+  return Object.values(fairnessContext.stats).map((entry) => ({ ...entry }));
+}
+
+function getSectionCandidateBaseScore({ staff, section, dayName, ruleOverrides, gtDaysByChef, mioChefName }) {
+  const urgency = Math.max(getGtTargetForChef(staff.name, mioChefName) - (gtDaysByChef[staff.name] || 0), 0) * 2;
+  const mioWeekendBoost = staff.name === mioChefName && ['Saturday', 'Sunday'].includes(dayName) ? 10 : 0;
+  const passSenior = section === 'Pass' && PASS_DAYS.includes(dayName) && isSenior(staff) ? 120 : 0;
+  const passPref = section === 'Pass' && (staff.preferredSections || []).includes('Pass') ? 8 : 0;
+  return (getSectionScore(staff, section, ruleOverrides) * 10)
+    + getRoleBonus(staff, dayName)
+    + urgency
+    + mioWeekendBoost
+    + passSenior
+    + passPref
+    - getSoftRulePenalty(staff.name, dayName)
+    - (gtDaysByChef[staff.name] || 0);
+}
+
+function getExtraCandidateBaseScore({ staff, dayName, gtDaysByChef, mioChefName }) {
+  const urgency = Math.max(getGtTargetForChef(staff.name, mioChefName) - (gtDaysByChef[staff.name] || 0), 0);
+  const senior = isSenior(staff) ? 1 : 0;
+  return (senior * 100) + (urgency * 10) + getRoleBonus(staff, dayName);
+}
+
+function pickBestForSection({ section, dayName, candidates, selectedNames, ruleOverrides, gtDaysByChef, mioChefName, fairnessContext, currentWeekDaysByChef }) {
   const sectionCandidates = candidates
     .filter((staff) => !selectedNames.has(staff.name))
     .sort((a, b) => {
-      const urgencyA = Math.max(getGtTargetForChef(a.name, mioChefName) - (gtDaysByChef[a.name] || 0), 0) * 2;
-      const urgencyB = Math.max(getGtTargetForChef(b.name, mioChefName) - (gtDaysByChef[b.name] || 0), 0) * 2;
-      const mioWeekendBoostA = a.name === mioChefName && ['Saturday', 'Sunday'].includes(dayName) ? 10 : 0;
-      const mioWeekendBoostB = b.name === mioChefName && ['Saturday', 'Sunday'].includes(dayName) ? 10 : 0;
-      const passSeniorA = section === 'Pass' && PASS_DAYS.includes(dayName) && isSenior(a) ? 120 : 0;
-      const passSeniorB = section === 'Pass' && PASS_DAYS.includes(dayName) && isSenior(b) ? 120 : 0;
-      const passPrefA = section === 'Pass' && (a.preferredSections || []).includes('Pass') ? 8 : 0;
-      const passPrefB = section === 'Pass' && (b.preferredSections || []).includes('Pass') ? 8 : 0;
-      const crossWeekBiasA = getCrossWeekBias(a.name, priorGtDays, maxPrior);
-      const crossWeekBiasB = getCrossWeekBias(b.name, priorGtDays, maxPrior);
-
-      const scoreA = (getSectionScore(a, section, ruleOverrides) * 10)
-        + getRoleBonus(a, dayName)
-        + urgencyA
-        + mioWeekendBoostA
-        + passSeniorA
-        + passPrefA
-        + crossWeekBiasA
-        - getSoftRulePenalty(a.name, dayName)
-        - (gtDaysByChef[a.name] || 0);
-
-      const scoreB = (getSectionScore(b, section, ruleOverrides) * 10)
-        + getRoleBonus(b, dayName)
-        + urgencyB
-        + mioWeekendBoostB
-        + passSeniorB
-        + passPrefB
-        + crossWeekBiasB
-        - getSoftRulePenalty(b.name, dayName)
-        - (gtDaysByChef[b.name] || 0);
-
-      return scoreB - scoreA;
+      const scoreDiff = getSectionCandidateBaseScore({ staff: b, section, dayName, ruleOverrides, gtDaysByChef, mioChefName })
+        - getSectionCandidateBaseScore({ staff: a, section, dayName, ruleOverrides, gtDaysByChef, mioChefName });
+      if (scoreDiff !== 0) return scoreDiff;
+      return compareFairnessTieBreak(a, b, dayName, fairnessContext, currentWeekDaysByChef);
     });
 
   return sectionCandidates[0] || null;
 }
 
 function ensureSeniorCoverage({ assignments, dayName, candidates, selectedNames, ruleOverrides }) {
-  const hasSenior = [...selectedNames].some((name) => {
-    const staff = candidates.find((item) => item.name === name);
-    return isSenior(staff);
-  });
+  const hasSenior = [...selectedNames].some((name) => isSenior(candidates.find((item) => item.name === name)));
   if (hasSenior) return;
 
   const replacementSenior = candidates
@@ -250,7 +357,8 @@ function createDayPlan({
   mioChefName,
   forcedPassSeniorName,
   forcedChefName,
-  priorGtDays
+  fairnessContext,
+  currentWeekDaysByChef
 }) {
   if (requiredChefs < coreSections.length) return null;
   if (candidates.length < requiredChefs) return null;
@@ -288,7 +396,8 @@ function createDayPlan({
       ruleOverrides,
       gtDaysByChef,
       mioChefName,
-      priorGtDays
+      fairnessContext,
+      currentWeekDaysByChef
     });
     if (!best) return;
     assignments.push({ chef: best.name, section });
@@ -300,21 +409,13 @@ function createDayPlan({
   ensureSeniorCoverage({ assignments, dayName, candidates, selectedNames, ruleOverrides });
 
   while (selectedNames.size < requiredChefs) {
-    const maxPrior = maxPriorGtDays(priorGtDays);
     const extra = candidates
       .filter((staff) => !selectedNames.has(staff.name))
       .sort((a, b) => {
-        const urgencyA = Math.max(getGtTargetForChef(a.name, mioChefName) - (gtDaysByChef[a.name] || 0), 0);
-        const urgencyB = Math.max(getGtTargetForChef(b.name, mioChefName) - (gtDaysByChef[b.name] || 0), 0);
-        const seniorA = isSenior(a) ? 1 : 0;
-        const seniorB = isSenior(b) ? 1 : 0;
-        const crossWeekBiasA = getCrossWeekBias(a.name, priorGtDays, maxPrior);
-        const crossWeekBiasB = getCrossWeekBias(b.name, priorGtDays, maxPrior);
-        if (seniorB !== seniorA) return seniorB - seniorA;
-        if (urgencyB !== urgencyA) return urgencyB - urgencyA;
-        const biasA = crossWeekBiasA + getRoleBonus(a, dayName);
-        const biasB = crossWeekBiasB + getRoleBonus(b, dayName);
-        return biasB - biasA;
+        const scoreDiff = getExtraCandidateBaseScore({ staff: b, dayName, gtDaysByChef, mioChefName })
+          - getExtraCandidateBaseScore({ staff: a, dayName, gtDaysByChef, mioChefName });
+        if (scoreDiff !== 0) return scoreDiff;
+        return compareFairnessTieBreak(a, b, dayName, fairnessContext, currentWeekDaysByChef);
       })[0];
 
     if (!extra) return null;
@@ -324,7 +425,7 @@ function createDayPlan({
   const coreChefs = assignments.map((assignment) => assignment.chef);
   const breakfastChef = coreChefs
     .map((name) => state.staff.find((staff) => staff.name === name))
-    .filter((staff) => !!staff && staff.breakfastEligible)
+    .filter((staff) => staff && staff.breakfastEligible)
     .sort((a, b) => {
       const countA = breakfastCounts[a.name] || 0;
       const countB = breakfastCounts[b.name] || 0;
@@ -344,25 +445,23 @@ function createDayPlan({
 }
 
 export function buildRota(inputs, options = {}) {
-  const priorGtDays = options.priorGtDays || {};
   const state = getState();
   const dates = buildWeekDates(inputs.weekStart);
   const weekDateSet = new Set(dates.map((item) => item.date));
-  const ruleOverrides = { _availability: state.weeklyInputs.availability };
-  const annualLeaveHoursByChef = getAnnualLeaveHoursByChef(state, weekDateSet);
+  const availability = getAvailabilityEntries(inputs, state);
+  const ruleOverrides = { _availability: availability };
+  const annualLeaveHoursByChef = getAnnualLeaveHoursByChef(state.staff, availability, weekDateSet);
 
   const mioChefName = inputs.mioChef;
   const mioChef = state.staff.find((staff) => staff.name === mioChefName);
   const mioDays = getMioDayPlan(state, dates, mioChefName, ruleOverrides);
-  if (mioChefName && mioChef?.mioEligible) {
-    if (mioDays.size !== 3) {
-      return {
-        status: 'infeasible',
-        rota: [],
-        validation: [{ day: 'Overall', message: `${mioChefName}: cannot place exactly 3 MIO shifts due to availability/unavailability constraints.`, severity: 'bad' }],
-        summary: []
-      };
-    }
+  if (mioChefName && mioChef?.mioEligible && mioDays.size !== 3) {
+    return {
+      status: 'infeasible',
+      rota: [],
+      validation: [{ day: 'Overall', message: `${mioChefName}: cannot place exactly 3 MIO shifts due to availability/unavailability constraints.`, severity: 'bad' }],
+      summary: []
+    };
   }
 
   const mioGtDayPlanOptions = getMioGtDayPlanOptions(state, dates, mioChefName, mioDays, ruleOverrides);
@@ -377,21 +476,21 @@ export function buildRota(inputs, options = {}) {
 
   const attemptPlans = mioGtDayPlanOptions.length ? mioGtDayPlanOptions : [new Set()];
 
-  for (let i = 0; i < attemptPlans.length; i += 1) {
-    const mioGtDays = attemptPlans[i];
+  for (let attemptIndex = 0; attemptIndex < attemptPlans.length; attemptIndex += 1) {
+    const mioGtDays = attemptPlans[attemptIndex];
     const gtDaysByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, 0]));
     const mioDaysByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, 0]));
     const gtHoursByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, 0]));
     const mioHoursByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, 0]));
     const breakfastCounts = {};
+    const currentWeekDaysByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, new Set()]));
     const validation = [];
     const rota = [];
     const forcedSeniorPassByDay = chooseSeniorPassPlan({ state, dates, ruleOverrides, mioChefName, mioDays });
 
-    dates.forEach(({ dayName, date }) => {
+    for (const { dayName, date } of dates) {
       const requiredChefs = getRequiredChefCount(dayName, inputs, date);
       const coreSections = getCoreSections(dayName, inputs);
-
       const candidates = state.staff.filter((staff) => {
         if (gtDaysByChef[staff.name] >= getGtTargetForChef(staff.name, mioChefName)) return false;
         if (isUnavailable(staff, date, dayName, ruleOverrides)) return false;
@@ -413,12 +512,13 @@ export function buildRota(inputs, options = {}) {
         mioChefName,
         forcedPassSeniorName: forcedSeniorPassByDay[dayName],
         forcedChefName: mioGtDays.has(dayName) ? mioChefName : null,
-        priorGtDays
+        fairnessContext: options.fairnessContext || null,
+        currentWeekDaysByChef
       });
 
       if (!dayPlan) {
         validation.push({ day: dayName, message: 'Could not build a valid day plan with current hard constraints.', severity: 'bad' });
-        return;
+        break;
       }
 
       const breakfastAssignment = dayPlan.assignments.find((assignment) => assignment.section === 'Breakfast');
@@ -429,6 +529,7 @@ export function buildRota(inputs, options = {}) {
       dayPlan.chefs.forEach((chefName) => {
         gtDaysByChef[chefName] += 1;
         gtHoursByChef[chefName] += getHoursForDay(dayName);
+        currentWeekDaysByChef[chefName].add(dayName);
       });
 
       if (mioChef && mioChef.mioEligible && mioDays.has(dayName) && !isUnavailable(mioChef, date, dayName, ruleOverrides)) {
@@ -438,7 +539,7 @@ export function buildRota(inputs, options = {}) {
       }
 
       rota.push(dayPlan);
-    });
+    }
 
     const summary = state.staff.map((staff) => {
       const totalCreditedHours = (gtHoursByChef[staff.name] || 0) + (mioHoursByChef[staff.name] || 0) + (annualLeaveHoursByChef[staff.name] || 0);
@@ -455,7 +556,8 @@ export function buildRota(inputs, options = {}) {
       };
     });
 
-    const hardValidation = validateRotaHardRules({ rota, state, inputs, summary });
+    const validationInputs = { ...inputs, availability };
+    const hardValidation = validateRotaHardRules({ rota, state, inputs: validationInputs, summary });
     const hardFailures = hardValidation.filter((result) => !result.passed);
     const isFeasible = rota.length > 0 && !validation.some((item) => item.severity === 'bad') && hardFailures.length === 0;
 
@@ -468,7 +570,7 @@ export function buildRota(inputs, options = {}) {
       };
     }
 
-    if (i === attemptPlans.length - 1) {
+    if (attemptIndex === attemptPlans.length - 1) {
       return {
         status: 'infeasible',
         rota,
@@ -486,30 +588,61 @@ export function buildRota(inputs, options = {}) {
   };
 }
 
-function advanceWeekStart(weekStart, days) {
-  const parts = weekStart.split('-').map(Number);
-  const d = new Date(parts[0], parts[1] - 1, parts[2]);
-  d.setDate(d.getDate() + days);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+export function buildMultiWeekRota(inputs, legacyNumWeeks) {
+  const state = getState();
+  const numberOfWeeks = clampNumWeeks(inputs?.numWeeks ?? legacyNumWeeks ?? 1);
+  const weeklyMioSelections = inputs?.weeklyMioSelections || {};
+  const allAvailability = getAvailabilityEntries(inputs, state);
+  const allAdditionalChefRequirements = inputs?.additionalChefRequirements || state.weeklyInputs.additionalChefRequirements || [];
+  const fairnessApplied = numberOfWeeks > 1;
+  const fairnessContext = fairnessApplied ? createFairnessContext(state.staff) : null;
+  const weeks = [];
 
-export function buildMultiWeekRota(inputs, numWeeks) {
-  const weeks = Math.max(1, Math.min(8, Number(numWeeks) || 1));
-  const cumulativeGtDays = {};
-  const results = [];
+  for (let weekIndex = 0; weekIndex < numberOfWeeks; weekIndex += 1) {
+    const weekStart = getWeekStartAtOffset(inputs.weekStart, weekIndex);
+    const mioChef = numberOfWeeks === 1
+      ? (inputs.mioChef || weeklyMioSelections[weekStart] || '')
+      : (weeklyMioSelections[weekStart] || inputs.mioChef || '');
+    const weekInputs = {
+      ...inputs,
+      weekStart,
+      mioChef,
+      availability: filterAvailabilityForWeek(allAvailability, weekStart),
+      additionalChefRequirements: filterAdditionalChefRequirementsForWeek(allAdditionalChefRequirements, weekStart)
+    };
+    const weekResult = buildRota(weekInputs, { fairnessContext });
+    const weekRecord = {
+      weekIndex,
+      weekNumber: weekIndex + 1,
+      weekStart,
+      mioChef,
+      inputs: weekInputs,
+      ...weekResult
+    };
+    weeks.push(weekRecord);
 
-  for (let i = 0; i < weeks; i += 1) {
-    const weekStart = advanceWeekStart(inputs.weekStart, i * 7);
-    const weekInputs = { ...inputs, weekStart };
-    const result = buildRota(weekInputs, { priorGtDays: { ...cumulativeGtDays } });
-    results.push({ weekIndex: i, weekStart, ...result });
-
-    if (result.summary) {
-      result.summary.forEach((item) => {
-        cumulativeGtDays[item.name] = (cumulativeGtDays[item.name] || 0) + (item.gtDays || 0);
-      });
+    if (weekResult.status !== 'ok') {
+      return {
+        status: 'infeasible',
+        numberOfWeeks,
+        failedWeek: weekIndex + 1,
+        failedWeekStart: weekStart,
+        weeks,
+        validation: weekResult.validation || [],
+        fairnessApplied,
+        fairnessSummary: fairnessContext ? Object.values(fairnessContext.stats).map((entry) => ({ ...entry })) : []
+      };
     }
+
+    if (fairnessContext) updateFairnessContext(fairnessContext, weekResult.rota);
   }
 
-  return results;
+  return {
+    status: 'ok',
+    numberOfWeeks,
+    weeks,
+    validation: [],
+    fairnessApplied,
+    fairnessSummary: fairnessContext ? Object.values(fairnessContext.stats).map((entry) => ({ ...entry })) : []
+  };
 }

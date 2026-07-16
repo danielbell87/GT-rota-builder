@@ -1,17 +1,29 @@
-import { CHEF_ROLES } from './constants.js';
-import { getState, getDefaultWeek, resetStateToDefaults, syncCompatibilityViews, setWeekStart, setMioChef, setNumWeeks } from './state.js';
-import { normalizeWeekStart } from './utils.js';
-import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory, persistAllMioEligibility, persistAllStaffProfiles, persistMioEligibilityForChef, renamePersistedMioEligibility, renamePersistedStaffProfile } from './storage.js?v=20260714';
-import { addChef, createChefFromModalDom, updateChefField, updateChefSkill, removeChef, resetStaffToDefaults } from './staff.js';
+import { CHEF_ROLES, APP_BUILD_VERSION, CACHE_BUST_VERSION } from './constants.js';
+import { getState, getDefaultWeek, syncCompatibilityViews, setWeekStart, setMioChef, setNumWeeks, setWeeklyMioChef } from './state.js';
+import { normalizeWeekStart, getPlanningHorizon } from './utils.js';
+import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory, persistAllMioEligibility, persistAllStaffProfiles, persistMioEligibilityForChef, renamePersistedMioEligibility, renamePersistedStaffProfile } from './storage.js?v=20260716b';
+import { addChef, createChefFromModalDom, updateChefField, updateChefSkill, removeChef } from './staff.js';
 import { addAvailabilityEntry, removeAvailabilityEntry, updateAvailabilityField, addAdditionalChefRequest, updateAdditionalChefRequest, removeAdditionalChefRequest, validateAdditionalChefDate, validateAdditionalChefCount } from './weekly-inputs.js';
 import { renderAll, renderResultsPanel, renderAdditionalChefRequirements, renderAvailabilityTable, renderStaffTable, openAddChefModal, closeAddChefModal } from './render.js';
 import { upsertPublishedHistory } from './history.js';
 
 const state = getState();
 
+function requireElement(id) {
+  const element = document.getElementById(id);
+  if (!element) {
+    throw new Error(`GT Rota Builder is missing required element #${id}. index.html is the canonical entry page.`);
+  }
+  return element;
+}
+
 function persistState() {
   saveAppState(state);
   saveHistory(state.history);
+}
+
+function refreshAll() {
+  renderAll();
 }
 
 function loadInitialState() {
@@ -24,11 +36,12 @@ function loadInitialState() {
     state.weeklyInputs.weekStart = normalizeWeekStart(getDefaultWeek());
   }
 
-  document.getElementById('weekStart').value = normalizeWeekStart(state.weeklyInputs.weekStart || getDefaultWeek());
-  renderStaffTable();
-  document.getElementById('mioChef').value = state.weeklyInputs.mioChef || '';
-  const numWeeksEl = document.getElementById('numWeeks');
-  if (numWeeksEl) numWeeksEl.value = String(state.weeklyInputs.numWeeks || 1);
+  requireElement('weekStart').value = normalizeWeekStart(state.weeklyInputs.weekStart || getDefaultWeek());
+  requireElement('numWeeks').value = String(state.weeklyInputs.numWeeks || 1);
+  requireElement('mioChef').value = state.weeklyInputs.mioChef || '';
+
+  const buildVersionEl = document.getElementById('buildVersion');
+  if (buildVersionEl) buildVersionEl.textContent = APP_BUILD_VERSION;
 }
 
 function handleChefAdd() {
@@ -94,50 +107,40 @@ function updateStateFromControl(event) {
   }
 }
 
-// Track whether the additional-chef modal is in edit mode and which date is being edited
-let _editingReqDate = null;
+let editingReqDate = null;
 
 function openAdditionalChefModal(editDate) {
-  const state = getState();
-  const weekStart = state.weeklyInputs.weekStart;
-  // Build week date range for label and date constraints
-  const parts = weekStart.split('-').map(Number);
-  const monday = new Date(parts[0], parts[1] - 1, parts[2]);
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  const fmt = (d) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-  const minDate = weekStart;
-  const maxDate = `${sunday.getFullYear()}-${String(sunday.getMonth() + 1).padStart(2, '0')}-${String(sunday.getDate()).padStart(2, '0')}`;
+  const horizon = getPlanningHorizon(state.weeklyInputs.weekStart, state.weeklyInputs.numWeeks || 1);
+  const fmt = (date) => date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const dateInput = requireElement('additionalChefDate');
+  const countInput = requireElement('additionalChefCount');
+  const titleEl = requireElement('additionalChefModalTitle');
+  const saveBtn = requireElement('saveAdditionalChefBtn');
 
-  document.getElementById('additionalChefWeekRange').textContent = `Valid dates: ${fmt(monday)} – ${fmt(sunday)}`;
-  const dateInput = document.getElementById('additionalChefDate');
-  dateInput.min = minDate;
-  dateInput.max = maxDate;
-
-  const countInput = document.getElementById('additionalChefCount');
-  document.getElementById('additionalChefError').textContent = '';
-
-  const titleEl = document.getElementById('additionalChefModalTitle');
-  const saveBtn = document.getElementById('saveAdditionalChefBtn');
+  requireElement('additionalChefWeekRange').textContent = `Valid dates: ${fmt(horizon.startDate)} – ${fmt(horizon.endDate)}`;
+  dateInput.min = horizon.start;
+  dateInput.max = horizon.end;
+  requireElement('additionalChefError').textContent = '';
 
   if (editDate) {
-    // Edit mode
-    _editingReqDate = editDate;
-    const req = (state.weeklyInputs.additionalChefRequirements || []).find((r) => r.date === editDate);
+    editingReqDate = editDate;
+    const request = (state.weeklyInputs.additionalChefRequirements || []).find((entry) => entry.date === editDate);
     dateInput.value = editDate;
-    countInput.value = req ? req.count : 1;
+    countInput.value = request ? request.count : 1;
     titleEl.textContent = 'Edit additional chef';
     saveBtn.textContent = 'Save';
   } else {
-    // Add mode – default to first week date without an existing request
-    _editingReqDate = null;
-    const existing = new Set((state.weeklyInputs.additionalChefRequirements || []).map((r) => r.date));
-    let defaultDate = weekStart;
-    for (let i = 0; i < 7; i += 1) {
-      const d = new Date(monday);
-      d.setDate(monday.getDate() + i);
-      const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      if (!existing.has(ds)) { defaultDate = ds; break; }
+    editingReqDate = null;
+    const existing = new Set((state.weeklyInputs.additionalChefRequirements || []).map((entry) => entry.date));
+    let defaultDate = horizon.start;
+    for (let offset = 0; offset < (state.weeklyInputs.numWeeks || 1) * 7; offset += 1) {
+      const date = new Date(horizon.startDate);
+      date.setDate(horizon.startDate.getDate() + offset);
+      const dateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      if (!existing.has(dateString)) {
+        defaultDate = dateString;
+        break;
+      }
     }
     dateInput.value = defaultDate;
     countInput.value = 1;
@@ -145,33 +148,33 @@ function openAdditionalChefModal(editDate) {
     saveBtn.textContent = 'Add';
   }
 
-  document.getElementById('additionalChefModal').classList.add('open');
+  requireElement('additionalChefModal').classList.add('open');
   dateInput.focus();
 }
 
 function closeAdditionalChefModal() {
-  document.getElementById('additionalChefModal').classList.remove('open');
-  document.getElementById('addAdditionalChefBtn').focus();
-  _editingReqDate = null;
+  requireElement('additionalChefModal').classList.remove('open');
+  const trigger = document.getElementById('addAdditionalChefBtn');
+  if (trigger) trigger.focus();
+  editingReqDate = null;
 }
 
 function handleAdditionalChefSave() {
-  const state = getState();
-  const dateInput = document.getElementById('additionalChefDate');
-  const countInput = document.getElementById('additionalChefCount');
-  const errorEl = document.getElementById('additionalChefError');
+  const dateInput = requireElement('additionalChefDate');
+  const countInput = requireElement('additionalChefCount');
+  const errorEl = requireElement('additionalChefError');
 
-  const dateErr = validateAdditionalChefDate(dateInput.value, state.weeklyInputs.weekStart);
+  const dateErr = validateAdditionalChefDate(dateInput.value, state.weeklyInputs.weekStart, state.weeklyInputs.numWeeks || 1);
   if (dateErr) { errorEl.textContent = dateErr; dateInput.focus(); return; }
 
   const countErr = validateAdditionalChefCount(countInput.value);
   if (countErr) { errorEl.textContent = countErr; countInput.focus(); return; }
 
-  const count = parseInt(countInput.value, 10);
+  const count = Number.parseInt(countInput.value, 10);
   const date = dateInput.value;
 
-  if (_editingReqDate) {
-    updateAdditionalChefRequest(_editingReqDate, date, count);
+  if (editingReqDate) {
+    updateAdditionalChefRequest(editingReqDate, date, count);
   } else {
     addAdditionalChefRequest(date, count);
   }
@@ -183,53 +186,69 @@ function handleAdditionalChefSave() {
 }
 
 function attachEvents() {
-  document.getElementById('weekStart').addEventListener('change', (event) => {
+  requireElement('weekStart').addEventListener('change', (event) => {
     const normalized = normalizeWeekStart(event.target.value || getDefaultWeek());
     event.target.value = normalized;
     setWeekStart(normalized);
-    renderResultsPanel();
+    state.uiState.selectedResultWeekIndex = 0;
+    refreshAll();
     persistState();
   });
 
-  document.getElementById('mioChef').addEventListener('change', (event) => {
+  requireElement('mioChef').addEventListener('change', (event) => {
     setMioChef(event.target.value);
-    renderResultsPanel();
+    setWeeklyMioChef(state.weeklyInputs.weekStart, event.target.value);
+    refreshAll();
     persistState();
   });
 
-  document.getElementById('numWeeks').addEventListener('change', (event) => {
+  requireElement('numWeeks').addEventListener('change', (event) => {
     setNumWeeks(event.target.value);
-    renderResultsPanel();
+    state.uiState.selectedResultWeekIndex = 0;
+    refreshAll();
     persistState();
   });
 
-  document.getElementById('addAvailabilityBtn').addEventListener('click', () => {
+  requireElement('addAvailabilityBtn').addEventListener('click', () => {
     addAvailabilityEntry();
     renderAvailabilityTable();
     renderResultsPanel();
     persistState();
   });
 
-  document.getElementById('addChefBtn').addEventListener('click', openAddChefModal);
-  document.getElementById('cancelChefBtn').addEventListener('click', closeAddChefModal);
-  document.getElementById('saveChefBtn').addEventListener('click', handleChefAdd);
+  requireElement('addChefBtn').addEventListener('click', openAddChefModal);
+  requireElement('cancelChefBtn').addEventListener('click', closeAddChefModal);
+  requireElement('saveChefBtn').addEventListener('click', handleChefAdd);
 
-  document.getElementById('addAdditionalChefBtn').addEventListener('click', () => openAdditionalChefModal(null));
-  document.getElementById('cancelAdditionalChefBtn').addEventListener('click', closeAdditionalChefModal);
-  document.getElementById('saveAdditionalChefBtn').addEventListener('click', handleAdditionalChefSave);
+  requireElement('addAdditionalChefBtn').addEventListener('click', () => openAdditionalChefModal(null));
+  requireElement('cancelAdditionalChefBtn').addEventListener('click', closeAdditionalChefModal);
+  requireElement('saveAdditionalChefBtn').addEventListener('click', handleAdditionalChefSave);
 
-  // Close modals on Escape key
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
-      if (document.getElementById('additionalChefModal').classList.contains('open')) {
-        closeAdditionalChefModal();
-      } else if (document.getElementById('chefModal').classList.contains('open')) {
-        closeAddChefModal();
-      }
+    if (event.key !== 'Escape') return;
+    if (document.getElementById('additionalChefModal')?.classList.contains('open')) {
+      closeAdditionalChefModal();
+    } else if (document.getElementById('chefModal')?.classList.contains('open')) {
+      closeAddChefModal();
     }
   });
 
   document.addEventListener('change', (event) => {
+    if (event.target.matches('select[data-weekly-mio-start]')) {
+      const weekStart = event.target.getAttribute('data-weekly-mio-start');
+      setWeeklyMioChef(weekStart, event.target.value);
+      if (weekStart === state.weeklyInputs.weekStart) setMioChef(event.target.value);
+      renderResultsPanel();
+      persistState();
+      return;
+    }
+
+    if (event.target.id === 'resultsWeekSelect') {
+      state.uiState.selectedResultWeekIndex = Number.parseInt(event.target.value, 10) || 0;
+      renderResultsPanel();
+      return;
+    }
+
     updateStateFromControl(event);
     const isControl = event.target.dataset.field || event.target.dataset.skill || event.target.classList.contains('entry-chef') || event.target.classList.contains('entry-type') || event.target.classList.contains('entry-start-date') || event.target.classList.contains('entry-finish-date') || event.target.classList.contains('entry-notes');
     if (isControl) {
@@ -280,20 +299,47 @@ function attachEvents() {
       renderResultsPanel();
       persistState();
     }
+
+    const resultsTab = event.target.closest('button[data-results-week-index]');
+    if (resultsTab) {
+      state.uiState.selectedResultWeekIndex = Number.parseInt(resultsTab.getAttribute('data-results-week-index'), 10) || 0;
+      renderResultsPanel();
+    }
   });
 }
 
 function publishCurrentWeekIfNeeded() {
   if (!state.generatedRotas.current) return;
-  const result = upsertPublishedHistory(state, state.weeklyInputs.weekStart, state.generatedRotas.current.rota, state.generatedRotas.current.summary);
+  const result = upsertPublishedHistory(state, state.generatedRotas.current.weekStart || state.weeklyInputs.weekStart, state.generatedRotas.current.rota, state.generatedRotas.current.summary);
   if (result.updated || result.inserted) persistState();
 }
 
 export function bootstrapApp() {
   loadInitialState();
   attachEvents();
-  renderAll();
+  refreshAll();
   publishCurrentWeekIfNeeded();
+  if (typeof window !== 'undefined') {
+    window.__gtRotaBootstrap = {
+      ...(window.__gtRotaBootstrap || {}),
+      status: 'ok',
+      buildVersion: APP_BUILD_VERSION,
+      cacheBustVersion: CACHE_BUST_VERSION
+    };
+  }
 }
 
-bootstrapApp();
+try {
+  bootstrapApp();
+} catch (error) {
+  if (typeof window !== 'undefined') {
+    window.__gtRotaBootstrap = {
+      ...(window.__gtRotaBootstrap || {}),
+      status: 'error',
+      buildVersion: APP_BUILD_VERSION,
+      cacheBustVersion: CACHE_BUST_VERSION,
+      message: error.message
+    };
+  }
+  throw error;
+}

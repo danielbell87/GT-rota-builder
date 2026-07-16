@@ -16,7 +16,7 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 
 ## How to Use
 
-1. Open `GT Rota builder.html` or `index.html` in a web browser
+1. Open `index.html` in a web browser (or use the legacy `GT Rota builder.html` bookmark, which redirects to `index.html`)
 2. Enter the week commencing date
 3. Configure staff availability and skills
 4. Select a MIO (Management Improvement Officer) chef if needed
@@ -66,8 +66,8 @@ Requests are tied to a specific calendar date and do not carry across week chang
 
 ```
 gt-rota-builder/
-├── GT Rota builder.html      # Legacy-compatible entry page
-├── index.html                # Primary app entry page
+├── GT Rota builder.html      # Legacy redirect to index.html
+├── index.html                # Canonical app entry page
 ├── styles.css                # Shared stylesheet
 ├── SPECIFICATION.md
 ├── PROJECT_STATE.md
@@ -127,7 +127,7 @@ Example: `Aled prefers Pass; Charlie off Tuesday; Dan breakfast eligible`
 
 To modify the application:
 
-1. Open `GT Rota builder.html` or `index.html` in a text editor
+1. Open `index.html` in a text editor
 2. Edit modules under `js/`, defaults under `data/`, and styles in `styles.css`
 3. Reload in browser to test changes
 4. Commit changes to git: `git add . && git commit -m "description"`
@@ -140,7 +140,7 @@ Run the Python HTTP server to serve locally:
 python3 -m http.server 8000
 ```
 
-Then open `http://127.0.0.1:8000/GT%20Rota%20builder.html` in your browser.
+Then open `http://127.0.0.1:8000/index.html` in your browser.
 
 To run the browser test suite open:
 

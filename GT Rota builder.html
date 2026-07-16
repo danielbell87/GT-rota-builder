@@ -4,107 +4,17 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>GT Rota Builder</title>
-  <link rel="stylesheet" href="styles.css" />
+  <meta http-equiv="refresh" content="0; url=index.html" />
+  <script>
+    (function redirectToCanonical() {
+      const target = new URL('index.html', window.location.href);
+      target.search = window.location.search;
+      target.hash = window.location.hash;
+      window.location.replace(target.toString());
+    }());
+  </script>
 </head>
 <body>
-  <div class="wrap">
-    <div class="panel">
-      <h1>GT Rota Builder</h1>
-      <p>Generate a weekly rota from the workbook rules: fixed availability, annual leave, unavailability, breakfast cover, section skill scores, and the 4-day working cap.</p>
-      <div class="controls">
-        <span class="small">Changes update the rota live.</span>
-      </div>
-    </div>
-
-    <div class="panel">
-      <h2>Weekly inputs</h2>
-      <div class="grid">
-        <label>Week commencing<input id="weekStart" type="date" min="2024-01-01" step="7"></label>
-        <label>MIO chef<select id="mioChef"></select></label>
-      </div>
-
-      <h3 class="mb-6">Additional chefs</h3>
-      <p class="small mb-12">Request extra GT chefs for a specific date this week (e.g., private events, catering).</p>
-      <div id="additionalChefList"></div>
-      <div class="controls mt-10">
-        <button id="addAdditionalChefBtn" class="secondary">Add additional chef</button>
-      </div>
-
-      <h3 class="mb-6">Leave and unavailable</h3>
-      <table>
-        <thead>
-          <tr><th>Chef</th><th>Type</th><th>Start date</th><th>Finish date</th><th>Notes</th><th></th></tr>
-        </thead>
-        <tbody id="availabilityBody"></tbody>
-      </table>
-      <div class="controls mt-10">
-        <button id="addAvailabilityBtn" class="secondary">Add entry</button>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="controls space-between">
-        <h2 class="m-0">Staff</h2>
-        <button id="addChefBtn" class="secondary">Add chef</button>
-      </div>
-      <p class="small my-8">Use the strength values to show how strong each chef is on each section: 0 = not suitable, 1 = limited, 2 = capable, 3 = preferred.</p>
-      <table>
-        <thead>
-          <tr><th>Name</th><th>Role</th><th>MIO eligible</th><th>Weekend rule</th><th>Fixed day off</th><th></th></tr>
-        </thead>
-        <tbody id="staffBody"></tbody>
-      </table>
-    </div>
-
-    <div class="panel">
-      <h2>Generated rota</h2>
-      <div id="results"></div>
-    </div>
-  </div>
-
-  <div id="chefModal" class="modal">
-    <div class="modal-card">
-      <h3 class="mt-0">Add chef</h3>
-      <div class="grid">
-        <label>Name<input id="newChefName" type="text"></label>
-        <label>Role<select id="newChefRole"></select></label>
-        <label>MIO eligible<select id="newChefMio"><option value="true">Yes</option><option value="false">No</option></select></label>
-        <label>Weekend rule<select id="newChefWeekendRule"><option value="">None</option><option>Works weekends</option><option>Does not work weekends</option></select></label>
-        <label>Fixed day off<select id="newChefFixedDayOff"><option value="">None</option><option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option><option>Saturday</option><option>Sunday</option></select></label>
-      </div>
-      <h4 class="mb-8">Skills</h4>
-      <div class="grid">
-        <label>Pass<select data-skill="Pass" class="new-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
-        <label>Sauce<select data-skill="Sauce" class="new-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
-        <label>Garnish<select data-skill="Garnish" class="new-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
-        <label>Larder<select data-skill="Larder" class="new-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
-        <label>Pastry<select data-skill="Pastry" class="new-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
-      </div>
-      <div class="controls mt-14 justify-end">
-        <button id="cancelChefBtn" class="secondary">Cancel</button>
-        <button id="saveChefBtn">Save chef</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="additionalChefModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="additionalChefModalTitle">
-    <div class="modal-card">
-      <h3 class="mt-0" id="additionalChefModalTitle">Add additional chef</h3>
-      <p class="small mb-12" id="additionalChefWeekRange"></p>
-      <div class="grid">
-        <label>Date<input id="additionalChefDate" type="date"></label>
-        <label>Number of additional chefs
-          <input id="additionalChefCount" type="number" min="1" max="5" value="1">
-        </label>
-      </div>
-      <div id="additionalChefError" class="chef-req-error" role="alert" aria-live="polite"></div>
-      <div class="controls mt-14 justify-end">
-        <button id="cancelAdditionalChefBtn" class="secondary">Cancel</button>
-        <button id="saveAdditionalChefBtn">Add</button>
-      </div>
-    </div>
-  </div>
-
-  <script type="module" src="js/app.js"></script>
+  <p>Redirecting to <a href="index.html">index.html</a>…</p>
 </body>
 </html>
