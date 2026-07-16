@@ -2,8 +2,8 @@ export const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday',
 export const CORE_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry'];
 export const DISPLAY_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry', 'Float', 'Breakfast', 'MIO'];
 
-export const APP_BUILD_VERSION = '2026.07.16.2';
-export const CACHE_BUST_VERSION = '20260716b';
+export const APP_BUILD_VERSION = '2026.07.16.3';
+export const CACHE_BUST_VERSION = '20260716c';
 export const MIO_ROTATION_ORDER = ['Dan', 'Fred', 'Joel', 'Camilla', 'Brooke'];
 export const DAY_FAIRNESS_WEIGHTS = {
   Monday: 0,

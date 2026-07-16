@@ -18,6 +18,7 @@
 - Published history upsert (week+chef uniqueness)
 - Browser test page and modular tests
 - Date-based additional-chef requests via compact list and accessible modal dialog (v2.1.0)
+- Results UI now filters out successful validation checks from the main interface while preserving full validation arrays for technical details and tests
 
 ## Unfinished Features
 - Advanced multi-candidate optimization and explainability beyond current heuristics

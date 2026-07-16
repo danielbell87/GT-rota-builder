@@ -66,6 +66,13 @@ Senior-on-Pass preference is implemented as a strong soft rule:
 - If any hard rule fails, mark invalid and cap score
 - Provide explanation lines for penalties and trade-offs
 
+## Results Presentation
+- The normal results UI shows only failed hard rules and unmet soft preferences.
+- Successful hard/soft checks remain available for technical inspection but are hidden from the primary workflow.
+- Valid weeks use a compact success state instead of listing every passed rule.
+- Multi-week results include a compact per-week checks overview and keep week navigation above the selected rota.
+- Technical diagnostics use a collapsed details section and are excluded from print output.
+
 ## Publication Workflow
 When weekly status is `Published`, history records are upserted by `weekStart + chef` key in `js/history.js` to avoid duplicates.
 
