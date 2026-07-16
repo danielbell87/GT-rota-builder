@@ -1,4 +1,4 @@
-import { getState, getDefaultWeek, setWeekStart, setMioChef, setRuleChanges, setDailyOverrides, setAvailability } from './state.js';
+import { getState, getDefaultWeek, setWeekStart, setMioChef, setDailyOverrides, setAvailability } from './state.js';
 import { normalizeWeekStart } from './utils.js';
 
 export function collectWeeklyInputsFromDom() {
@@ -18,14 +18,12 @@ export function collectWeeklyInputsFromDom() {
   const normalizedWeek = normalizeWeekStart(rawWeek);
   setWeekStart(normalizedWeek);
   setMioChef(document.getElementById('mioChef').value);
-  setRuleChanges(document.getElementById('changes').value);
   setDailyOverrides(dailyOverrides);
   setAvailability(state.weeklyInputs.availability);
 
   return {
     weekStart: state.weeklyInputs.weekStart,
     mioChef: state.weeklyInputs.mioChef,
-    changes: state.weeklyInputs.changes,
     dailyOverrides: state.weeklyInputs.dailyOverrides,
     availability: state.weeklyInputs.availability,
     status: state.weeklyInputs.status

@@ -8,7 +8,6 @@ function setupBaseState() {
   const state = getState();
   state.weeklyInputs.weekStart = '2026-07-13';
   state.weeklyInputs.mioChef = 'Dan';
-  state.weeklyInputs.changes = '';
   state.weeklyInputs.availability = [];
   state.weeklyInputs.dailyOverrides = {};
   syncCompatibilityViews();
@@ -19,7 +18,6 @@ function runScenario(state, override = {}) {
   return buildRota({
     weekStart: state.weeklyInputs.weekStart,
     mioChef: override.mioChef ?? state.weeklyInputs.mioChef,
-    changes: state.weeklyInputs.changes,
     dailyOverrides: state.weeklyInputs.dailyOverrides,
     availability: state.weeklyInputs.availability
   });

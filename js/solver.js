@@ -1,7 +1,6 @@
 import { WEEKDAYS } from './constants.js';
 import { getState } from './state.js';
 import { parseLocalDate } from './utils.js';
-import { getRuleOverrides } from './rules.js';
 import {
   getSectionScore,
   getRoleBonus,
@@ -322,7 +321,7 @@ export function buildRota(inputs) {
   const state = getState();
   const dates = buildWeekDates(inputs.weekStart);
   const weekDateSet = new Set(dates.map((item) => item.date));
-  const ruleOverrides = { ...getRuleOverrides(inputs.changes), _availability: state.weeklyInputs.availability };
+  const ruleOverrides = { _availability: state.weeklyInputs.availability };
   const annualLeaveHoursByChef = getAnnualLeaveHoursByChef(state, weekDateSet);
 
   const mioChefName = inputs.mioChef;

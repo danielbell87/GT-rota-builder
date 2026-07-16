@@ -1,10 +1,10 @@
 import { CHEF_ROLES } from './constants.js';
-import { getState, getDefaultWeek, resetStateToDefaults, syncCompatibilityViews, setWeekStart, setMioChef, setRuleChanges } from './state.js';
+import { getState, getDefaultWeek, resetStateToDefaults, syncCompatibilityViews, setWeekStart, setMioChef } from './state.js';
 import { normalizeWeekStart } from './utils.js';
 import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory, persistAllMioEligibility, persistAllStaffProfiles, persistMioEligibilityForChef, renamePersistedMioEligibility, renamePersistedStaffProfile } from './storage.js?v=20260714';
 import { addChef, createChefFromModalDom, updateChefField, updateChefSkill, removeChef, resetStaffToDefaults } from './staff.js';
 import { addAvailabilityEntry, removeAvailabilityEntry, updateAvailabilityField, updateDailyOverrideFromRow } from './weekly-inputs.js';
-import { renderAll, renderResultsPanel, renderDailyOverrides, renderAvailabilityTable, renderStaffTable, openAddChefModal, closeAddChefModal, renderRuleSummary } from './render.js';
+import { renderAll, renderResultsPanel, renderDailyOverrides, renderAvailabilityTable, renderStaffTable, openAddChefModal, closeAddChefModal } from './render.js';
 import { upsertPublishedHistory } from './history.js';
 
 const state = getState();
@@ -25,7 +25,6 @@ function loadInitialState() {
   }
 
   document.getElementById('weekStart').value = normalizeWeekStart(state.weeklyInputs.weekStart || getDefaultWeek());
-  document.getElementById('changes').value = state.weeklyInputs.changes || '';
   renderStaffTable();
   document.getElementById('mioChef').value = state.weeklyInputs.mioChef || '';
 }
@@ -98,13 +97,6 @@ function attachEvents() {
     const normalized = normalizeWeekStart(event.target.value || getDefaultWeek());
     event.target.value = normalized;
     setWeekStart(normalized);
-    renderResultsPanel();
-    persistState();
-  });
-
-  document.getElementById('changes').addEventListener('input', (event) => {
-    setRuleChanges(event.target.value);
-    renderRuleSummary();
     renderResultsPanel();
     persistState();
   });

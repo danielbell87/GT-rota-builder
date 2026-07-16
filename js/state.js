@@ -12,7 +12,6 @@ const initialState = {
   weeklyInputs: {
     weekStart: defaultWeek,
     mioChef: '',
-    changes: '',
     status: 'Draft',
     dailyOverrides: {},
     availability: []
@@ -59,10 +58,6 @@ export function setWeekStart(weekStart) {
 
 export function setMioChef(name) {
   appState.weeklyInputs.mioChef = name;
-}
-
-export function setRuleChanges(text) {
-  appState.weeklyInputs.changes = text;
 }
 
 export function setStatus(status) {

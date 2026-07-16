@@ -1,6 +1,5 @@
 import { CHEF_ROLES, CORE_SECTIONS, DISPLAY_SECTIONS } from './constants.js';
 import { getState } from './state.js';
-import { getRuleOverrides } from './rules.js';
 import { formatDate, formatWeekCommencing } from './utils.js';
 import { getQualityScore, scoreSoftPreferences } from './scoring.js';
 import { buildRota } from './solver.js';
@@ -19,27 +18,6 @@ export function openAddChefModal() {
 
 export function closeAddChefModal() {
   document.getElementById('chefModal').classList.remove('open');
-}
-
-export function renderRuleSummary() {
-  const state = getState();
-  const summary = document.getElementById('ruleSummary');
-  const overrides = getRuleOverrides(state.weeklyInputs.changes || '');
-  const parts = [];
-  Object.entries(overrides.dayOffs).forEach(([name, days]) => {
-    parts.push(`${name} off ${days.join(', ')}`);
-  });
-  Object.entries(overrides.preferredSections).forEach(([name, sections]) => {
-    Object.entries(sections).forEach(([section, weight]) => {
-      parts.push(`${name} prefers ${section}${weight > 2 ? ' (strong)' : ''}`);
-    });
-  });
-  Object.entries(overrides.avoidedSections).forEach(([name, sections]) => {
-    Object.keys(sections).forEach((section) => {
-      parts.push(`${name} avoids ${section}`);
-    });
-  });
-  summary.textContent = parts.length ? `Parsed rules: ${parts.join(' · ')}` : 'No coded rules parsed yet.';
 }
 
 export function renderDailyOverrides() {
@@ -146,10 +124,6 @@ export function renderResultsPanel() {
   const softValidationCards = softValidation.map((item) => `<div class="pill ${item.passed ? 'good' : 'warn'}">${item.ruleId}: ${item.message}</div>`).join('');
 
   const ruleNotes = [];
-  const overrides = getRuleOverrides(inputs.changes);
-  if (Object.keys(overrides.dayOffs).length) {
-    ruleNotes.push(`Day-off rules: ${Object.entries(overrides.dayOffs).map(([name, days]) => `${name} off ${days.join(', ')}`).join('; ')}`);
-  }
   if (Object.keys(inputs.dailyOverrides || {}).length > 0) {
     const overrideText = Object.entries(inputs.dailyOverrides).map(([day, override]) => `${day}: +${override.extraChefs} (${override.eventName || 'event'})`).join(', ');
     ruleNotes.push(`Daily overrides: ${overrideText}`);
@@ -216,7 +190,6 @@ export function renderResultsPanel() {
 }
 
 export function renderAll() {
-  renderRuleSummary();
   renderDailyOverrides();
   renderStaffTable();
   renderAvailabilityTable();

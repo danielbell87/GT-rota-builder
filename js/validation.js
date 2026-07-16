@@ -1,13 +1,11 @@
 import { CORE_SECTIONS, ROLE_WEIGHT } from './constants.js';
 import { parseLocalDate } from './utils.js';
-import { getRuleOverrides } from './rules.js';
 import { isSenior } from './scoring.js';
 
 export function isUnavailable(staff, date, dayName, ruleOverrides) {
   const availability = ruleOverrides._availability || [];
   const weekendBlocked = staff.weekendRule === 'Does not work weekends' && ['Saturday', 'Sunday'].includes(dayName);
   const fixedOff = staff.fixedDayOff && staff.fixedDayOff.toLowerCase() === dayName.toLowerCase();
-  const dayOffFromRules = (ruleOverrides.dayOffs?.[staff.name] || []).includes(dayName);
   const leave = availability.some((entry) => {
     if (entry.chef !== staff.name) return false;
     if (entry.type !== 'Annual Leave' && entry.type !== 'Unavailable') return false;
@@ -18,7 +16,7 @@ export function isUnavailable(staff, date, dayName, ruleOverrides) {
     const finishDate = parseLocalDate(finish);
     return current >= startDate && current <= finishDate;
   });
-  return weekendBlocked || fixedOff || dayOffFromRules || leave;
+  return weekendBlocked || fixedOff || leave;
 }
 
 export function getWeeklyContextAdjustments(inputs, dayName) {
@@ -209,7 +207,6 @@ export function validateRotaHardRules({ rota, state, inputs, summary }) {
 export function validateRotaSoftRules({ rota, state, inputs }) {
   const results = [];
   const ruleOverrides = {
-    ...(getRuleOverrides(inputs?.changes || '')),
     _availability: state?.weeklyInputs?.availability || []
   };
 

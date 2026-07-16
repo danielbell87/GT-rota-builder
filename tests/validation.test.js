@@ -7,7 +7,6 @@ function setupState() {
   const state = getState();
   state.weeklyInputs.weekStart = '2026-07-13';
   state.weeklyInputs.mioChef = 'Dan';
-  state.weeklyInputs.changes = '';
   state.weeklyInputs.availability = [];
   state.weeklyInputs.dailyOverrides = {};
   syncCompatibilityViews();
@@ -19,7 +18,6 @@ export async function runValidationTests(assert) {
   const result = buildRota({
     weekStart: state.weeklyInputs.weekStart,
     mioChef: state.weeklyInputs.mioChef,
-    changes: '',
     dailyOverrides: {},
     availability: []
   });
@@ -74,7 +72,6 @@ export async function runValidationTests(assert) {
   const rerun = buildRota({
     weekStart: state.weeklyInputs.weekStart,
     mioChef: state.weeklyInputs.mioChef,
-    changes: '',
     dailyOverrides: {},
     availability: state.weeklyInputs.availability
   });
