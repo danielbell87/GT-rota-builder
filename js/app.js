@@ -1,6 +1,6 @@
 import { CHEF_ROLES } from './constants.js';
 import { getState, getDefaultWeek, syncCompatibilityViews, setWeekStart, setMioChef, setNumWeeks } from './state.js';
-import { getPlanningHorizon, normalizeWeekStart, parseLocalDate } from './utils.js';
+import { addDays, getPlanningHorizon, normalizeWeekStart, parseLocalDate } from './utils.js';
 import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory, persistAllMioEligibility, persistAllStaffProfiles, persistMioEligibilityForChef, renamePersistedMioEligibility, renamePersistedStaffProfile } from './storage.js?v=20260714';
 import { addChef, createChefFromModalDom, updateChefField, updateChefSkill, removeChef } from './staff.js';
 import { addAvailabilityEntry, removeAvailabilityEntry, updateAvailabilityField, addAdditionalChefRequest, updateAdditionalChefRequest, removeAdditionalChefRequest, validateAdditionalChefDateForHorizon, validateAdditionalChefCount } from './weekly-inputs.js';
@@ -8,8 +8,6 @@ import { renderAll, renderResultsPanel, renderAdditionalChefRequirements, render
 import { upsertPublishedHistory } from './history.js';
 
 const state = getState();
-const MS_PER_DAY = 1000 * 60 * 60 * 24;
-
 function persistState() {
   saveAppState(state);
   saveHistory(state.history);
@@ -131,7 +129,7 @@ function updateStateFromControl(event) {
 let editingRequirementDate = null;
 
 function openAdditionalChefModal(editDate) {
-  const { startDate, endDate } = getPlanningHorizon(state.weeklyInputs.weekStart, state.weeklyInputs.numWeeks || 1);
+  const { startDate, endDate, weekStarts } = getPlanningHorizon(state.weeklyInputs.weekStart, state.weeklyInputs.numWeeks || 1);
   const start = parseLocalDate(startDate);
   const end = parseLocalDate(endDate);
   const rangeEl = getElement('additionalChefWeekRange');
@@ -160,11 +158,8 @@ function openAdditionalChefModal(editDate) {
     editingRequirementDate = null;
     const existingDates = new Set((state.weeklyInputs.additionalChefRequirements || []).map((item) => item.date));
     let defaultDate = startDate;
-    const spanDays = Math.floor((end - start) / MS_PER_DAY);
-    for (let index = 0; index <= spanDays; index += 1) {
-      const nextDate = new Date(start);
-      nextDate.setDate(start.getDate() + index);
-      const candidate = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')}`;
+    const planningDates = weekStarts.flatMap((weekStart) => Array.from({ length: 7 }, (_, offset) => addDays(weekStart, offset)));
+    for (const candidate of planningDates) {
       if (!existingDates.has(candidate)) {
         defaultDate = candidate;
         break;

@@ -89,7 +89,8 @@ function getMioDayPlan(state, dates, mioChefName, ruleOverrides) {
 
   if (selected.length < 3) {
     MIO_FALLBACK_DAYS.forEach((dayName) => {
-      if (selected.length >= 3 || selected.includes(dayName)) return;
+      if (selected.length >= 3) return;
+      if (selected.includes(dayName)) return;
       const date = dates.find((item) => item.dayName === dayName);
       if (!date) return;
       if (!isUnavailable(staff, date.date, dayName, ruleOverrides)) selected.push(dayName);
@@ -410,7 +411,8 @@ function createDayPlan({
   currentWeekAttendance,
   fairnessEnabled
 }) {
-  if (requiredChefs < coreSections.length || candidates.length < requiredChefs) return null;
+  if (requiredChefs < coreSections.length) return null;
+  if (candidates.length < requiredChefs) return null;
 
   const assignments = [];
   const selectedNames = new Set();
