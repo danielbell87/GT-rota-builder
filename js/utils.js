@@ -66,9 +66,32 @@ export function formatCompactWeekRange(weekStart) {
   const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
   const startLabel = start.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
   if (sameMonth) {
-    return `${start.getDate()}-${end.getDate()} ${end.toLocaleDateString('en-GB', { month: 'long' })}`;
+    return `${start.getDate()}–${end.getDate()} ${end.toLocaleDateString('en-GB', { month: 'long' })}`;
   }
-  return `${startLabel}-${end.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}`;
+  return `${startLabel}–${end.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}`;
+}
+
+export function formatLongWeekRange(weekStart) {
+  const start = parseLocalDate(normalizeWeekStart(weekStart));
+  const end = addDays(start, 6);
+  const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
+  const startLabel = start.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
+  const endLabel = end.toLocaleDateString('en-GB', sameMonth ? { day: 'numeric', month: 'long', year: 'numeric' } : { day: 'numeric', month: 'long', year: 'numeric' });
+  if (sameMonth) {
+    return `${start.getDate()} ${start.toLocaleDateString('en-GB', { month: 'long' })} – ${endLabel}`;
+  }
+  return `${startLabel} – ${endLabel}`;
+}
+
+export function formatShortWeekRange(weekStart) {
+  const start = parseLocalDate(normalizeWeekStart(weekStart));
+  const end = addDays(start, 6);
+  const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
+  const startLabel = start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  if (sameMonth) {
+    return `${start.getDate()}–${end.getDate()} ${end.toLocaleDateString('en-GB', { month: 'short' })}`;
+  }
+  return `${startLabel}–${end.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
 }
 
 export function formatPlanningHorizonLabel(weekStart, numWeeks = 1) {

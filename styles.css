@@ -93,6 +93,11 @@ button.danger {
   color: #fff;
 }
 
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .controls {
   display: flex;
   flex-wrap: wrap;
@@ -409,14 +414,87 @@ th {
   margin: 16px 0 12px;
 }
 
+.week-navigation-panel {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid #2f4662;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(77, 200, 255, 0.12), rgba(11, 20, 34, 0.95));
+}
+
+.week-navigation-kicker,
+.week-navigation-meta,
+.week-panel-meta {
+  margin: 0;
+}
+
+.week-navigation-kicker {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.week-navigation-title {
+  margin: 8px 0 6px;
+}
+
+.week-navigation-meta,
+.week-panel-meta {
+  font-size: 14px;
+  color: #d7e5f5;
+}
+
+.week-navigation-controls {
+  display: grid;
+  grid-template-columns: auto minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin-top: 16px;
+}
+
+.week-nav-button {
+  min-width: 140px;
+}
+
+.results-week-select-label {
+  width: 100%;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.results-week-select-label select {
+  width: 100%;
+}
+
+.week-navigation-secondary {
+  margin-top: 12px;
+}
+
 .week-tab {
   background: #22324a;
   color: var(--text);
+  border: 1px solid #355072;
 }
 
 .week-tab.active {
   background: var(--accent);
   color: #072235;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(77, 200, 255, 0.22);
+}
+
+.week-tab[aria-selected="true"] {
+  background: var(--accent);
+  color: #072235;
+}
+
+.week-tab:focus-visible,
+.week-nav-button:focus-visible,
+.results-week-select-label select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .week-panels {
@@ -454,6 +532,14 @@ th {
   color: var(--accent);
 }
 
+.multi-week-panel-header {
+  margin-bottom: 14px;
+}
+
+.week-panels.show-all-weeks .week-panel[hidden] {
+  display: block !important;
+}
+
 @media print {
   body {
     background: #fff;
@@ -469,6 +555,24 @@ th {
   button,
   .modal {
     display: none !important;
+  }
+
+  .week-navigation-panel {
+    display: none !important;
+  }
+
+  .week-panel[hidden] {
+    display: block !important;
+  }
+
+  .week-panel {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .week-panel + .week-panel {
+    break-before: page;
+    page-break-before: always;
   }
 }
 
@@ -497,5 +601,16 @@ th {
     flex-direction: column;
     gap: 6px;
     margin-top: 16px;
+  }
+
+  .week-navigation-controls {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .week-nav-button,
+  .results-week-select-label,
+  .results-week-select-label select {
+    width: 100%;
   }
 }

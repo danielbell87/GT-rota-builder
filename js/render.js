@@ -5,6 +5,8 @@ import {
   formatWeekCommencing,
   parseLocalDate,
   formatCompactWeekRange,
+  formatLongWeekRange,
+  formatShortWeekRange,
   getPlanningHorizon,
   formatPlanningHorizonLabel,
   getWeekStartAtOffset
@@ -310,53 +312,146 @@ function getInfeasibleMessage(numWeeks) {
     : '<div class="pill bad">No feasible rota could be generated for this week with current hard constraints.</div>';
 }
 
-export function renderResultsPanel() {
-  const state = getState();
-  const inputs = collectWeeklyInputsFromDom();
-  const container = getRequiredElement('results');
+function buildMultiWeekCacheKey(state, inputs) {
+  return JSON.stringify({
+    staff: state.staff,
+    settings: state.settings,
+    inputs: {
+      ...inputs,
+      weeklyMioSelections: { ...(inputs.weeklyMioSelections || {}) }
+    }
+  });
+}
 
-  let overallResult;
+function getOverallResult(state, inputs) {
   if ((inputs.numWeeks || 1) === 1) {
+    state.generatedRotas.multiWeek = null;
+    state.generatedRotas.multiWeekKey = '';
     const solveResult = buildRota(inputs);
-    overallResult = {
+    return {
       status: solveResult.status,
       numberOfWeeks: 1,
       weeks: [{ weekIndex: 0, weekNumber: 1, weekStart: inputs.weekStart, mioChef: inputs.mioChef, inputs, ...solveResult }],
       fairnessApplied: false,
       fairnessSummary: []
     };
-  } else {
-    overallResult = buildMultiWeekRota({
-      ...inputs,
-      weeklyMioSelections: { ...(state.weeklyInputs.weeklyMioSelections || {}) }
-    });
   }
 
-  const weeks = overallResult.weeks || [];
-  const firstOk = weeks.find((week) => week.status === 'ok');
-  state.generatedRotas.current = firstOk || null;
+  const cacheKey = buildMultiWeekCacheKey(state, inputs);
+  if (state.generatedRotas.multiWeek && state.generatedRotas.multiWeekKey === cacheKey) {
+    return state.generatedRotas.multiWeek;
+  }
 
-  if (firstOk) {
-    const firstHardValidation = validateRotaHardRules({ rota: firstOk.rota, state, inputs: firstOk.inputs, summary: firstOk.summary });
-    state.uiState.validation = firstHardValidation;
-    state.uiState.softScore = scoreSoftPreferences({ state, rota: firstOk.rota, hardValidation: firstHardValidation });
+  const overallResult = buildMultiWeekRota({
+    ...inputs,
+    weeklyMioSelections: { ...(state.weeklyInputs.weeklyMioSelections || {}) }
+  });
+  state.generatedRotas.multiWeek = overallResult;
+  state.generatedRotas.multiWeekKey = cacheKey;
+
+  if (typeof window !== 'undefined') {
+    const previous = window.__gtRotaBootstrap || {};
+    const metrics = previous.metrics || {};
+    window.__gtRotaBootstrap = {
+      ...previous,
+      metrics: {
+        ...metrics,
+        buildMultiWeekCalls: (metrics.buildMultiWeekCalls || 0) + 1
+      }
+    };
+  }
+
+  return overallResult;
+}
+
+function renderMultiWeekNavigation(weeks, activeWeekIndex, showAllWeeks) {
+  const activeWeek = weeks[activeWeekIndex] || weeks[0];
+  const previousDisabled = activeWeekIndex <= 0;
+  const nextDisabled = activeWeekIndex >= weeks.length - 1;
+  const viewingLabel = showAllWeeks
+    ? `Viewing all ${weeks.length} week${weeks.length === 1 ? '' : 's'}`
+    : `Viewing Week ${activeWeekIndex + 1} of ${weeks.length}`;
+  const dateRange = activeWeek ? formatLongWeekRange(activeWeek.weekStart) : '';
+  const activeMio = escapeHtml(activeWeek?.mioChef || 'None');
+  const tabs = weeks.map((week, index) => `
+    <button
+      id="results-week-tab-${index}"
+      class="week-tab ${index === activeWeekIndex ? 'active' : ''}"
+      type="button"
+      role="tab"
+      aria-selected="${index === activeWeekIndex ? 'true' : 'false'}"
+      aria-controls="results-week-panel-${index}"
+      tabindex="${index === activeWeekIndex ? '0' : '-1'}"
+      data-results-week-index="${index}"
+    >Week ${index + 1} · ${escapeHtml(formatShortWeekRange(week.weekStart))}</button>`).join('');
+  const dropdownOptions = weeks.map((week, index) => `<option value="${index}" ${index === activeWeekIndex ? 'selected' : ''}>Week ${index + 1} · ${escapeHtml(formatCompactWeekRange(week.weekStart))}</option>`).join('');
+
+  return `
+    <section class="week-navigation-panel" aria-label="Multi-week rota navigation">
+      <p class="week-navigation-kicker">Multi-week rota</p>
+      <h3 class="week-navigation-title">${viewingLabel}</h3>
+      <p class="week-navigation-meta">${escapeHtml(dateRange)}</p>
+      <p class="week-navigation-meta">MIO chef: ${activeMio}</p>
+      <div class="week-navigation-controls">
+        <button type="button" class="secondary week-nav-button" data-results-week-previous ${previousDisabled ? 'disabled' : ''}>Previous week</button>
+        <label class="mobile-only results-week-select-label" for="resultsWeekSelect">Choose week
+          <select id="resultsWeekSelect" ${showAllWeeks ? '' : `aria-controls="results-week-panel-${activeWeekIndex}"`}>${dropdownOptions}</select>
+        </label>
+        <button type="button" class="secondary week-nav-button" data-results-week-next ${nextDisabled ? 'disabled' : ''}>Next week</button>
+      </div>
+      <div class="desktop-only week-tabs" role="tablist" aria-label="Generated weeks">${tabs}</div>
+      <div class="week-navigation-secondary">
+        <button type="button" class="secondary" ${showAllWeeks ? 'data-results-view-one' : 'data-results-view-all'}>${showAllWeeks ? 'View one week at a time' : 'View all weeks'}</button>
+      </div>
+    </section>`;
+}
+
+export function renderResultsPanel() {
+  const state = getState();
+  const inputs = collectWeeklyInputsFromDom();
+  const container = getRequiredElement('results');
+  const overallResult = getOverallResult(state, inputs);
+
+  const weeks = overallResult.weeks || [];
+  const activeWeekIndex = Math.max(0, Math.min(state.uiState.selectedResultWeekIndex || 0, Math.max(weeks.length - 1, 0)));
+  state.uiState.selectedResultWeekIndex = activeWeekIndex;
+  const activeWeek = weeks[activeWeekIndex] || null;
+  const showAllWeeks = overallResult.numberOfWeeks > 1 && !!state.uiState.showAllResultWeeks;
+  state.generatedRotas.current = activeWeek;
+
+  if (activeWeek?.status === 'ok') {
+    const hardValidation = validateRotaHardRules({ rota: activeWeek.rota, state, inputs: activeWeek.inputs, summary: activeWeek.summary });
+    state.uiState.validation = hardValidation;
+    state.uiState.softScore = scoreSoftPreferences({ state, rota: activeWeek.rota, hardValidation });
   } else {
     state.uiState.validation = [];
     state.uiState.softScore = null;
   }
 
-  const activeWeekIndex = Math.max(0, Math.min(state.uiState.selectedResultWeekIndex || 0, Math.max(weeks.length - 1, 0)));
-  state.uiState.selectedResultWeekIndex = activeWeekIndex;
-
   if (overallResult.numberOfWeeks === 1) {
     const week = weeks[0];
+    state.uiState.showAllResultWeeks = false;
     container.innerHTML = week.status === 'infeasible' ? getInfeasibleMessage(1) : renderWeekHtml(week, state, week.inputs);
   } else {
-    const tabs = weeks.map((week, index) => `<button class="week-tab ${index === activeWeekIndex ? 'active' : ''}" data-results-week-index="${index}">Week ${index + 1}</button>`).join('');
-    const dropdownOptions = weeks.map((week, index) => `<option value="${index}" ${index === activeWeekIndex ? 'selected' : ''}>Week ${index + 1} · ${formatCompactWeekRange(week.weekStart)}</option>`).join('');
     const panels = weeks.map((week, index) => {
       const content = week.status === 'infeasible' ? getInfeasibleMessage(overallResult.numberOfWeeks) : renderWeekHtml(week, state, week.inputs);
-      return `<section class="week-panel ${index === activeWeekIndex ? '' : 'hidden'}" data-week-panel="${index}"><h3 class="multi-week-heading">Week ${index + 1} — ${formatWeekCommencing(week.weekStart)}</h3>${content}</section>`;
+      const isHidden = !showAllWeeks && index !== activeWeekIndex;
+      return `
+        <section
+          id="results-week-panel-${index}"
+          class="week-panel multi-week-section"
+          data-week-panel="${index}"
+          role="tabpanel"
+          aria-labelledby="results-week-tab-${index}"
+          ${isHidden ? 'hidden' : ''}
+        >
+          <div class="multi-week-panel-header">
+            <h3 class="multi-week-heading" tabindex="-1" data-week-panel-heading>Week ${index + 1} of ${weeks.length}</h3>
+            <p class="week-panel-meta">${escapeHtml(formatLongWeekRange(week.weekStart))}</p>
+            <p class="week-panel-meta">MIO chef: ${escapeHtml(week.mioChef || 'None')}</p>
+          </div>
+          ${content}
+        </section>`;
     }).join('');
     const overallBanner = overallResult.status === 'infeasible'
       ? `<div class="pill bad">Overall result infeasible: Week ${overallResult.failedWeek} (${formatWeekCommencing(overallResult.failedWeekStart)}) failed, so later weeks were not generated.</div>`
@@ -365,9 +460,8 @@ export function renderResultsPanel() {
     container.innerHTML = `
       ${overallBanner}
       ${renderFairnessSummary(overallResult.fairnessSummary)}
-      <div class="desktop-only week-tabs" role="tablist">${tabs}</div>
-      <label class="mobile-only">Week<select id="resultsWeekSelect">${dropdownOptions}</select></label>
-      <div class="week-panels">${panels}</div>`;
+      ${renderMultiWeekNavigation(weeks, activeWeekIndex, showAllWeeks)}
+      <div class="week-panels ${showAllWeeks ? 'show-all-weeks' : 'single-week-view'}">${panels}</div>`;
   }
 
   if (typeof window !== 'undefined') {
@@ -379,8 +473,14 @@ export function renderResultsPanel() {
         overallStatus: overallResult.status,
         fairnessApplied: !!overallResult.fairnessApplied,
         visibleWeekCount: weeks.length,
+        visiblePanelCount: showAllWeeks ? weeks.length : (weeks.length ? 1 : 0),
         weekStarts: weeks.map((week) => week.weekStart),
-        weekMioChefs: weeks.map((week) => week.mioChef)
+        weekMioChefs: weeks.map((week) => week.mioChef),
+        currentWeekIndex: activeWeekIndex,
+        currentWeekStart: state.generatedRotas.current?.weekStart || null,
+        currentMioChef: state.generatedRotas.current?.mioChef || null,
+        storedWeekCount: state.generatedRotas.multiWeek?.weeks?.length || 0,
+        showAllWeeks
       }
     };
   }

@@ -26,6 +26,39 @@ function refreshAll() {
   renderAll();
 }
 
+function focusSelectedWeekPanel(index) {
+  const heading = document.querySelector(`[data-week-panel="${index}"] [data-week-panel-heading]`);
+  heading?.focus();
+}
+
+function focusSelectedWeekTab(index) {
+  const tab = document.querySelector(`button[data-results-week-index="${index}"]`);
+  tab?.focus();
+}
+
+function updateSelectedResultWeek(index, options = {}) {
+  const weeks = state.generatedRotas.multiWeek?.weeks || [];
+  const fallbackMax = Math.max((state.weeklyInputs.numWeeks || 1) - 1, 0);
+  const maxIndex = Math.max(weeks.length - 1, fallbackMax, 0);
+  const nextIndex = Math.max(0, Math.min(Number.parseInt(index, 10) || 0, maxIndex));
+  state.uiState.selectedResultWeekIndex = nextIndex;
+  state.uiState.showAllResultWeeks = false;
+  renderResultsPanel();
+  if (options.focus === 'tab') {
+    focusSelectedWeekTab(nextIndex);
+  } else if (options.focus !== 'none') {
+    focusSelectedWeekPanel(nextIndex);
+  }
+  persistState();
+}
+
+function setViewAllResultWeeks(enabled) {
+  state.uiState.showAllResultWeeks = !!enabled;
+  renderResultsPanel();
+  focusSelectedWeekPanel(state.uiState.selectedResultWeekIndex || 0);
+  persistState();
+}
+
 function loadInitialState() {
   migrateStorageIfNeeded();
   loadAppState();
@@ -244,8 +277,7 @@ function attachEvents() {
     }
 
     if (event.target.id === 'resultsWeekSelect') {
-      state.uiState.selectedResultWeekIndex = Number.parseInt(event.target.value, 10) || 0;
-      renderResultsPanel();
+      updateSelectedResultWeek(event.target.value);
       return;
     }
 
@@ -302,9 +334,52 @@ function attachEvents() {
 
     const resultsTab = event.target.closest('button[data-results-week-index]');
     if (resultsTab) {
-      state.uiState.selectedResultWeekIndex = Number.parseInt(resultsTab.getAttribute('data-results-week-index'), 10) || 0;
-      renderResultsPanel();
+      updateSelectedResultWeek(resultsTab.getAttribute('data-results-week-index'), { focus: 'tab' });
+      return;
     }
+
+    const previousWeekButton = event.target.closest('button[data-results-week-previous]');
+    if (previousWeekButton) {
+      updateSelectedResultWeek((state.uiState.selectedResultWeekIndex || 0) - 1);
+      return;
+    }
+
+    const nextWeekButton = event.target.closest('button[data-results-week-next]');
+    if (nextWeekButton) {
+      updateSelectedResultWeek((state.uiState.selectedResultWeekIndex || 0) + 1);
+      return;
+    }
+
+    const viewAllButton = event.target.closest('button[data-results-view-all]');
+    if (viewAllButton) {
+      setViewAllResultWeeks(true);
+      return;
+    }
+
+    const viewOneButton = event.target.closest('button[data-results-view-one]');
+    if (viewOneButton) {
+      setViewAllResultWeeks(false);
+      return;
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    const resultsTab = event.target.closest('button[data-results-week-index]');
+    if (!resultsTab) return;
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const weeks = state.generatedRotas.multiWeek?.weeks || [];
+    if (!weeks.length) return;
+    if (event.key === 'Home') {
+      updateSelectedResultWeek(0, { focus: 'tab' });
+      return;
+    }
+    if (event.key === 'End') {
+      updateSelectedResultWeek(weeks.length - 1, { focus: 'tab' });
+      return;
+    }
+    const delta = event.key === 'ArrowRight' ? 1 : -1;
+    updateSelectedResultWeek((state.uiState.selectedResultWeekIndex || 0) + delta, { focus: 'tab' });
   });
 }
 

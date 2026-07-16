@@ -25,14 +25,17 @@ function buildInitialState() {
     },
     weeklyInputs: buildDefaultWeeklyInputs(),
     generatedRotas: {
-      current: null
+      current: null,
+      multiWeek: null,
+      multiWeekKey: ''
     },
     history: [],
     uiState: {
       validation: [],
       softScore: null,
       lastError: '',
-      selectedResultWeekIndex: 0
+      selectedResultWeekIndex: 0,
+      showAllResultWeeks: false
     },
     availability: [],
     dailyOverrides: {}
