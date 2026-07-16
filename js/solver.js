@@ -33,8 +33,6 @@ function getGtTargetForChef(chefName, mioChefName) {
 }
 
 function getCrossWeekBias(name, priorGtDays, maxPrior) {
-  // Returns 0 when no prior history exists (maxPrior === 0), which is the correct default.
-  if (maxPrior === 0) return 0;
   return (maxPrior - ((priorGtDays || {})[name] || 0)) * CROSS_WEEK_BIAS_WEIGHT;
 }
 
