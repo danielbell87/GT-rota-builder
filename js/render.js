@@ -193,8 +193,17 @@ export function renderResultsPanel() {
   // Keep current rota pointing to the first feasible week (backward compatibility)
   const firstOk = weekResults.find((r) => r.status === 'ok');
   state.generatedRotas.current = firstOk || weekResults[0];
-  state.uiState.validation = [];
-  state.uiState.softScore = null;
+
+  // Populate uiState with first feasible week's validation for external consumers
+  if (firstOk) {
+    const firstOkInputs = { ...inputs, weekStart: firstOk.weekStart };
+    const firstHardValidation = validateRotaHardRules({ rota: firstOk.rota, state, inputs: firstOkInputs, summary: firstOk.summary });
+    state.uiState.validation = firstHardValidation;
+    state.uiState.softScore = scoreSoftPreferences({ state, rota: firstOk.rota, hardValidation: firstHardValidation });
+  } else {
+    state.uiState.validation = [];
+    state.uiState.softScore = null;
+  }
 
   if (numWeeks === 1) {
     const solveResult = weekResults[0];
@@ -203,9 +212,6 @@ export function renderResultsPanel() {
       return;
     }
     const weekInputs = { ...inputs, weekStart: solveResult.weekStart };
-    const hardValidation = validateRotaHardRules({ rota: solveResult.rota, state, inputs: weekInputs, summary: solveResult.summary });
-    state.uiState.validation = hardValidation;
-    state.uiState.softScore = scoreSoftPreferences({ state, rota: solveResult.rota, hardValidation });
     container.innerHTML = renderWeekHtml(solveResult, state, weekInputs);
     return;
   }

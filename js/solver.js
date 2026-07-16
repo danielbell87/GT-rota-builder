@@ -24,8 +24,22 @@ const MIO_GT_FALLBACK_DAYS = ['Thursday', 'Friday', 'Monday', 'Tuesday', 'Wednes
 
 export const SOLVER_ENGINE_VERSION = '2026-07-16-multi-week-rota';
 
+// Bias applied per GT day the leader worked more than a candidate across prior weeks.
+// Small enough to not override section skill differences, but enough to break ties.
+const CROSS_WEEK_BIAS_WEIGHT = 0.5;
+
 function getGtTargetForChef(chefName, mioChefName) {
   return chefName === mioChefName ? 2 : 4;
+}
+
+function getCrossWeekBias(name, priorGtDays, maxPrior) {
+  if (!maxPrior) return 0;
+  return (maxPrior - ((priorGtDays || {})[name] || 0)) * CROSS_WEEK_BIAS_WEIGHT;
+}
+
+function maxPriorGtDays(priorGtDays) {
+  const values = Object.values(priorGtDays || {});
+  return values.length ? Math.max(...values) : 0;
 }
 
 function buildWeekDates(weekStart) {
@@ -150,8 +164,7 @@ function chooseSeniorPassPlan({ state, dates, ruleOverrides, mioChefName, mioDay
 }
 
 function pickBestForSection({ section, dayName, candidates, selectedNames, ruleOverrides, gtDaysByChef, mioChefName, priorGtDays }) {
-  const allPriorValues = Object.values(priorGtDays || {});
-  const maxPrior = allPriorValues.length ? Math.max(...allPriorValues) : 0;
+  const maxPrior = maxPriorGtDays(priorGtDays);
 
   const sectionCandidates = candidates
     .filter((staff) => !selectedNames.has(staff.name))
@@ -164,8 +177,8 @@ function pickBestForSection({ section, dayName, candidates, selectedNames, ruleO
       const passSeniorB = section === 'Pass' && PASS_DAYS.includes(dayName) && isSenior(b) ? 120 : 0;
       const passPrefA = section === 'Pass' && (a.preferredSections || []).includes('Pass') ? 8 : 0;
       const passPrefB = section === 'Pass' && (b.preferredSections || []).includes('Pass') ? 8 : 0;
-      const crossWeekBiasA = maxPrior > 0 ? (maxPrior - ((priorGtDays || {})[a.name] || 0)) * 0.5 : 0;
-      const crossWeekBiasB = maxPrior > 0 ? (maxPrior - ((priorGtDays || {})[b.name] || 0)) * 0.5 : 0;
+      const crossWeekBiasA = getCrossWeekBias(a.name, priorGtDays, maxPrior);
+      const crossWeekBiasB = getCrossWeekBias(b.name, priorGtDays, maxPrior);
 
       const scoreA = (getSectionScore(a, section, ruleOverrides) * 10)
         + getRoleBonus(a, dayName)
@@ -288,8 +301,7 @@ function createDayPlan({
   ensureSeniorCoverage({ assignments, dayName, candidates, selectedNames, ruleOverrides });
 
   while (selectedNames.size < requiredChefs) {
-    const allPriorValues = Object.values(priorGtDays || {});
-    const maxPrior = allPriorValues.length ? Math.max(...allPriorValues) : 0;
+    const maxPrior = maxPriorGtDays(priorGtDays);
     const extra = candidates
       .filter((staff) => !selectedNames.has(staff.name))
       .sort((a, b) => {
@@ -297,8 +309,8 @@ function createDayPlan({
         const urgencyB = Math.max(getGtTargetForChef(b.name, mioChefName) - (gtDaysByChef[b.name] || 0), 0);
         const seniorA = isSenior(a) ? 1 : 0;
         const seniorB = isSenior(b) ? 1 : 0;
-        const crossWeekBiasA = maxPrior > 0 ? (maxPrior - ((priorGtDays || {})[a.name] || 0)) * 0.5 : 0;
-        const crossWeekBiasB = maxPrior > 0 ? (maxPrior - ((priorGtDays || {})[b.name] || 0)) * 0.5 : 0;
+        const crossWeekBiasA = getCrossWeekBias(a.name, priorGtDays, maxPrior);
+        const crossWeekBiasB = getCrossWeekBias(b.name, priorGtDays, maxPrior);
         if (seniorB !== seniorA) return seniorB - seniorA;
         if (urgencyB !== urgencyA) return urgencyB - urgencyA;
         const biasA = crossWeekBiasA + getRoleBonus(a, dayName);
