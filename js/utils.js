@@ -76,7 +76,7 @@ export function formatLongWeekRange(weekStart) {
   const end = addDays(start, 6);
   const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
   const startLabel = start.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
-  const endLabel = end.toLocaleDateString('en-GB', sameMonth ? { day: 'numeric', month: 'long', year: 'numeric' } : { day: 'numeric', month: 'long', year: 'numeric' });
+  const endLabel = end.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
   if (sameMonth) {
     return `${start.getDate()} ${start.toLocaleDateString('en-GB', { month: 'long' })} – ${endLabel}`;
   }

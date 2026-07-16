@@ -314,10 +314,22 @@ function getInfeasibleMessage(numWeeks) {
 
 function buildMultiWeekCacheKey(state, inputs) {
   return JSON.stringify({
-    staff: state.staff,
-    settings: state.settings,
+    staff: state.staff.map((member) => ({
+      name: member.name,
+      role: member.role,
+      mioEligible: !!member.mioEligible,
+      breakfastEligible: !!member.breakfastEligible,
+      weekendRule: member.weekendRule || '',
+      fixedDayOff: member.fixedDayOff || '',
+      skills: { ...(member.skills || {}) }
+    })),
     inputs: {
-      ...inputs,
+      weekStart: inputs.weekStart,
+      numWeeks: inputs.numWeeks,
+      mioChef: inputs.mioChef,
+      status: inputs.status,
+      availability: inputs.availability || [],
+      additionalChefRequirements: inputs.additionalChefRequirements || [],
       weeklyMioSelections: { ...(inputs.weeklyMioSelections || {}) }
     }
   });
