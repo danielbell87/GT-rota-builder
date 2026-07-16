@@ -122,10 +122,10 @@ export async function runUiTests(assert) {
     assert(canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.mode === 'multi', 'UI: multi-week rendering does not call only buildRota()');
 
     const weeklySelectors = [...doc.querySelectorAll('select[data-weekly-mio-start]')];
-    await setFieldValue(weeklySelectors[0], 'Dan');
-    await setFieldValue(weeklySelectors[1], 'Fred');
-    await setFieldValue(weeklySelectors[2], 'Joel');
-    assert(JSON.stringify(canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.weekMioChefs) === JSON.stringify(['Dan', 'Fred', 'Joel']), 'UI: different MIO chefs are passed to different weeks');
+    await setFieldValue(weeklySelectors[0], 'Fred');
+    await setFieldValue(weeklySelectors[1], 'Brooke');
+    await setFieldValue(weeklySelectors[2], 'Dan');
+    assert(JSON.stringify(canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.weekMioChefs) === JSON.stringify(['Fred', 'Brooke', 'Dan']), 'UI: different MIO chefs are passed to different weeks');
 
     const resultsEl = doc.getElementById('results');
     const baselineResultsHtml = resultsEl.innerHTML;
@@ -169,7 +169,7 @@ export async function runUiTests(assert) {
     await setFieldValue(unavailableRow.querySelector('.entry-type'), 'Unavailable');
     await setFieldValue(unavailableRow.querySelector('.entry-start-date'), '2026-07-23');
     await setFieldValue(unavailableRow.querySelector('.entry-finish-date'), '2026-07-23');
-    await waitFor(() => resultsEl.innerHTML !== baselineResultsHtml);
+    await waitFor(() => (getPersistedAppState(canonicalFrame.contentWindow)?.weeklyInputs?.availability || []).some((entry) => entry.chef === 'Connor'));
     const connorUnavailableState = getPersistedAppState(canonicalFrame.contentWindow);
     const connorUnavailableResult = buildResultFromPersistedState(connorUnavailableState);
     const connorUnavailableWeekTwo = connorUnavailableResult.weeks[1];
