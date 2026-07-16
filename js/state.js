@@ -14,7 +14,8 @@ const initialState = {
     mioChef: '',
     status: 'Draft',
     dailyOverrides: {},
-    availability: []
+    availability: [],
+    additionalChefRequirements: []
   },
   generatedRotas: {
     current: null
@@ -71,5 +72,10 @@ export function setAvailability(entries) {
 
 export function setDailyOverrides(overrides) {
   appState.weeklyInputs.dailyOverrides = overrides;
+  syncCompatibilityViews();
+}
+
+export function setAdditionalChefRequirements(entries) {
+  appState.weeklyInputs.additionalChefRequirements = entries;
   syncCompatibilityViews();
 }

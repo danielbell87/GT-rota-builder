@@ -1,6 +1,6 @@
 import { CHEF_ROLES, CORE_SECTIONS, DISPLAY_SECTIONS } from './constants.js';
 import { getState } from './state.js';
-import { formatDate, formatWeekCommencing } from './utils.js';
+import { formatDate, formatWeekCommencing, parseLocalDate } from './utils.js';
 import { getQualityScore, scoreSoftPreferences } from './scoring.js';
 import { buildRota } from './solver.js';
 import { validateRotaHardRules, validateRotaSoftRules, isRotaValid } from './validation.js?v=20260714';
@@ -20,29 +20,28 @@ export function closeAddChefModal() {
   document.getElementById('chefModal').classList.remove('open');
 }
 
-export function renderDailyOverrides() {
+export function renderAdditionalChefRequirements() {
   const state = getState();
-  const body = document.getElementById('dailyOverridesBody');
-  body.innerHTML = '';
-  const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-  const baseChefCounts = { Monday: 4, Tuesday: 4, Wednesday: 4, Thursday: 5, Friday: 5, Saturday: 5, Sunday: 5 };
+  const container = document.getElementById('additionalChefList');
+  if (!container) return;
+  const reqs = (state.weeklyInputs.additionalChefRequirements || []).slice()
+    .sort((a, b) => a.date.localeCompare(b.date));
 
-  daysOfWeek.forEach((day) => {
-    const baseCount = baseChefCounts[day];
-    const override = state.weeklyInputs.dailyOverrides?.[day] || {};
-    const extraChefs = override.extraChefs || 0;
-    const eventName = override.eventName || '';
-    const totalCount = baseCount + extraChefs;
-    const row = document.createElement('tr');
-    row.dataset.day = day;
-    row.innerHTML = `
-      <td>${day}</td>
-      <td class="td-center fw-600">${baseCount}</td>
-      <td><input type="text" data-event-name class="override-input" placeholder="e.g. Private Event" value="${eventName}"></td>
-      <td class="override-extra-cell"><input type="number" data-extra-chefs min="0" max="3" value="${extraChefs}" class="override-input override-number-input"></td>
-      <td class="override-total-cell">${totalCount}</td>`;
-    body.appendChild(row);
-  });
+  if (!reqs.length) {
+    container.innerHTML = '<p class="small chef-req-empty">No additional staffing requests for this week.</p>';
+    return;
+  }
+
+  container.innerHTML = reqs.map((req) => {
+    const d = parseLocalDate(req.date);
+    const label = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+    const chefWord = req.count === 1 ? 'chef' : 'chefs';
+    return `<div class="chef-req-row">
+      <span class="chef-req-label">${label} — +${req.count} ${chefWord}</span>
+      <button class="secondary small-btn" data-edit-req="${req.date}" aria-label="Edit additional chef request for ${label}">Edit</button>
+      <button class="danger small-btn" data-remove-req="${req.date}" aria-label="Remove additional chef request for ${label}">Remove</button>
+    </div>`;
+  }).join('');
 }
 
 export function renderMioOptions() {
@@ -124,9 +123,11 @@ export function renderResultsPanel() {
   const softValidationCards = softValidation.map((item) => `<div class="pill ${item.passed ? 'good' : 'warn'}">${item.ruleId}: ${item.message}</div>`).join('');
 
   const ruleNotes = [];
-  if (Object.keys(inputs.dailyOverrides || {}).length > 0) {
-    const overrideText = Object.entries(inputs.dailyOverrides).map(([day, override]) => `${day}: +${override.extraChefs} (${override.eventName || 'event'})`).join(', ');
-    ruleNotes.push(`Daily overrides: ${overrideText}`);
+  if ((inputs.additionalChefRequirements || []).length > 0) {
+    const reqText = inputs.additionalChefRequirements
+      .slice().sort((a, b) => a.date.localeCompare(b.date))
+      .map((r) => { const d = parseLocalDate(r.date); const lbl = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }); return `${lbl}: +${r.count}`; }).join(', ');
+    ruleNotes.push(`Additional chefs: ${reqText}`);
   }
   if (inputs.mioChef) ruleNotes.push(`MIO selection: ${inputs.mioChef}`);
 
@@ -190,7 +191,7 @@ export function renderResultsPanel() {
 }
 
 export function renderAll() {
-  renderDailyOverrides();
+  renderAdditionalChefRequirements();
   renderStaffTable();
   renderAvailabilityTable();
   renderResultsPanel();

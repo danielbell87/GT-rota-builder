@@ -10,6 +10,7 @@ function setupBaseState() {
   state.weeklyInputs.mioChef = 'Dan';
   state.weeklyInputs.availability = [];
   state.weeklyInputs.dailyOverrides = {};
+  state.weeklyInputs.additionalChefRequirements = [];
   syncCompatibilityViews();
   return state;
 }
@@ -18,7 +19,7 @@ function runScenario(state, override = {}) {
   return buildRota({
     weekStart: state.weeklyInputs.weekStart,
     mioChef: override.mioChef ?? state.weeklyInputs.mioChef,
-    dailyOverrides: state.weeklyInputs.dailyOverrides,
+    additionalChefRequirements: state.weeklyInputs.additionalChefRequirements || [],
     availability: state.weeklyInputs.availability
   });
 }

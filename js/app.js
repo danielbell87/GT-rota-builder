@@ -3,8 +3,8 @@ import { getState, getDefaultWeek, resetStateToDefaults, syncCompatibilityViews,
 import { normalizeWeekStart } from './utils.js';
 import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory, persistAllMioEligibility, persistAllStaffProfiles, persistMioEligibilityForChef, renamePersistedMioEligibility, renamePersistedStaffProfile } from './storage.js?v=20260714';
 import { addChef, createChefFromModalDom, updateChefField, updateChefSkill, removeChef, resetStaffToDefaults } from './staff.js';
-import { addAvailabilityEntry, removeAvailabilityEntry, updateAvailabilityField, updateDailyOverrideFromRow } from './weekly-inputs.js';
-import { renderAll, renderResultsPanel, renderDailyOverrides, renderAvailabilityTable, renderStaffTable, openAddChefModal, closeAddChefModal } from './render.js';
+import { addAvailabilityEntry, removeAvailabilityEntry, updateAvailabilityField, addAdditionalChefRequest, updateAdditionalChefRequest, removeAdditionalChefRequest, validateAdditionalChefDate, validateAdditionalChefCount } from './weekly-inputs.js';
+import { renderAll, renderResultsPanel, renderAdditionalChefRequirements, renderAvailabilityTable, renderStaffTable, openAddChefModal, closeAddChefModal } from './render.js';
 import { upsertPublishedHistory } from './history.js';
 
 const state = getState();
@@ -92,6 +92,94 @@ function updateStateFromControl(event) {
   }
 }
 
+// Track whether the additional-chef modal is in edit mode and which date is being edited
+let _editingReqDate = null;
+
+function openAdditionalChefModal(editDate) {
+  const state = getState();
+  const weekStart = state.weeklyInputs.weekStart;
+  // Build week date range for label and date constraints
+  const parts = weekStart.split('-').map(Number);
+  const monday = new Date(parts[0], parts[1] - 1, parts[2]);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const fmt = (d) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const minDate = weekStart;
+  const maxDate = `${sunday.getFullYear()}-${String(sunday.getMonth() + 1).padStart(2, '0')}-${String(sunday.getDate()).padStart(2, '0')}`;
+
+  document.getElementById('additionalChefWeekRange').textContent = `Valid dates: ${fmt(monday)} – ${fmt(sunday)}`;
+  const dateInput = document.getElementById('additionalChefDate');
+  dateInput.min = minDate;
+  dateInput.max = maxDate;
+
+  const countInput = document.getElementById('additionalChefCount');
+  document.getElementById('additionalChefError').textContent = '';
+
+  const titleEl = document.getElementById('additionalChefModalTitle');
+  const saveBtn = document.getElementById('saveAdditionalChefBtn');
+
+  if (editDate) {
+    // Edit mode
+    _editingReqDate = editDate;
+    const req = (state.weeklyInputs.additionalChefRequirements || []).find((r) => r.date === editDate);
+    dateInput.value = editDate;
+    countInput.value = req ? req.count : 1;
+    titleEl.textContent = 'Edit additional chef';
+    saveBtn.textContent = 'Save';
+  } else {
+    // Add mode – default to first week date without an existing request
+    _editingReqDate = null;
+    const existing = new Set((state.weeklyInputs.additionalChefRequirements || []).map((r) => r.date));
+    let defaultDate = weekStart;
+    for (let i = 0; i < 7; i += 1) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      if (!existing.has(ds)) { defaultDate = ds; break; }
+    }
+    dateInput.value = defaultDate;
+    countInput.value = 1;
+    titleEl.textContent = 'Add additional chef';
+    saveBtn.textContent = 'Add';
+  }
+
+  document.getElementById('additionalChefModal').classList.add('open');
+  dateInput.focus();
+}
+
+function closeAdditionalChefModal() {
+  document.getElementById('additionalChefModal').classList.remove('open');
+  document.getElementById('addAdditionalChefBtn').focus();
+  _editingReqDate = null;
+}
+
+function handleAdditionalChefSave() {
+  const state = getState();
+  const dateInput = document.getElementById('additionalChefDate');
+  const countInput = document.getElementById('additionalChefCount');
+  const errorEl = document.getElementById('additionalChefError');
+
+  const dateErr = validateAdditionalChefDate(dateInput.value, state.weeklyInputs.weekStart);
+  if (dateErr) { errorEl.textContent = dateErr; dateInput.focus(); return; }
+
+  const countErr = validateAdditionalChefCount(countInput.value);
+  if (countErr) { errorEl.textContent = countErr; countInput.focus(); return; }
+
+  const count = parseInt(countInput.value, 10);
+  const date = dateInput.value;
+
+  if (_editingReqDate) {
+    updateAdditionalChefRequest(_editingReqDate, date, count);
+  } else {
+    addAdditionalChefRequest(date, count);
+  }
+
+  closeAdditionalChefModal();
+  renderAdditionalChefRequirements();
+  renderResultsPanel();
+  persistState();
+}
+
 function attachEvents() {
   document.getElementById('weekStart').addEventListener('change', (event) => {
     const normalized = normalizeWeekStart(event.target.value || getDefaultWeek());
@@ -118,17 +206,20 @@ function attachEvents() {
   document.getElementById('cancelChefBtn').addEventListener('click', closeAddChefModal);
   document.getElementById('saveChefBtn').addEventListener('click', handleChefAdd);
 
-  document.addEventListener('change', (event) => {
-    if (event.target.dataset.eventName !== undefined || event.target.dataset.extraChefs !== undefined) {
-      const row = event.target.closest('[data-day]');
-      if (row) {
-        updateDailyOverrideFromRow(row);
-        renderDailyOverrides();
-        renderResultsPanel();
-        persistState();
+  document.getElementById('addAdditionalChefBtn').addEventListener('click', () => openAdditionalChefModal(null));
+  document.getElementById('cancelAdditionalChefBtn').addEventListener('click', closeAdditionalChefModal);
+  document.getElementById('saveAdditionalChefBtn').addEventListener('click', handleAdditionalChefSave);
+
+  // Close modal on Escape key
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      if (document.getElementById('additionalChefModal').classList.contains('open')) {
+        closeAdditionalChefModal();
       }
     }
+  });
 
+  document.addEventListener('change', (event) => {
     updateStateFromControl(event);
     const isControl = event.target.dataset.field || event.target.dataset.skill || event.target.classList.contains('entry-chef') || event.target.classList.contains('entry-type') || event.target.classList.contains('entry-start-date') || event.target.classList.contains('entry-finish-date') || event.target.classList.contains('entry-notes');
     if (isControl) {
@@ -163,6 +254,19 @@ function attachEvents() {
       persistAllMioEligibility();
       renderStaffTable();
       renderAvailabilityTable();
+      renderResultsPanel();
+      persistState();
+    }
+
+    const editReqBtn = event.target.closest('button[data-edit-req]');
+    if (editReqBtn) {
+      openAdditionalChefModal(editReqBtn.getAttribute('data-edit-req'));
+    }
+
+    const removeReqBtn = event.target.closest('button[data-remove-req]');
+    if (removeReqBtn) {
+      removeAdditionalChefRequest(removeReqBtn.getAttribute('data-remove-req'));
+      renderAdditionalChefRequirements();
       renderResultsPanel();
       persistState();
     }

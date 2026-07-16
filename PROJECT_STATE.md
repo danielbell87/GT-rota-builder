@@ -17,6 +17,7 @@
 - Strong soft preference for senior chef on Pass Thursday-Sunday, with structured soft validation
 - Published history upsert (week+chef uniqueness)
 - Browser test page and modular tests
+- Date-based additional-chef requests via compact list and accessible modal dialog (v2.1.0)
 
 ## Unfinished Features
 - Advanced multi-candidate optimization and explainability beyond current heuristics
@@ -27,7 +28,7 @@
 - Free-text rule parser is intentionally narrow and pattern-based
 
 ## localStorage Keys
-- `gtRota.schemaVersion`: schema/migration marker
+- `gtRota.schemaVersion`: schema/migration marker (current: 3)
 - `gtRota.state.v2`: primary persisted application state snapshot
 - `gtRota.history.v1`: published history records
 - `gtRota.mioEligibilityByChef`: legacy compatibility map for MIO eligibility by chef name

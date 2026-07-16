@@ -9,6 +9,7 @@ function setupState() {
   state.weeklyInputs.mioChef = 'Dan';
   state.weeklyInputs.availability = [];
   state.weeklyInputs.dailyOverrides = {};
+  state.weeklyInputs.additionalChefRequirements = [];
   syncCompatibilityViews();
   return state;
 }
@@ -18,7 +19,7 @@ export async function runValidationTests(assert) {
   const result = buildRota({
     weekStart: state.weeklyInputs.weekStart,
     mioChef: state.weeklyInputs.mioChef,
-    dailyOverrides: {},
+    additionalChefRequirements: [],
     availability: []
   });
 
@@ -72,7 +73,7 @@ export async function runValidationTests(assert) {
   const rerun = buildRota({
     weekStart: state.weeklyInputs.weekStart,
     mioChef: state.weeklyInputs.mioChef,
-    dailyOverrides: {},
+    additionalChefRequirements: [],
     availability: state.weeklyInputs.availability
   });
   const unavailableWorked = rerun.rota.some((day) => day.date === '2026-07-14' && day.chefs.includes(unavailableChef));

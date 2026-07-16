@@ -7,6 +7,7 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 - **Live rota generation** with real-time updates as inputs change
 - **Chef scheduling** with skill-based section assignments
 - **Availability management** for annual leave and unavailable dates
+- **Additional chef requests** via compact date-based list and modal dialog
 - **Breakfast shift scheduling** with max 1 breakfast per chef per week
 - **4-day working week enforcement** for staff members
 - **Hours tracking** with adjusted calculations for breakfast shifts
@@ -19,8 +20,19 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 2. Enter the week commencing date
 3. Configure staff availability and skills
 4. Select a MIO (Management Improvement Officer) chef if needed
-5. Apply any custom rule changes
+5. Add any additional chef requests (e.g., private events) using the **Add additional chef** button
 6. Review the generated rota and hours summary
+
+### Adding Additional Chefs
+
+In the **Additional chefs** section:
+
+1. Click **Add additional chef**
+2. A dialog opens — pick a date within the current week and set the number of extra chefs (1–5)
+3. Click **Add** to save; the rota updates immediately
+4. Use **Edit** or **Remove** on any saved request to modify or delete it
+
+Requests are tied to a specific calendar date and do not carry across week changes.
 
 ## Scheduling Rules
 

@@ -22,7 +22,7 @@ const MIO_FALLBACK_DAYS = ['Thursday', 'Friday'];
 const MIO_GT_PRIMARY_DAYS = ['Saturday', 'Sunday'];
 const MIO_GT_FALLBACK_DAYS = ['Thursday', 'Friday', 'Monday', 'Tuesday', 'Wednesday'];
 
-export const SOLVER_ENGINE_VERSION = '2026-07-16-mio-gt-pattern';
+export const SOLVER_ENGINE_VERSION = '2026-07-16-additional-chef-modal';
 
 function getGtTargetForChef(chefName, mioChefName) {
   return chefName === mioChefName ? 2 : 4;
@@ -362,7 +362,7 @@ export function buildRota(inputs) {
     const forcedSeniorPassByDay = chooseSeniorPassPlan({ state, dates, ruleOverrides, mioChefName, mioDays });
 
     dates.forEach(({ dayName, date }) => {
-      const requiredChefs = getRequiredChefCount(dayName, inputs);
+      const requiredChefs = getRequiredChefCount(dayName, inputs, date);
       const coreSections = getCoreSections(dayName, inputs);
 
       const candidates = state.staff.filter((staff) => {

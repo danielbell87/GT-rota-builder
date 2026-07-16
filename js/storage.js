@@ -8,7 +8,7 @@ export const STORAGE_KEYS = {
   staffProfilesByChef: 'gtRota.staffProfilesByChef'
 };
 
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
 
 function safeParse(raw, fallback) {
   if (!raw) return fallback;
@@ -131,6 +131,53 @@ export function migrateStorageIfNeeded() {
   if (current < 2) {
     const appState = getState();
     saveAppState(appState);
+  }
+
+  if (current < 3) {
+    // Migrate day-based dailyOverrides.extraChefs to date-based additionalChefRequirements
+    const raw = localStorage.getItem(STORAGE_KEYS.appState);
+    if (raw) {
+      try {
+        const saved = JSON.parse(raw);
+        if (saved && saved.weeklyInputs) {
+          const { dailyOverrides, weekStart, additionalChefRequirements } = saved.weeklyInputs;
+          const hasOldExtra = dailyOverrides && Object.values(dailyOverrides).some((o) => o && (o.extraChefs || 0) > 0);
+          const alreadyMigrated = Array.isArray(additionalChefRequirements) && additionalChefRequirements.length > 0;
+          if (hasOldExtra && !alreadyMigrated && weekStart) {
+            // Build day-name → date map from weekStart
+            const parts = weekStart.split('-').map(Number);
+            const weekDate = new Date(parts[0], parts[1] - 1, parts[2]);
+            const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const dayToDate = {};
+            for (let i = 0; i < 7; i += 1) {
+              const d = new Date(weekDate);
+              d.setDate(weekDate.getDate() + i);
+              const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+              dayToDate[dayNames[d.getDay()]] = ds;
+            }
+            const converted = [];
+            Object.entries(dailyOverrides).forEach(([dayName, override]) => {
+              const count = override && typeof override.extraChefs === 'number' ? override.extraChefs : 0;
+              if (count > 0 && dayToDate[dayName]) {
+                converted.push({ date: dayToDate[dayName], count });
+              }
+            });
+            if (converted.length) {
+              saved.weeklyInputs.additionalChefRequirements = converted;
+            }
+            // Clear extraChefs from dailyOverrides to avoid double-counting
+            Object.keys(saved.weeklyInputs.dailyOverrides).forEach((day) => {
+              if (saved.weeklyInputs.dailyOverrides[day]) {
+                delete saved.weeklyInputs.dailyOverrides[day].extraChefs;
+              }
+            });
+            localStorage.setItem(STORAGE_KEYS.appState, JSON.stringify(saved));
+          }
+        }
+      } catch {
+        // Ignore migration errors; corrupt saved data will be overwritten on next save.
+      }
+    }
   }
 
   localStorage.setItem(STORAGE_KEYS.schemaVersion, String(CURRENT_SCHEMA_VERSION));

@@ -14,7 +14,17 @@ Generate a weekly GT kitchen rota from staff capabilities, availability, hard co
 Each chef includes name, role, hierarchy/seniority, structured senior flag, MIO eligibility, section strengths, fixed day constraints, and notes.
 
 ## Week Model
-Weekly inputs include week commencing date, selected MIO chef, daily demand overrides, leave/unavailability entries, and free-text rule notes.
+Weekly inputs include week commencing date, selected MIO chef, date-based additional-chef requirements, leave/unavailability entries, and free-text rule notes.
+
+Additional-chef requirements are stored as `additionalChefRequirements: [{ date: "YYYY-MM-DD", count: N }]`. Each entry increases the required GT staffing on that exact calendar date by `count` chefs above the normal base. Requests are week-specific and do not carry across week changes.
+
+The "Add additional chef" flow:
+1. Click **Add additional chef** button (opens compact modal)
+2. Select a date within the current Monday–Sunday week
+3. Choose extra chef count (1–5)
+4. Click **Add** to save; the rota regenerates immediately
+
+Edit and Remove actions are available on each saved request in the compact list.
 
 ## Rota Model
 A rota is a 7-day structure with:
@@ -32,8 +42,8 @@ Implemented as structured hard validation checks in `js/validation.js` and rule 
 - One breakfast chef daily
 - Breakfast chef also core-assigned
 - Senior daily cover
-- Mon-Wed exactly 4 GT chefs
-- Thu-Sun at least 5 GT chefs
+- Mon-Wed exactly N GT chefs (N = 4 + any additional-chef request for that date)
+- Thu-Sun at least N GT chefs (N = 5 + any additional-chef request for that date)
 - Pass coverage Thu-Sun
 - No MIO at weekends
 - MIO eligibility enforcement
