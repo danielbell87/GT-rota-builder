@@ -123,7 +123,7 @@ function getMioGtDayPlanOptions(state, dates, mioChefName, mioDays, ruleOverride
   }
 
   return combinations
-    .sort((a, b) => b.priority - a.priority)
+    .sort((a, b) => b.priority - a.priority || a.days.join('|').localeCompare(b.days.join('|')))
     .map((item) => new Set(item.days));
 }
 
@@ -369,7 +369,7 @@ function ensureSeniorCoverage({ assignments, dayName, candidates, selectedNames,
   const replacementSenior = candidates
     .filter((staff) => isSenior(staff))
     .filter((staff) => !selectedNames.has(staff.name))
-    .sort((a, b) => getRoleBonus(b, dayName) - getRoleBonus(a, dayName))[0];
+    .sort((a, b) => getRoleBonus(b, dayName) - getRoleBonus(a, dayName) || a.name.localeCompare(b.name))[0];
 
   if (!replacementSenior) return;
 
@@ -428,7 +428,7 @@ function createDayPlan({
     if (!availableSections.length) return null;
     const bestSection = availableSections
       .slice()
-      .sort((a, b) => getSectionScore(forced, b, ruleOverrides) - getSectionScore(forced, a, ruleOverrides))[0];
+      .sort((a, b) => getSectionScore(forced, b, ruleOverrides) - getSectionScore(forced, a, ruleOverrides) || a.localeCompare(b))[0];
     assignments.push({ chef: forced.name, section: bestSection });
     selectedNames.add(forced.name);
   }
@@ -483,7 +483,7 @@ function createDayPlan({
       const countA = breakfastCounts[a.name] || 0;
       const countB = breakfastCounts[b.name] || 0;
       if (countA !== countB) return countA - countB;
-      return getSectionScore(b, 'Breakfast', ruleOverrides) - getSectionScore(a, 'Breakfast', ruleOverrides);
+      return getSectionScore(b, 'Breakfast', ruleOverrides) - getSectionScore(a, 'Breakfast', ruleOverrides) || a.name.localeCompare(b.name);
     })[0];
 
   if (!breakfastChef) return null;

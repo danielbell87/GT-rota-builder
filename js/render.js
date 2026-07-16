@@ -10,6 +10,15 @@ function getSafeElement(id) {
   return document.getElementById(id);
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
 function renderWeekRangeLabel(weekStart) {
   const monday = parseLocalDate(weekStart);
   const sunday = new Date(monday);
@@ -34,9 +43,9 @@ export function renderAdditionalChefRequirements() {
     const label = date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
     const chefWord = req.count === 1 ? 'chef' : 'chefs';
     return `<div class="chef-req-row">
-      <span class="chef-req-label">${label} — +${req.count} ${chefWord}</span>
-      <button class="secondary small-btn" data-edit-req="${req.date}" aria-label="Edit additional chef request for ${label}">Edit</button>
-      <button class="danger small-btn" data-remove-req="${req.date}" aria-label="Remove additional chef request for ${label}">Remove</button>
+      <span class="chef-req-label">${escapeHtml(label)} — +${req.count} ${chefWord}</span>
+      <button class="secondary small-btn" data-edit-req="${escapeHtml(req.date)}" aria-label="Edit additional chef request for ${escapeHtml(label)}">Edit</button>
+      <button class="danger small-btn" data-remove-req="${escapeHtml(req.date)}" aria-label="Remove additional chef request for ${escapeHtml(label)}">Remove</button>
     </div>`;
   }).join('');
 }
@@ -49,7 +58,7 @@ export function renderMioOptions() {
   ensureMioSelectionsForPlanningHorizon(state);
   const current = state.weeklyInputs.mioChef || state.staff.find((staff) => staff.mioEligible)?.name || '';
   const eligible = getEligibleMioChefs(state);
-  select.innerHTML = eligible.map((name) => `<option value="${name}" ${current === name ? 'selected' : ''}>${name}</option>`).join('');
+  select.innerHTML = eligible.map((name) => `<option value="${escapeHtml(name)}" ${current === name ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('');
   if (!eligible.includes(current)) {
     state.weeklyInputs.mioChef = eligible[0] || '';
     select.value = state.weeklyInputs.mioChef;
@@ -79,9 +88,9 @@ export function renderWeeklyMioPlan() {
     <div class="weekly-mio-plan-grid">
       ${weekStarts.map((weekStart, index) => `
         <label class="weekly-mio-card">
-          <span class="weekly-mio-heading">Week ${index + 1} · ${renderWeekRangeLabel(weekStart)}</span>
-          <select class="weekly-mio-select" data-week-start="${weekStart}">
-            ${eligible.map((name) => `<option value="${name}" ${selections[weekStart] === name ? 'selected' : ''}>${name}</option>`).join('')}
+          <span class="weekly-mio-heading">Week ${index + 1} · ${escapeHtml(renderWeekRangeLabel(weekStart))}</span>
+          <select class="weekly-mio-select" data-week-start="${escapeHtml(weekStart)}">
+            ${eligible.map((name) => `<option value="${escapeHtml(name)}" ${selections[weekStart] === name ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}
           </select>
         </label>
       `).join('')}
@@ -96,7 +105,7 @@ export function renderStaffTable() {
   state.staff.forEach((chef, index) => {
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td><input data-field="name" data-index="${index}" value="${chef.name}" /></td>
+      <td><input data-field="name" data-index="${index}" value="${escapeHtml(chef.name)}" /></td>
       <td><select data-field="role" data-index="${index}">${CHEF_ROLES.map((role) => `<option value="${role}" ${chef.role === role ? 'selected' : ''}>${role}</option>`).join('')}</select></td>
       <td><select data-field="mio" data-index="${index}"><option value="true" ${chef.mioEligible ? 'selected' : ''}>Yes</option><option value="false" ${!chef.mioEligible ? 'selected' : ''}>No</option></select></td>
       <td><select data-field="weekend" data-index="${index}"><option value="" ${!chef.weekendRule ? 'selected' : ''}>None</option><option ${chef.weekendRule === 'Works weekends' ? 'selected' : ''}>Works weekends</option><option ${chef.weekendRule === 'Does not work weekends' ? 'selected' : ''}>Does not work weekends</option></select></td>
@@ -125,11 +134,11 @@ export function renderAvailabilityTable() {
   state.weeklyInputs.availability.forEach((entry, index) => {
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td><select class="entry-chef" data-index="${index}">${state.staff.map((staff) => `<option value="${staff.name}" ${entry.chef === staff.name ? 'selected' : ''}>${staff.name}</option>`).join('')}</select></td>
+      <td><select class="entry-chef" data-index="${index}">${state.staff.map((staff) => `<option value="${escapeHtml(staff.name)}" ${entry.chef === staff.name ? 'selected' : ''}>${escapeHtml(staff.name)}</option>`).join('')}</select></td>
       <td><select class="entry-type" data-index="${index}"><option ${entry.type === 'Annual Leave' ? 'selected' : ''}>Annual Leave</option><option ${entry.type === 'Unavailable' ? 'selected' : ''}>Unavailable</option></select></td>
       <td><input class="entry-start-date" type="date" data-index="${index}" min="${startDate}" max="${endDate}" value="${entry.startDate || ''}"></td>
       <td><input class="entry-finish-date" type="date" data-index="${index}" min="${startDate}" max="${endDate}" value="${entry.finishDate || ''}"></td>
-      <td><input class="entry-notes" type="text" data-index="${index}" value="${entry.notes || ''}"></td>
+      <td><input class="entry-notes" type="text" data-index="${index}" value="${escapeHtml(entry.notes || '')}"></td>
       <td><button class="danger" data-remove="${index}">Remove</button></td>`;
     body.appendChild(row);
   });
@@ -145,7 +154,7 @@ function renderFairnessSummary(fairnessSummary) {
           <tr><th>Chef</th><th>Friday shifts</th><th>Saturday shifts</th><th>Sunday shifts</th><th>Weighted burden</th></tr>
         </thead>
         <tbody>
-          ${fairnessSummary.map((item) => `<tr><td>${item.name}</td><td>${item.fridayShifts}</td><td>${item.saturdayShifts}</td><td>${item.sundayShifts}</td><td>${item.weightedBurden}</td></tr>`).join('')}
+          ${fairnessSummary.map((item) => `<tr><td>${escapeHtml(item.name)}</td><td>${item.fridayShifts}</td><td>${item.saturdayShifts}</td><td>${item.sundayShifts}</td><td>${item.weightedBurden}</td></tr>`).join('')}
         </tbody>
       </table>
     </div>`;
@@ -157,9 +166,9 @@ function renderWeekHtml(weekResult, state, inputs) {
   const softScore = scoreSoftPreferences({ state, rota: weekResult.rota, hardValidation });
   const valid = isRotaValid(hardValidation);
 
-  const summaryCards = weekResult.summary.map((item) => `<div class="card"><strong>${item.name}</strong><div class="small">${item.hours.toFixed(1)} hrs this week</div></div>`).join('');
-  const validationCards = hardValidation.map((item) => `<div class="pill ${item.passed ? 'good' : 'bad'}">${item.ruleId}: ${item.message}</div>`).join('');
-  const softValidationCards = softValidation.map((item) => `<div class="pill ${item.passed ? 'good' : 'warn'}">${item.ruleId}: ${item.message}</div>`).join('');
+  const summaryCards = weekResult.summary.map((item) => `<div class="card"><strong>${escapeHtml(item.name)}</strong><div class="small">${item.hours.toFixed(1)} hrs this week</div></div>`).join('');
+  const validationCards = hardValidation.map((item) => `<div class="pill ${item.passed ? 'good' : 'bad'}">${escapeHtml(item.ruleId)}: ${escapeHtml(item.message)}</div>`).join('');
+  const softValidationCards = softValidation.map((item) => `<div class="pill ${item.passed ? 'good' : 'warn'}">${escapeHtml(item.ruleId)}: ${escapeHtml(item.message)}</div>`).join('');
 
   const ruleNotes = [];
   const weekRequests = (inputs.additionalChefRequirements || []).filter((item) => {
@@ -195,19 +204,19 @@ function renderWeekHtml(weekResult, state, inputs) {
     if (byQuality[3].length) parts.push(`preferred: ${byQuality[3].join(', ')}`);
     if (byQuality[2].length) parts.push(`proficient: ${byQuality[2].join(', ')}`);
     if (byQuality[1].length) parts.push(`training: ${byQuality[1].join(', ')}`);
-    return parts.length ? `<span class="small"><strong>${name}</strong>: ${parts.join('; ')}</span>` : '';
+    return parts.length ? `<span class="small"><strong>${escapeHtml(name)}</strong>: ${escapeHtml(parts.join('; '))}</span>` : '';
   }).filter(Boolean);
 
-  const dayHeaders = weekResult.rota.map((day) => `<th>${day.dayName}<br><span class="small">${formatDate(day.date)}</span></th>`).join('');
+  const dayHeaders = weekResult.rota.map((day) => `<th>${escapeHtml(day.dayName)}<br><span class="small">${escapeHtml(formatDate(day.date))}</span></th>`).join('');
   const sectionCells = DISPLAY_SECTIONS.map((section) => {
     const cells = weekResult.rota.map((day) => {
       if (section === 'Float') {
         const coreAssignments = day.assignments.filter((assignment) => [...CORE_SECTIONS, 'Breakfast'].includes(assignment.section)).map((assignment) => assignment.chef);
         const floatChefs = day.chefs.filter((chef) => !coreAssignments.includes(chef));
-        return `<td>${floatChefs.length ? floatChefs.join(', ') : '—'}</td>`;
+        return `<td>${floatChefs.length ? escapeHtml(floatChefs.join(', ')) : '—'}</td>`;
       }
       const matches = day.assignments.filter((assignment) => assignment.section === section);
-      return `<td>${matches.length ? matches.map((assignment) => assignment.chef).join(', ') : '—'}</td>`;
+      return `<td>${matches.length ? escapeHtml(matches.map((assignment) => assignment.chef).join(', ')) : '—'}</td>`;
     }).join('');
     return `<tr><th>${section}</th>${cells}</tr>`;
   }).join('');
@@ -219,11 +228,11 @@ function renderWeekHtml(weekResult, state, inputs) {
 
   return `
     <div class="summary-grid">
-      <div class="card"><h3 class="mb-6">Weekly context</h3><div class="small">Week commencing: ${formatWeekCommencing(weekResult.weekStart)}<br>MIO chef: ${weekResult.mioChef || 'None'}<br>Status: ${weekResult.status}</div></div>
+      <div class="card"><h3 class="mb-6">Weekly context</h3><div class="small">Week commencing: ${escapeHtml(formatWeekCommencing(weekResult.weekStart))}<br>MIO chef: ${escapeHtml(weekResult.mioChef || 'None')}<br>Status: ${escapeHtml(weekResult.status)}</div></div>
       <div class="card"><h3 class="mb-6">Hours rota</h3><div class="row">${summaryCards}</div>${scoreLine}<div class="small">Hard validation: ${valid ? 'PASS' : 'FAIL'}</div></div>
     </div>
     <h3 class="mt-16">Rules applied</h3>
-    <div>${ruleNotes.length ? ruleNotes.map((note) => `<div class="small">• ${note}</div>`).join('') : '<div class="small">• No extra rules were applied.</div>'}</div>
+    <div>${ruleNotes.length ? ruleNotes.map((note) => `<div class="small">• ${escapeHtml(note)}</div>`).join('') : '<div class="small">• No extra rules were applied.</div>'}</div>
     <h3 class="mt-16">Validation</h3>
     <div>${validationCards || '<span class="pill good">No issues detected</span>'}</div>
     <h3 class="mt-16">Soft preference checks</h3>
@@ -246,7 +255,7 @@ function renderWeekSwitcher(weekResults, activeWeekIndex) {
       <label class="mobile-week-picker">
         <span class="small">Week</span>
         <select id="mobileWeekSelect">
-          ${weekResults.map((week, index) => `<option value="${index}" ${index === activeWeekIndex ? 'selected' : ''}>Week ${week.weekIndex} · ${formatWeekCommencing(week.weekStart)}</option>`).join('')}
+          ${weekResults.map((week, index) => `<option value="${index}" ${index === activeWeekIndex ? 'selected' : ''}>Week ${week.weekIndex} · ${escapeHtml(formatWeekCommencing(week.weekStart))}</option>`).join('')}
         </select>
       </label>
     </div>`;
@@ -286,18 +295,23 @@ export function renderResultsPanel() {
     return;
   }
 
-  const infeasibleBanner = buildResult.status === 'infeasible'
-    ? `<div class="pill bad">Generation stopped at Week ${buildResult.failedWeek} (${formatWeekCommencing(buildResult.failedWeekStart)}): ${buildResult.reason}</div>`
-    : '<div class="pill good">All selected weeks were generated successfully.</div>';
   const activeWeekBody = activeWeek
     ? renderWeekHtml(activeWeek, state, { ...inputs, weekStart: activeWeek.weekStart })
     : '<div class="pill bad">No feasible rota could be generated with current hard constraints.</div>';
 
+  const bannerMessage = buildResult.status === 'infeasible'
+    ? `Generation stopped at Week ${buildResult.failedWeek} (${formatWeekCommencing(buildResult.failedWeekStart)}): ${buildResult.reason}`
+    : 'All selected weeks were generated successfully.';
+  const bannerClass = buildResult.status === 'infeasible' ? 'pill bad' : 'pill good';
+
   container.innerHTML = `
-    ${infeasibleBanner}
     ${renderFairnessSummary(buildResult.fairnessSummary)}
     ${renderWeekSwitcher(weekResults, state.uiState.activeWeekIndex)}
     <div class="multi-week-stage">${activeWeekBody}</div>`;
+  const banner = document.createElement('div');
+  banner.className = bannerClass;
+  banner.textContent = bannerMessage;
+  container.prepend(banner);
 }
 
 export function renderAll() {

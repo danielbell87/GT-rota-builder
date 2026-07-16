@@ -8,7 +8,7 @@ import {
   setAdditionalChefRequirements,
   setNumWeeks
 } from './state.js';
-import { getPlanningHorizon, getPlanningWeekStarts, normalizeWeekStart } from './utils.js';
+import { getPlanningHorizon, getPlanningWeekStarts, normalizeWeekStart, parseLocalDate } from './utils.js';
 
 const MIO_ROTATION = ['Dan', 'Fred', 'Joel', 'Camilla', 'Brooke'];
 
@@ -138,10 +138,9 @@ export function validateAdditionalChefDate(dateStr, weekStart) {
 export function validateAdditionalChefDateForHorizon(dateStr, weekStart, numWeeks = 1) {
   if (!dateStr) return 'Please select a date.';
   const { startDate, endDate } = getPlanningHorizon(weekStart, numWeeks);
-  const start = new Date(startDate.split('-').map(Number)[0], startDate.split('-').map(Number)[1] - 1, startDate.split('-').map(Number)[2]);
-  const end = new Date(endDate.split('-').map(Number)[0], endDate.split('-').map(Number)[1] - 1, endDate.split('-').map(Number)[2]);
-  const dp = dateStr.split('-').map(Number);
-  const selected = new Date(dp[0], dp[1] - 1, dp[2]);
+  const start = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate);
+  const selected = parseLocalDate(dateStr);
   if (selected < start || selected > end) {
     const fmt = (d) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
     return `Date must be within the selected planning period (${fmt(start)} – ${fmt(end)}).`;

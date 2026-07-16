@@ -1,6 +1,6 @@
 import { CHEF_ROLES } from './constants.js';
 import { getState, getDefaultWeek, syncCompatibilityViews, setWeekStart, setMioChef, setNumWeeks } from './state.js';
-import { getPlanningHorizon, normalizeWeekStart } from './utils.js';
+import { getPlanningHorizon, normalizeWeekStart, parseLocalDate } from './utils.js';
 import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory, persistAllMioEligibility, persistAllStaffProfiles, persistMioEligibilityForChef, renamePersistedMioEligibility, renamePersistedStaffProfile } from './storage.js?v=20260714';
 import { addChef, createChefFromModalDom, updateChefField, updateChefSkill, removeChef } from './staff.js';
 import { addAvailabilityEntry, removeAvailabilityEntry, updateAvailabilityField, addAdditionalChefRequest, updateAdditionalChefRequest, removeAdditionalChefRequest, validateAdditionalChefDateForHorizon, validateAdditionalChefCount } from './weekly-inputs.js';
@@ -131,8 +131,8 @@ let editingRequirementDate = null;
 
 function openAdditionalChefModal(editDate) {
   const { startDate, endDate } = getPlanningHorizon(state.weeklyInputs.weekStart, state.weeklyInputs.numWeeks || 1);
-  const start = new Date(startDate.split('-').map(Number)[0], startDate.split('-').map(Number)[1] - 1, startDate.split('-').map(Number)[2]);
-  const end = new Date(endDate.split('-').map(Number)[0], endDate.split('-').map(Number)[1] - 1, endDate.split('-').map(Number)[2]);
+  const start = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate);
   const rangeEl = getElement('additionalChefWeekRange');
   const dateInput = getElement('additionalChefDate');
   const countInput = getElement('additionalChefCount');
