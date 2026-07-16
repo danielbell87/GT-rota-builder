@@ -74,9 +74,9 @@ export function updateAvailabilityField(index, key, value) {
 export function addAdditionalChefRequest(date, count) {
   const state = getState();
   const existing = (state.weeklyInputs.additionalChefRequirements || []).slice();
-  const idx = existing.findIndex((request) => request.date === date);
-  if (idx >= 0) {
-    existing[idx] = { date, count };
+  const existingIndex = existing.findIndex((request) => request.date === date);
+  if (existingIndex >= 0) {
+    existing[existingIndex] = { date, count };
   } else {
     existing.push({ date, count });
   }

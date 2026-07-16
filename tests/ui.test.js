@@ -1,3 +1,5 @@
+import { CACHE_BUST_VERSION } from '../js/constants.js';
+
 function wait(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -41,7 +43,7 @@ async function setFieldValue(element, value) {
 export async function runUiTests(assert) {
   localStorage.clear();
   const stateModule = await import('../js/state.js');
-  const appSource = await fetch('../js/app.js?v=20260716b').then((response) => response.text());
+  const appSource = await fetch(`../js/app.js?v=${CACHE_BUST_VERSION}`).then((response) => response.text());
   const stateImportMatch = appSource.match(/import\s*\{([^}]+)\}\s*from\s*'\.\/state\.js'/);
   const importedSymbols = stateImportMatch?.[1]
     .split(',')
