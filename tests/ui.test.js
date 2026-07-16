@@ -164,9 +164,10 @@ export async function runUiTests(assert) {
   assert(!!canonicalDoc.querySelector('#numWeeks'), 'UI: canonical page contains #numWeeks');
   const stylesText = await fetch('../styles.css').then((response) => response.text());
   assert(stylesText.includes('.technical-details') && stylesText.includes('@media print'), 'UI: stylesheet includes technical-details and print rules for validation cleanup');
-  assert(stylesText.includes('.week-panel.hidden') && stylesText.includes('display: grid !important'), 'UI: print stylesheet restores hidden week panels for printing');
+  assert(stylesText.includes('.week-panels .week-panel.hidden') && stylesText.includes('display: grid;'), 'UI: print stylesheet restores hidden week panels for printing');
 
   const syntheticPanel = buildSyntheticWeekPanel();
+  assert(!!syntheticPanel.querySelector('.week-panel'), 'UI: synthetic validation panel renders a week-panel wrapper');
   const syntheticVisibleText = getVisibleTextFromElement(syntheticPanel.querySelector('.week-panel'));
   const syntheticDetails = syntheticPanel.querySelector('details.technical-details');
   assert(syntheticVisibleText.includes('Scheduling compromises'), 'UI: soft failures render in a separate scheduling-compromises section');
@@ -191,8 +192,10 @@ export async function runUiTests(assert) {
 
     const visibleSingleWeekText = getVisibleResultsText(doc);
     const singleWeekDetails = doc.querySelector('details.technical-details');
-    const singleWeekHardTable = singleWeekDetails.querySelectorAll('.technical-table')[0];
-    const singleWeekSoftTable = singleWeekDetails.querySelectorAll('.technical-table')[1];
+    const singleWeekTables = singleWeekDetails.querySelectorAll('.technical-table');
+    assert(singleWeekTables.length >= 2, 'UI: technical details render hard and soft validation tables');
+    const singleWeekHardTable = singleWeekTables[0];
+    const singleWeekSoftTable = singleWeekTables[1];
     const singleWeekRender = canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender;
     assert(visibleSingleWeekText.includes('✓ Rota valid') && visibleSingleWeekText.includes('No hard-rule problems found.'), 'UI: valid one-week rota shows one concise success status');
     assert(!visibleSingleWeekText.includes('H008') && !visibleSingleWeekText.includes('at least one Sous Chef or higher required'), 'UI: successful hard-rule checks are hidden from the normal one-week interface');
@@ -294,14 +297,14 @@ export async function runUiTests(assert) {
     await setFieldValue(infeasibleRow.querySelector('.entry-type'), 'Annual Leave');
     await setFieldValue(infeasibleRow.querySelector('.entry-start-date'), '2026-07-20');
     await setFieldValue(infeasibleRow.querySelector('.entry-finish-date'), '2026-07-26');
-    await waitFor(() => canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.overallStatus === 'infeasible');
+    await waitFor(() => doc.querySelectorAll('.week-check').length === 2 && getVisibleResultsText(doc).includes('1 week valid · 1 week requires attention.'));
     assert(getVisibleResultsText(doc).includes('1 week valid · 1 week requires attention.'), 'UI: multi-week summary reports valid and affected weeks compactly');
     const weekChecks = [...doc.querySelectorAll('.week-check')];
     assert(weekChecks[0]?.textContent.includes('✓ No problems found'), 'UI: valid weeks show only a compact success line');
     assert(weekChecks[1]?.textContent.includes('issue'), 'UI: failed weeks automatically list their issues in the weekly checks overview');
 
     doc.querySelector('button[data-results-week-index="1"]').click();
-    await waitFor(() => canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.activeWeekIndex === 1);
+    await waitFor(() => !getWeekPanel(doc, 1)?.classList.contains('hidden'));
     const visibleWeekTwoText = getVisibleResultsText(doc);
     assert(visibleWeekTwoText.includes('Rota could not be generated') && visibleWeekTwoText.includes('cannot place exactly 3 MIO shifts due to availability/unavailability constraints'), 'UI: infeasible weeks immediately show specific failure reasons');
     assert(!visibleWeekTwoText.includes('H015'), 'UI: normal multi-week failure messaging hides hard-rule IDs');
@@ -309,9 +312,9 @@ export async function runUiTests(assert) {
 
     infeasibleRow.querySelector('button[data-remove]').click();
     await waitFor(() => doc.querySelectorAll('#availabilityBody tr').length === 0);
-    await waitFor(() => canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.overallStatus === 'ok');
+    await waitFor(() => doc.querySelectorAll('.week-check').length === 3);
     doc.querySelector('button[data-results-week-index="0"]').click();
-    await waitFor(() => canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.activeWeekIndex === 0);
+    await waitFor(() => !getWeekPanel(doc, 0)?.classList.contains('hidden'));
 
     doc.getElementById('addAdditionalChefBtn').click();
     await waitFor(() => doc.getElementById('additionalChefModal').classList.contains('open'));

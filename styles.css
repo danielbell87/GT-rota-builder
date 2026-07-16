@@ -596,7 +596,7 @@ th {
 }
 
 .hidden {
-  display: none !important;
+  display: none;
 }
 
 .weekly-mio-grid {
@@ -696,7 +696,7 @@ th {
   }
 
   .week-panels .week-panel.hidden {
-    display: grid !important;
+    display: grid;
   }
 
   .week-panel {

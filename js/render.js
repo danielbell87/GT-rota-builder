@@ -44,6 +44,7 @@ function getGtTargetForChef(chefName, mioChefName) {
   return chefName === mioChefName ? 2 : 4;
 }
 
+// Treat a full-shift-equivalent gap from the 48-hour target as a notable outlier for the compact summary.
 const HOURS_DEVIATION_THRESHOLD = 12;
 
 function stripRuleIdPrefix(message = '') {
@@ -64,6 +65,23 @@ function renderStatusBadge(tone, text) {
   return `<span class="status-badge status-${tone}">${escapeHtml(text)}</span>`;
 }
 
+function getExpectedLeaveHoursForChef(chefName, inputs, weekStart) {
+  const weekStartDate = parseLocalDate(weekStart);
+  const weekEndDate = parseLocalDate(weekStart);
+  weekEndDate.setDate(weekEndDate.getDate() + 6);
+  const leaveDates = new Set();
+  (inputs.availability || []).forEach((entry) => {
+    if (entry.chef !== chefName || entry.type !== 'Annual Leave') return;
+    const startDate = parseLocalDate(entry.startDate || entry.date);
+    const finishDate = parseLocalDate(entry.finishDate || entry.date);
+    for (let current = new Date(startDate); current <= finishDate; current.setDate(current.getDate() + 1)) {
+      if (current < weekStartDate || current > weekEndDate) continue;
+      leaveDates.add(`${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`);
+    }
+  });
+  return Math.min(leaveDates.size, 4) * 12;
+}
+
 export function getWeekValidationView(week, state) {
   const inputs = week.inputs || {};
   const hasRota = Array.isArray(week.rota) && week.rota.length > 0;
@@ -79,7 +97,7 @@ export function getWeekValidationView(week, state) {
   const hardFailures = hardValidation.filter((result) => result.severity === 'hard' && result.passed === false);
   const softFailures = softValidation.filter((result) => result.severity === 'soft' && result.passed === false);
   const generationFailures = (week.validation || []).map((result, index) => ({
-    ruleId: result.ruleId || `GEN${String(index + 1).padStart(3, '0')}`,
+    ruleId: result.ruleId || `GEN-${result.day || 'Overall'}-${index + 1}`,
     passed: false,
     severity: 'hard',
     day: result.day || 'Overall',
@@ -193,17 +211,14 @@ function renderWeekStatusCard(view) {
 
 function getChefRowProblems(item, view) {
   const totalHours = item.totalCreditedHours ?? item.hours ?? 0;
-  const ruleIds = new Set(
-    view.hardFailures
-      .filter((result) => result.message.startsWith(`${item.name}:`))
-      .map((result) => result.ruleId)
-  );
+  const expectedLeaveHours = getExpectedLeaveHoursForChef(item.name, view.inputs, view.week.weekStart);
+  const isSelectedMioChef = item.name === view.inputs.mioChef;
   const hasHoursProblem = totalHours > (TARGET_HOURS.weekly + HOURS_DEVIATION_THRESHOLD)
     || (totalHours > 0 && totalHours < (TARGET_HOURS.weekly - HOURS_DEVIATION_THRESHOLD));
   return {
-    gt: ruleIds.has('H016'),
-    mio: ['H015', 'H021', 'H022', 'H023'].some((ruleId) => ruleIds.has(ruleId)),
-    leave: ruleIds.has('H018'),
+    gt: item.gtDays > getGtTargetForChef(item.name, view.inputs.mioChef),
+    mio: isSelectedMioChef && (item.mioDays !== 3 || item.gtDays !== 2),
+    leave: expectedLeaveHours !== (item.annualLeaveHours || 0),
     hours: hasHoursProblem
   };
 }
@@ -513,7 +528,7 @@ function renderFairnessSummary(summary = []) {
   const activeRows = summary.filter(hasFairnessActivity);
   if (!activeRows.length) return '';
   const weightedBurdenValues = activeRows.map((entry) => entry.weightedBurden);
-  const spread = Math.max(...weightedBurdenValues) - Math.min(...weightedBurdenValues);
+  const spread = weightedBurdenValues.length > 1 ? Math.max(...weightedBurdenValues) - Math.min(...weightedBurdenValues) : 0;
   const rows = summary
     .filter(hasFairnessActivity)
     .map((entry) => `<tr><th scope="row">${escapeHtml(entry.name)}</th><td>${entry.fridayCount}</td><td>${entry.saturdayCount}</td><td>${entry.sundayCount}</td><td>${entry.weightedBurden}</td></tr>`)
