@@ -42,7 +42,7 @@ export async function runUiTests(assert) {
   const legacyDoc = parser.parseFromString(legacyHtml, 'text/html');
 
   const missingIds = REQUIRED_DOM_IDS.filter((id) => !indexDoc.getElementById(id) || !legacyDoc.getElementById(id));
-  assert(missingIds.length === 0, 'Both HTML entry pages contain identical required DOM elements', missingIds.join(', '));
+  assert(missingIds.length === 0, 'Required DOM IDs are present in both entry pages', missingIds.join(', '));
 
   const [indexFrame, legacyFrame] = await Promise.all([
     loadPageInIframe('../index.html'),

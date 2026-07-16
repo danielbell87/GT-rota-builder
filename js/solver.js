@@ -33,6 +33,7 @@ export const FAIRNESS_DAY_WEIGHTS = {
   Saturday: 4,
   Sunday: 4
 };
+// Keep fairness below section-quality deltas so it only breaks ties and never overrides fit-based weekly rules.
 const MAX_FAIRNESS_PENALTY = 8;
 
 function getGtTargetForChef(chefName, mioChefName) {

@@ -10,6 +10,7 @@ function getSafeElement(id) {
   return document.getElementById(id);
 }
 
+// HTML/text escaping only; do not use this helper for script, style, or URL-building contexts.
 function escapeHtml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')

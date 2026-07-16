@@ -8,7 +8,7 @@ export const STORAGE_KEYS = {
   staffProfilesByChef: 'gtRota.staffProfilesByChef'
 };
 
-const CURRENT_SCHEMA_VERSION = 3;
+const CURRENT_SCHEMA_VERSION = 4;
 
 function safeParse(raw, fallback) {
   if (!raw) return fallback;
@@ -18,6 +18,51 @@ function safeParse(raw, fallback) {
   } catch {
     return fallback;
   }
+}
+
+function migratePublishedHistory(records) {
+  if (!Array.isArray(records)) return [];
+  if (records.every((record) => record?.kind === 'published-week')) return records;
+
+  const grouped = new Map();
+  records.forEach((record) => {
+    if (!record || typeof record !== 'object' || !record.weekStart) return;
+    if (record.kind === 'published-week') {
+      grouped.set(record.weekStart, record);
+      return;
+    }
+
+    const existing = grouped.get(record.weekStart) || {
+      key: `week__${record.weekStart}`,
+      kind: 'published-week',
+      weekStart: record.weekStart,
+      mioChef: '',
+      rota: [],
+      summary: [],
+      validation: { hard: [], messages: [] },
+      fairnessAttendance: [],
+      status: 'ok',
+      publishedAt: record.publishedAt || new Date().toISOString()
+    };
+
+    existing.fairnessAttendance.push({
+      name: record.chef || '',
+      fridayWorked: !!record.fridayWorked,
+      saturdayWorked: !!record.saturdayWorked,
+      sundayWorked: !!record.sundayWorked,
+      weightedBurden: ((record.fridayWorked ? 3 : 0) + (record.saturdayWorked ? 4 : 0) + (record.sundayWorked ? 4 : 0))
+    });
+    existing.summary.push({
+      name: record.chef || '',
+      gtDays: record.gtDays || 0,
+      mioDays: record.mioDays || 0,
+      hours: record.hours || 0,
+      breakfasts: record.breakfasts || 0
+    });
+    grouped.set(record.weekStart, existing);
+  });
+
+  return [...grouped.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
 }
 
 export function getPersistedMioEligibilityMap() {
@@ -185,6 +230,11 @@ export function migrateStorageIfNeeded() {
     }
   }
 
+  if (current < 4) {
+    const migratedHistory = migratePublishedHistory(safeParse(localStorage.getItem(STORAGE_KEYS.history), []));
+    localStorage.setItem(STORAGE_KEYS.history, JSON.stringify(migratedHistory));
+  }
+
   localStorage.setItem(STORAGE_KEYS.schemaVersion, String(CURRENT_SCHEMA_VERSION));
 }
 
@@ -232,7 +282,7 @@ export function saveAppState(state) {
 
 export function loadHistory() {
   const parsed = safeParse(localStorage.getItem(STORAGE_KEYS.history), []);
-  return Array.isArray(parsed) ? parsed : [];
+  return migratePublishedHistory(parsed);
 }
 
 export function saveHistory(history) {
