@@ -1,13 +1,11 @@
 import { CORE_SECTIONS, ROLE_WEIGHT } from './constants.js';
 import { parseLocalDate } from './utils.js';
-import { getRuleOverrides } from './rules.js';
 import { isSenior } from './scoring.js';
 
 export function isUnavailable(staff, date, dayName, ruleOverrides) {
   const availability = ruleOverrides._availability || [];
   const weekendBlocked = staff.weekendRule === 'Does not work weekends' && ['Saturday', 'Sunday'].includes(dayName);
   const fixedOff = staff.fixedDayOff && staff.fixedDayOff.toLowerCase() === dayName.toLowerCase();
-  const dayOffFromRules = (ruleOverrides.dayOffs?.[staff.name] || []).includes(dayName);
   const leave = availability.some((entry) => {
     if (entry.chef !== staff.name) return false;
     if (entry.type !== 'Annual Leave' && entry.type !== 'Unavailable') return false;
@@ -18,21 +16,26 @@ export function isUnavailable(staff, date, dayName, ruleOverrides) {
     const finishDate = parseLocalDate(finish);
     return current >= startDate && current <= finishDate;
   });
-  return weekendBlocked || fixedOff || dayOffFromRules || leave;
+  return weekendBlocked || fixedOff || leave;
 }
 
-export function getWeeklyContextAdjustments(inputs, dayName) {
+export function getWeeklyContextAdjustments(inputs, dayName, date) {
+  // Date-based additional chef requirements (primary)
+  const additionalReqs = inputs.additionalChefRequirements || [];
+  const req = date ? additionalReqs.find((r) => r.date === date) : null;
+  // Legacy day-based fallback for any remaining dailyOverrides data
   const dayOverride = inputs.dailyOverrides?.[dayName];
+  const extraChefs = req ? (req.count || 0) : (dayOverride?.extraChefs || 0);
   return {
     eventName: dayOverride?.eventName || '',
-    extraChefs: dayOverride?.extraChefs || 0,
+    extraChefs,
     extraSections: []
   };
 }
 
-export function getRequiredChefCount(dayName, inputs) {
+export function getRequiredChefCount(dayName, inputs, date) {
   const baseCount = ['Monday', 'Tuesday', 'Wednesday'].includes(dayName) ? 4 : 5;
-  const adjustment = getWeeklyContextAdjustments(inputs, dayName);
+  const adjustment = getWeeklyContextAdjustments(inputs, dayName, date);
   const extraChefs = adjustment.extraChefs || 0;
   return baseCount + extraChefs;
 }
@@ -103,12 +106,14 @@ export function validateRotaHardRules({ rota, state, inputs, summary }) {
     results.push(createResult('H008', hasSenior, `${day.dayName}: at least one Sous Chef or higher required`));
 
     if (['Monday', 'Tuesday', 'Wednesday'].includes(day.dayName)) {
-      results.push(createResult('H009', new Set(day.chefs).size === 4, `${day.dayName}: expected exactly 4 GT chefs`));
+      const requiredCount = getRequiredChefCount(day.dayName, inputs, day.date);
+      results.push(createResult('H009', new Set(day.chefs).size === requiredCount, `${day.dayName}: expected exactly ${requiredCount} GT chefs`));
       results.push(createResult('H012', findAssignmentsBySection(day, 'Pass').length === 0, `${day.dayName}: Pass should not be assigned`));
     }
 
     if (['Thursday', 'Friday', 'Saturday', 'Sunday'].includes(day.dayName)) {
-      results.push(createResult('H010', new Set(day.chefs).size >= 5, `${day.dayName}: expected at least 5 GT chefs`));
+      const requiredCount = getRequiredChefCount(day.dayName, inputs, day.date);
+      results.push(createResult('H010', new Set(day.chefs).size >= requiredCount, `${day.dayName}: expected at least ${requiredCount} GT chefs`));
       results.push(createResult('H011', findAssignmentsBySection(day, 'Pass').length >= 1, `${day.dayName}: Pass must be covered`));
     }
 
@@ -209,7 +214,6 @@ export function validateRotaHardRules({ rota, state, inputs, summary }) {
 export function validateRotaSoftRules({ rota, state, inputs }) {
   const results = [];
   const ruleOverrides = {
-    ...(getRuleOverrides(inputs?.changes || '')),
     _availability: state?.weeklyInputs?.availability || []
   };
 

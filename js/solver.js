@@ -1,7 +1,6 @@
 import { WEEKDAYS } from './constants.js';
 import { getState } from './state.js';
 import { parseLocalDate } from './utils.js';
-import { getRuleOverrides } from './rules.js';
 import {
   getSectionScore,
   getRoleBonus,
@@ -23,7 +22,7 @@ const MIO_FALLBACK_DAYS = ['Thursday', 'Friday'];
 const MIO_GT_PRIMARY_DAYS = ['Saturday', 'Sunday'];
 const MIO_GT_FALLBACK_DAYS = ['Thursday', 'Friday', 'Monday', 'Tuesday', 'Wednesday'];
 
-export const SOLVER_ENGINE_VERSION = '2026-07-16-mio-gt-pattern';
+export const SOLVER_ENGINE_VERSION = '2026-07-16-additional-chef-modal';
 
 function getGtTargetForChef(chefName, mioChefName) {
   return chefName === mioChefName ? 2 : 4;
@@ -322,7 +321,7 @@ export function buildRota(inputs) {
   const state = getState();
   const dates = buildWeekDates(inputs.weekStart);
   const weekDateSet = new Set(dates.map((item) => item.date));
-  const ruleOverrides = { ...getRuleOverrides(inputs.changes), _availability: state.weeklyInputs.availability };
+  const ruleOverrides = { _availability: state.weeklyInputs.availability };
   const annualLeaveHoursByChef = getAnnualLeaveHoursByChef(state, weekDateSet);
 
   const mioChefName = inputs.mioChef;
@@ -363,7 +362,7 @@ export function buildRota(inputs) {
     const forcedSeniorPassByDay = chooseSeniorPassPlan({ state, dates, ruleOverrides, mioChefName, mioDays });
 
     dates.forEach(({ dayName, date }) => {
-      const requiredChefs = getRequiredChefCount(dayName, inputs);
+      const requiredChefs = getRequiredChefCount(dayName, inputs, date);
       const coreSections = getCoreSections(dayName, inputs);
 
       const candidates = state.staff.filter((staff) => {

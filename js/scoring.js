@@ -1,9 +1,7 @@
 import { ROLE_WEIGHT, SCORING_WEIGHTS, SHIFT_LENGTHS } from './constants.js';
 
 export function getSectionScore(staff, section, ruleOverrides) {
-  let score = staff.skills?.[section] ?? 0;
-  score += ruleOverrides.preferredSections?.[staff.name]?.[section] || 0;
-  score -= ruleOverrides.avoidedSections?.[staff.name]?.[section] || 0;
+  const score = staff.skills?.[section] ?? 0;
   return score;
 }
 

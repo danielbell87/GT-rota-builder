@@ -10,8 +10,8 @@ function baseState() {
   const state = getState();
   state.weeklyInputs.weekStart = '2026-07-13';
   state.weeklyInputs.mioChef = 'Dan';
-  state.weeklyInputs.changes = '';
   state.weeklyInputs.dailyOverrides = {};
+  state.weeklyInputs.additionalChefRequirements = [];
   state.weeklyInputs.availability = [];
   syncCompatibilityViews();
   return state;
@@ -22,8 +22,7 @@ export async function runScoringTests(assert) {
   const solve = buildRota({
     weekStart: state.weeklyInputs.weekStart,
     mioChef: state.weeklyInputs.mioChef,
-    changes: state.weeklyInputs.changes,
-    dailyOverrides: state.weeklyInputs.dailyOverrides,
+    additionalChefRequirements: state.weeklyInputs.additionalChefRequirements || [],
     availability: state.weeklyInputs.availability
   });
 

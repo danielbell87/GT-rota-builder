@@ -12,10 +12,10 @@ const initialState = {
   weeklyInputs: {
     weekStart: defaultWeek,
     mioChef: '',
-    changes: '',
     status: 'Draft',
     dailyOverrides: {},
-    availability: []
+    availability: [],
+    additionalChefRequirements: []
   },
   generatedRotas: {
     current: null
@@ -61,10 +61,6 @@ export function setMioChef(name) {
   appState.weeklyInputs.mioChef = name;
 }
 
-export function setRuleChanges(text) {
-  appState.weeklyInputs.changes = text;
-}
-
 export function setStatus(status) {
   appState.weeklyInputs.status = status;
 }
@@ -76,5 +72,10 @@ export function setAvailability(entries) {
 
 export function setDailyOverrides(overrides) {
   appState.weeklyInputs.dailyOverrides = overrides;
+  syncCompatibilityViews();
+}
+
+export function setAdditionalChefRequirements(entries) {
+  appState.weeklyInputs.additionalChefRequirements = entries;
   syncCompatibilityViews();
 }

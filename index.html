@@ -21,17 +21,14 @@
       <div class="grid">
         <label>Week commencing<input id="weekStart" type="date" min="2024-01-01" step="7"></label>
         <label>MIO chef<select id="mioChef"></select></label>
-        <label>Any rule changes?<textarea id="changes" placeholder="e.g. Aled prefers Pass; Charlie off Tuesday"></textarea><div class="small"><a href="requirements/rota-rules.md" target="_blank" rel="noopener">View saved rota rules</a></div><div id="ruleSummary" class="small rule-summary"></div></label>
       </div>
 
-      <h3 class="mb-6">Daily staffing overrides</h3>
-      <p class="small mb-12">Adjust chef requirements for specific days (e.g., private events, catering requests). Leave blank to use default (4 Mon-Wed, 5 Thu-Sun).</p>
-      <table>
-        <thead>
-          <tr><th>Day</th><th>Base Chefs</th><th>Event Name</th><th>Extra Chefs</th><th>Total</th></tr>
-        </thead>
-        <tbody id="dailyOverridesBody"></tbody>
-      </table>
+      <h3 class="mb-6">Additional chefs</h3>
+      <p class="small mb-12">Request extra GT chefs for a specific date this week (e.g., private events, catering).</p>
+      <div id="additionalChefList"></div>
+      <div class="controls mt-10">
+        <button id="addAdditionalChefBtn" class="secondary">Add additional chef</button>
+      </div>
 
       <h3 class="mb-6">Leave and unavailable</h3>
       <table>
@@ -86,6 +83,24 @@
       <div class="controls mt-14 justify-end">
         <button id="cancelChefBtn" class="secondary">Cancel</button>
         <button id="saveChefBtn">Save chef</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="additionalChefModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="additionalChefModalTitle">
+    <div class="modal-card">
+      <h3 class="mt-0" id="additionalChefModalTitle">Add additional chef</h3>
+      <p class="small mb-12" id="additionalChefWeekRange"></p>
+      <div class="grid">
+        <label>Date<input id="additionalChefDate" type="date"></label>
+        <label>Number of additional chefs
+          <input id="additionalChefCount" type="number" min="1" max="5" value="1">
+        </label>
+      </div>
+      <div id="additionalChefError" class="chef-req-error" role="alert" aria-live="polite"></div>
+      <div class="controls mt-14 justify-end">
+        <button id="cancelAdditionalChefBtn" class="secondary">Cancel</button>
+        <button id="saveAdditionalChefBtn">Add</button>
       </div>
     </div>
   </div>
