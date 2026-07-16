@@ -125,8 +125,14 @@ export function renderResultsPanel() {
   const ruleNotes = [];
   if ((inputs.additionalChefRequirements || []).length > 0) {
     const reqText = inputs.additionalChefRequirements
-      .slice().sort((a, b) => a.date.localeCompare(b.date))
-      .map((r) => { const d = parseLocalDate(r.date); const lbl = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }); return `${lbl}: +${r.count}`; }).join(', ');
+      .slice()
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map((r) => {
+        const d = parseLocalDate(r.date);
+        const lbl = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+        return `${lbl}: +${r.count}`;
+      })
+      .join(', ');
     ruleNotes.push(`Additional chefs: ${reqText}`);
   }
   if (inputs.mioChef) ruleNotes.push(`MIO selection: ${inputs.mioChef}`);

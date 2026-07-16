@@ -210,11 +210,13 @@ function attachEvents() {
   document.getElementById('cancelAdditionalChefBtn').addEventListener('click', closeAdditionalChefModal);
   document.getElementById('saveAdditionalChefBtn').addEventListener('click', handleAdditionalChefSave);
 
-  // Close modal on Escape key
+  // Close modals on Escape key
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
       if (document.getElementById('additionalChefModal').classList.contains('open')) {
         closeAdditionalChefModal();
+      } else if (document.getElementById('chefModal').classList.contains('open')) {
+        closeAddChefModal();
       }
     }
   });

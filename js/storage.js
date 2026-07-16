@@ -165,10 +165,15 @@ export function migrateStorageIfNeeded() {
             if (converted.length) {
               saved.weeklyInputs.additionalChefRequirements = converted;
             }
-            // Clear extraChefs from dailyOverrides to avoid double-counting
+            // Clear extraChefs from dailyOverrides to avoid double-counting.
+            // Remove any entries that are now empty (had only extraChefs).
             Object.keys(saved.weeklyInputs.dailyOverrides).forEach((day) => {
-              if (saved.weeklyInputs.dailyOverrides[day]) {
-                delete saved.weeklyInputs.dailyOverrides[day].extraChefs;
+              const entry = saved.weeklyInputs.dailyOverrides[day];
+              if (entry) {
+                delete entry.extraChefs;
+                if (!Object.keys(entry).filter((k) => k !== 'extraChefs' && entry[k]).length) {
+                  delete saved.weeklyInputs.dailyOverrides[day];
+                }
               }
             });
             localStorage.setItem(STORAGE_KEYS.appState, JSON.stringify(saved));
