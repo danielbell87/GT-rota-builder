@@ -20,8 +20,14 @@ import {
 const PASS_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
 const MIO_PRIMARY_DAYS = ['Monday', 'Tuesday', 'Wednesday'];
 const MIO_FALLBACK_DAYS = ['Thursday', 'Friday'];
+const MIO_GT_PRIMARY_DAYS = ['Saturday', 'Sunday'];
+const MIO_GT_FALLBACK_DAYS = ['Thursday', 'Friday', 'Monday', 'Tuesday', 'Wednesday'];
 
-export const SOLVER_ENGINE_VERSION = '2026-07-15-8d8aeb0';
+export const SOLVER_ENGINE_VERSION = '2026-07-16-mio-gt-pattern';
+
+function getGtTargetForChef(chefName, mioChefName) {
+  return chefName === mioChefName ? 2 : 4;
+}
 
 function buildWeekDates(weekStart) {
   const start = parseLocalDate(weekStart);
@@ -85,6 +91,36 @@ function getMioDayPlan(state, dates, mioChefName, ruleOverrides) {
   return new Set(selected);
 }
 
+function getMioGtDayPlanOptions(state, dates, mioChefName, mioDays, ruleOverrides) {
+  if (!mioChefName) return [new Set()];
+  const staff = state.staff.find((item) => item.name === mioChefName);
+  if (!staff || !staff.mioEligible) return [new Set()];
+
+  const target = getGtTargetForChef(mioChefName, mioChefName);
+  const orderedUniqueDays = [...new Set([...MIO_GT_PRIMARY_DAYS, ...MIO_GT_FALLBACK_DAYS])];
+  const availableDays = orderedUniqueDays.filter((dayName) => {
+    if (mioDays.has(dayName)) return false;
+    const date = dates.find((item) => item.dayName === dayName);
+    if (!date) return false;
+    return !isUnavailable(staff, date.date, dayName, ruleOverrides);
+  });
+  if (availableDays.length < target) return [];
+
+  const combinations = [];
+  for (let i = 0; i < availableDays.length; i += 1) {
+    for (let j = i + 1; j < availableDays.length; j += 1) {
+      const days = [availableDays[i], availableDays[j]];
+      const weekendCount = days.filter((day) => MIO_GT_PRIMARY_DAYS.includes(day)).length;
+      const orderScore = days.reduce((sum, day) => sum + (orderedUniqueDays.length - orderedUniqueDays.indexOf(day)), 0);
+      combinations.push({ days, priority: (weekendCount * 100) + orderScore });
+    }
+  }
+
+  return combinations
+    .sort((a, b) => b.priority - a.priority)
+    .map((item) => new Set(item.days));
+}
+
 function chooseSeniorPassPlan({ state, dates, ruleOverrides, mioChefName, mioDays }) {
   const plannedCounts = Object.fromEntries(state.staff.map((staff) => [staff.name, 0]));
   const forcedByDay = {};
@@ -97,7 +133,7 @@ function chooseSeniorPassPlan({ state, dates, ruleOverrides, mioChefName, mioDay
       .filter((staff) => isSenior(staff))
       .filter((staff) => !isUnavailable(staff, dateInfo.date, dayName, ruleOverrides))
       .filter((staff) => !(staff.name === mioChefName && mioDays.has(dayName)))
-      .filter((staff) => plannedCounts[staff.name] < 4)
+      .filter((staff) => plannedCounts[staff.name] < getGtTargetForChef(staff.name, mioChefName))
       .sort((a, b) => {
         const passA = getSectionScore(a, 'Pass', ruleOverrides);
         const passB = getSectionScore(b, 'Pass', ruleOverrides);
@@ -118,8 +154,8 @@ function pickBestForSection({ section, dayName, candidates, selectedNames, ruleO
   const sectionCandidates = candidates
     .filter((staff) => !selectedNames.has(staff.name))
     .sort((a, b) => {
-      const urgencyA = Math.max(4 - (gtDaysByChef[a.name] || 0), 0) * 2;
-      const urgencyB = Math.max(4 - (gtDaysByChef[b.name] || 0), 0) * 2;
+      const urgencyA = Math.max(getGtTargetForChef(a.name, mioChefName) - (gtDaysByChef[a.name] || 0), 0) * 2;
+      const urgencyB = Math.max(getGtTargetForChef(b.name, mioChefName) - (gtDaysByChef[b.name] || 0), 0) * 2;
       const mioWeekendBoostA = a.name === mioChefName && ['Saturday', 'Sunday'].includes(dayName) ? 10 : 0;
       const mioWeekendBoostB = b.name === mioChefName && ['Saturday', 'Sunday'].includes(dayName) ? 10 : 0;
       const passSeniorA = section === 'Pass' && PASS_DAYS.includes(dayName) && isSenior(a) ? 120 : 0;
@@ -194,7 +230,8 @@ function createDayPlan({
   gtDaysByChef,
   breakfastCounts,
   mioChefName,
-  forcedPassSeniorName
+  forcedPassSeniorName,
+  forcedChefName
 }) {
   if (requiredChefs < coreSections.length) return null;
   if (candidates.length < requiredChefs) return null;
@@ -210,8 +247,20 @@ function createDayPlan({
     }
   }
 
+  if (forcedChefName && !selectedNames.has(forcedChefName)) {
+    const forced = candidates.find((staff) => staff.name === forcedChefName);
+    if (!forced) return null;
+    const availableSections = coreSections.filter((section) => !assignments.some((item) => item.section === section));
+    if (!availableSections.length) return null;
+    const bestSection = availableSections
+      .slice()
+      .sort((a, b) => getSectionScore(forced, b, ruleOverrides) - getSectionScore(forced, a, ruleOverrides))[0];
+    assignments.push({ chef: forced.name, section: bestSection });
+    selectedNames.add(forced.name);
+  }
+
   coreSections.forEach((section) => {
-    if (section === 'Pass' && assignments.some((item) => item.section === 'Pass')) return;
+    if (assignments.some((item) => item.section === section)) return;
     const best = pickBestForSection({
       section,
       dayName,
@@ -234,8 +283,8 @@ function createDayPlan({
     const extra = candidates
       .filter((staff) => !selectedNames.has(staff.name))
       .sort((a, b) => {
-        const urgencyA = Math.max(4 - (gtDaysByChef[a.name] || 0), 0);
-        const urgencyB = Math.max(4 - (gtDaysByChef[b.name] || 0), 0);
+        const urgencyA = Math.max(getGtTargetForChef(a.name, mioChefName) - (gtDaysByChef[a.name] || 0), 0);
+        const urgencyB = Math.max(getGtTargetForChef(b.name, mioChefName) - (gtDaysByChef[b.name] || 0), 0);
         const seniorA = isSenior(a) ? 1 : 0;
         const seniorB = isSenior(b) ? 1 : 0;
         if (seniorB !== seniorA) return seniorB - seniorA;
@@ -274,102 +323,138 @@ export function buildRota(inputs) {
   const dates = buildWeekDates(inputs.weekStart);
   const weekDateSet = new Set(dates.map((item) => item.date));
   const ruleOverrides = { ...getRuleOverrides(inputs.changes), _availability: state.weeklyInputs.availability };
-
-  const gtDaysByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, 0]));
-  const mioDaysByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, 0]));
-  const gtHoursByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, 0]));
-  const mioHoursByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, 0]));
   const annualLeaveHoursByChef = getAnnualLeaveHoursByChef(state, weekDateSet);
-  const breakfastCounts = {};
-
-  const validation = [];
-  const rota = [];
 
   const mioChefName = inputs.mioChef;
   const mioChef = state.staff.find((staff) => staff.name === mioChefName);
   const mioDays = getMioDayPlan(state, dates, mioChefName, ruleOverrides);
-  const forcedSeniorPassByDay = chooseSeniorPassPlan({ state, dates, ruleOverrides, mioChefName, mioDays });
-
-  dates.forEach(({ dayName, date }) => {
-    const requiredChefs = getRequiredChefCount(dayName, inputs);
-    const coreSections = getCoreSections(dayName, inputs);
-
-    const candidates = state.staff.filter((staff) => {
-      if (gtDaysByChef[staff.name] >= 4) return false;
-      if (isUnavailable(staff, date, dayName, ruleOverrides)) return false;
-      if (staff.name === mioChefName && mioDays.has(dayName)) return false;
-      return true;
-    });
-
-    const dayPlan = createDayPlan({
-      state,
-      dayName,
-      date,
-      requiredChefs,
-      coreSections,
-      ruleOverrides,
-      candidates,
-      gtDaysByChef,
-      breakfastCounts,
-      mioChefName,
-      forcedPassSeniorName: forcedSeniorPassByDay[dayName]
-    });
-
-    if (!dayPlan) {
-      validation.push({ day: dayName, message: 'Could not build a valid day plan with current hard constraints.', severity: 'bad' });
-      return;
+  if (mioChefName && mioChef?.mioEligible) {
+    if (mioDays.size !== 3) {
+      return {
+        status: 'infeasible',
+        rota: [],
+        validation: [{ day: 'Overall', message: `${mioChefName}: cannot place exactly 3 MIO shifts due to availability/unavailability constraints.`, severity: 'bad' }],
+        summary: []
+      };
     }
+  }
 
-    const breakfastAssignment = dayPlan.assignments.find((assignment) => assignment.section === 'Breakfast');
-    if (breakfastAssignment) {
-      breakfastCounts[breakfastAssignment.chef] = (breakfastCounts[breakfastAssignment.chef] || 0) + 1;
-    }
-
-    dayPlan.chefs.forEach((chefName) => {
-      gtDaysByChef[chefName] += 1;
-      gtHoursByChef[chefName] += getHoursForDay(dayName);
-    });
-
-    if (mioChef && mioChef.mioEligible && mioDays.has(dayName) && !isUnavailable(mioChef, date, dayName, ruleOverrides)) {
-      dayPlan.assignments.push({ chef: mioChefName, section: 'MIO' });
-      mioDaysByChef[mioChefName] += 1;
-      mioHoursByChef[mioChefName] += getHoursForAssignment(dayName, 'MIO');
-    }
-
-    rota.push(dayPlan);
-  });
-
-  const summary = state.staff.map((staff) => {
-    const totalCreditedHours = (gtHoursByChef[staff.name] || 0) + (mioHoursByChef[staff.name] || 0) + (annualLeaveHoursByChef[staff.name] || 0);
-    return {
-      name: staff.name,
-      count: gtDaysByChef[staff.name] || 0,
-      gtDays: gtDaysByChef[staff.name] || 0,
-      mioDays: mioDaysByChef[staff.name] || 0,
-      gtHours: gtHoursByChef[staff.name] || 0,
-      mioHours: mioHoursByChef[staff.name] || 0,
-      annualLeaveHours: annualLeaveHoursByChef[staff.name] || 0,
-      totalCreditedHours,
-      hours: totalCreditedHours
-    };
-  });
-
-  const hardValidation = validateRotaHardRules({ rota, state, inputs, summary });
-  const hardFailures = hardValidation.filter((result) => !result.passed);
-
-  if (!rota.length || validation.some((item) => item.severity === 'bad') || hardFailures.length > 0) {
+  const mioGtDayPlanOptions = getMioGtDayPlanOptions(state, dates, mioChefName, mioDays, ruleOverrides);
+  if (mioChefName && mioChef?.mioEligible && !mioGtDayPlanOptions.length) {
     return {
       status: 'infeasible',
-      rota,
-      validation: validation.concat(hardFailures.map((result) => ({ day: 'Overall', message: `${result.ruleId}: ${result.message}`, severity: 'bad' }))),
-      summary
+      rota: [],
+      validation: [{ day: 'Overall', message: `${mioChefName}: cannot place exactly 2 GT shifts on non-MIO days due to availability/unavailability constraints.`, severity: 'bad' }],
+      summary: []
     };
   }
 
+  const attemptPlans = mioGtDayPlanOptions.length ? mioGtDayPlanOptions : [new Set()];
+
+  for (let i = 0; i < attemptPlans.length; i += 1) {
+    const mioGtDays = attemptPlans[i];
+    const gtDaysByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, 0]));
+    const mioDaysByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, 0]));
+    const gtHoursByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, 0]));
+    const mioHoursByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, 0]));
+    const breakfastCounts = {};
+    const validation = [];
+    const rota = [];
+    const forcedSeniorPassByDay = chooseSeniorPassPlan({ state, dates, ruleOverrides, mioChefName, mioDays });
+
+    dates.forEach(({ dayName, date }) => {
+      const requiredChefs = getRequiredChefCount(dayName, inputs);
+      const coreSections = getCoreSections(dayName, inputs);
+
+      const candidates = state.staff.filter((staff) => {
+        if (gtDaysByChef[staff.name] >= getGtTargetForChef(staff.name, mioChefName)) return false;
+        if (isUnavailable(staff, date, dayName, ruleOverrides)) return false;
+        if (staff.name === mioChefName && mioDays.has(dayName)) return false;
+        if (staff.name === mioChefName && !mioGtDays.has(dayName)) return false;
+        return true;
+      });
+
+      const dayPlan = createDayPlan({
+        state,
+        dayName,
+        date,
+        requiredChefs,
+        coreSections,
+        ruleOverrides,
+        candidates,
+        gtDaysByChef,
+        breakfastCounts,
+        mioChefName,
+        forcedPassSeniorName: forcedSeniorPassByDay[dayName],
+        forcedChefName: mioGtDays.has(dayName) ? mioChefName : null
+      });
+
+      if (!dayPlan) {
+        validation.push({ day: dayName, message: 'Could not build a valid day plan with current hard constraints.', severity: 'bad' });
+        return;
+      }
+
+      const breakfastAssignment = dayPlan.assignments.find((assignment) => assignment.section === 'Breakfast');
+      if (breakfastAssignment) {
+        breakfastCounts[breakfastAssignment.chef] = (breakfastCounts[breakfastAssignment.chef] || 0) + 1;
+      }
+
+      dayPlan.chefs.forEach((chefName) => {
+        gtDaysByChef[chefName] += 1;
+        gtHoursByChef[chefName] += getHoursForDay(dayName);
+      });
+
+      if (mioChef && mioChef.mioEligible && mioDays.has(dayName) && !isUnavailable(mioChef, date, dayName, ruleOverrides)) {
+        dayPlan.assignments.push({ chef: mioChefName, section: 'MIO' });
+        mioDaysByChef[mioChefName] += 1;
+        mioHoursByChef[mioChefName] += getHoursForAssignment(dayName, 'MIO');
+      }
+
+      rota.push(dayPlan);
+    });
+
+    const summary = state.staff.map((staff) => {
+      const totalCreditedHours = (gtHoursByChef[staff.name] || 0) + (mioHoursByChef[staff.name] || 0) + (annualLeaveHoursByChef[staff.name] || 0);
+      return {
+        name: staff.name,
+        count: gtDaysByChef[staff.name] || 0,
+        gtDays: gtDaysByChef[staff.name] || 0,
+        mioDays: mioDaysByChef[staff.name] || 0,
+        gtHours: gtHoursByChef[staff.name] || 0,
+        mioHours: mioHoursByChef[staff.name] || 0,
+        annualLeaveHours: annualLeaveHoursByChef[staff.name] || 0,
+        totalCreditedHours,
+        hours: totalCreditedHours
+      };
+    });
+
+    const hardValidation = validateRotaHardRules({ rota, state, inputs, summary });
+    const hardFailures = hardValidation.filter((result) => !result.passed);
+    const isFeasible = rota.length > 0 && !validation.some((item) => item.severity === 'bad') && hardFailures.length === 0;
+
+    if (isFeasible) {
+      return {
+        status: 'ok',
+        rota,
+        validation,
+        summary
+      };
+    }
+
+    if (i === attemptPlans.length - 1) {
+      return {
+        status: 'infeasible',
+        rota,
+        validation: validation.concat(hardFailures.map((result) => ({ day: 'Overall', message: `${result.ruleId}: ${result.message}`, severity: 'bad' }))),
+        summary
+      };
+    }
+  }
+
   return {
-    status: 'ok',
-    rota,
-    validation,
-    summary
+    status: 'infeasible',
+    rota: [],
+    validation: [{ day: 'Overall', message: 'Could not build a valid week plan with current hard constraints.', severity: 'bad' }],
+    summary: []
   };
 }
