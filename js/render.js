@@ -29,6 +29,13 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
+function hasFairnessActivity(entry) {
+  return entry.weightedBurden > 0
+    || entry.fridayCount > 0
+    || entry.saturdayCount > 0
+    || entry.sundayCount > 0;
+}
+
 function getEligibleMioChefs(state) {
   return state.staff.filter((staff) => staff.mioEligible);
 }
@@ -285,8 +292,8 @@ function renderWeekHtml(solveResult, state, inputs) {
 function renderFairnessSummary(summary = []) {
   if (!summary.length) return '';
   const rows = summary
-    .filter((entry) => entry.weightedBurden > 0 || entry.fridayCount > 0 || entry.saturdayCount > 0 || entry.sundayCount > 0)
-    .map((entry) => `<tr><td>${entry.name}</td><td>${entry.weightedBurden}</td><td>${entry.fridayCount}</td><td>${entry.saturdayCount}</td><td>${entry.sundayCount}</td><td>${entry.repeatedSaturdaySundayPairCount}</td><td>${entry.repeatedFullWeekendCount}</td><td>${entry.repeatedExactPatternCount}</td></tr>`)
+    .filter(hasFairnessActivity)
+    .map((entry) => `<tr><td>${escapeHtml(entry.name)}</td><td>${entry.weightedBurden}</td><td>${entry.fridayCount}</td><td>${entry.saturdayCount}</td><td>${entry.sundayCount}</td><td>${entry.repeatedSaturdaySundayPairCount}</td><td>${entry.repeatedFullWeekendCount}</td><td>${entry.repeatedExactPatternCount}</td></tr>`)
     .join('');
   if (!rows) return '';
   return `

@@ -1,4 +1,4 @@
-import { WEEKDAYS, DAY_FAIRNESS_WEIGHTS } from './constants.js';
+import { WEEKDAYS, DAY_FAIRNESS_WEIGHTS, SHIFT_LENGTHS } from './constants.js';
 import { getState } from './state.js';
 import { parseLocalDate, toDateString, getWeekStartAtOffset, normalizeWeekStart } from './utils.js';
 import {
@@ -70,7 +70,7 @@ function getAnnualLeaveHoursByChef(staff, availability, weekDateSet) {
   const leaveDatesByChef = getAnnualLeaveDatesByChef(availability, weekDateSet);
   const result = Object.fromEntries(staff.map((member) => [member.name, 0]));
   Object.entries(leaveDatesByChef).forEach(([chef, dateSet]) => {
-    result[chef] = Math.min(dateSet.size, 4) * 12;
+    result[chef] = Math.min(dateSet.size, 4) * SHIFT_LENGTHS.annualLeaveCreditPerDay;
   });
   return result;
 }
@@ -89,11 +89,12 @@ function getMioDayPlan(state, dates, mioChefName, ruleOverrides) {
 
   if (selected.length < 3) {
     MIO_FALLBACK_DAYS.forEach((dayName) => {
-      if (selected.length >= 3 || selected.includes(dayName)) return;
-      const date = dates.find((item) => item.dayName === dayName);
-      if (!date) return;
-      if (!isUnavailable(staff, date.date, dayName, ruleOverrides)) selected.push(dayName);
-    });
+    if (selected.length >= 3) return;
+    if (selected.includes(dayName)) return;
+    const date = dates.find((item) => item.dayName === dayName);
+    if (!date) return;
+    if (!isUnavailable(staff, date.date, dayName, ruleOverrides)) selected.push(dayName);
+  });
   }
 
   return new Set(selected);
