@@ -391,6 +391,18 @@ th {
 }
 
 /* print */
+/* multi-week */
+.multi-week-section {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 2px solid #243547;
+}
+
+.multi-week-heading {
+  margin-top: 0;
+  color: var(--accent);
+}
+
 @media print {
   body {
     background: #fff;

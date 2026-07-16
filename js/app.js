@@ -1,5 +1,5 @@
 import { CHEF_ROLES } from './constants.js';
-import { getState, getDefaultWeek, resetStateToDefaults, syncCompatibilityViews, setWeekStart, setMioChef } from './state.js';
+import { getState, getDefaultWeek, resetStateToDefaults, syncCompatibilityViews, setWeekStart, setMioChef, setNumWeeks } from './state.js';
 import { normalizeWeekStart } from './utils.js';
 import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory, persistAllMioEligibility, persistAllStaffProfiles, persistMioEligibilityForChef, renamePersistedMioEligibility, renamePersistedStaffProfile } from './storage.js?v=20260714';
 import { addChef, createChefFromModalDom, updateChefField, updateChefSkill, removeChef, resetStaffToDefaults } from './staff.js';
@@ -27,6 +27,8 @@ function loadInitialState() {
   document.getElementById('weekStart').value = normalizeWeekStart(state.weeklyInputs.weekStart || getDefaultWeek());
   renderStaffTable();
   document.getElementById('mioChef').value = state.weeklyInputs.mioChef || '';
+  const numWeeksEl = document.getElementById('numWeeks');
+  if (numWeeksEl) numWeeksEl.value = String(state.weeklyInputs.numWeeks || 1);
 }
 
 function handleChefAdd() {
@@ -191,6 +193,12 @@ function attachEvents() {
 
   document.getElementById('mioChef').addEventListener('change', (event) => {
     setMioChef(event.target.value);
+    renderResultsPanel();
+    persistState();
+  });
+
+  document.getElementById('numWeeks').addEventListener('change', (event) => {
+    setNumWeeks(event.target.value);
     renderResultsPanel();
     persistState();
   });

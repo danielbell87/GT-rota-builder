@@ -1,5 +1,5 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
-import { buildRota } from '../js/solver.js';
+import { buildRota, buildMultiWeekRota } from '../js/solver.js';
 import { isSenior, getHoursForDay, getHoursForAssignment } from '../js/scoring.js';
 import { validateRotaHardRules } from '../js/validation.js?v=20260714';
 
@@ -158,4 +158,52 @@ export async function runSolverTests(assert) {
   assert(getHoursForDay('Sunday') === 10.5, 'Sunday normal shift equals 10.5 hours');
   assert(getHoursForAssignment('Monday', 'MIO') === 8.5, 'MIO shift equals 8.5 hours');
   assert(getHoursForDay('Thursday', true) === getHoursForDay('Thursday'), 'Breakfast does not increase paid hours');
+
+  // Multi-week rota generation tests
+  const multiWeekState = setupBaseState();
+  const multiWeekInputs = {
+    weekStart: multiWeekState.weeklyInputs.weekStart,
+    mioChef: multiWeekState.weeklyInputs.mioChef,
+    additionalChefRequirements: [],
+    availability: []
+  };
+
+  const twoWeekResult = buildMultiWeekRota(multiWeekInputs, 2);
+  assert(twoWeekResult.length === 2, 'Multi-week: 2-week generation returns exactly 2 results');
+  assert(twoWeekResult[0].status === 'ok', 'Multi-week: week 1 is feasible');
+  assert(twoWeekResult[1].status === 'ok', 'Multi-week: week 2 is feasible');
+
+  const week1Start = multiWeekInputs.weekStart;
+  const week2Start = twoWeekResult[1].weekStart;
+  const w1Parts = week1Start.split('-').map(Number);
+  const w2Parts = week2Start.split('-').map(Number);
+  const w1Date = new Date(w1Parts[0], w1Parts[1] - 1, w1Parts[2]);
+  const w2Date = new Date(w2Parts[0], w2Parts[1] - 1, w2Parts[2]);
+  const dayDiff = Math.round((w2Date - w1Date) / (1000 * 60 * 60 * 24));
+  assert(dayDiff === 7, 'Multi-week: week 2 starts exactly 7 days after week 1');
+
+  twoWeekResult.forEach((weekResult, wi) => {
+    if (weekResult.status !== 'ok') return;
+    const hardFails = validateRotaHardRules({
+      rota: weekResult.rota,
+      state: multiWeekState,
+      inputs: { ...multiWeekInputs, weekStart: weekResult.weekStart },
+      summary: weekResult.summary
+    }).filter((r) => !r.passed);
+    assert(hardFails.length === 0, `Multi-week: week ${wi + 1} has no hard-rule failures`);
+  });
+
+  const fourWeekResult = buildMultiWeekRota(multiWeekInputs, 4);
+  assert(fourWeekResult.length === 4, 'Multi-week: 4-week generation returns exactly 4 results');
+  const feasibleWeeks = fourWeekResult.filter((r) => r.status === 'ok').length;
+  assert(feasibleWeeks >= 3, 'Multi-week: at least 3 of 4 weeks are feasible');
+
+  const singleWeekResult = buildMultiWeekRota(multiWeekInputs, 1);
+  assert(singleWeekResult.length === 1, 'Multi-week: 1-week generation returns exactly 1 result');
+  assert(singleWeekResult[0].weekStart === week1Start, 'Multi-week: 1-week result uses correct weekStart');
+
+  const outOfRangeResult = buildMultiWeekRota(multiWeekInputs, 0);
+  assert(outOfRangeResult.length === 1, 'Multi-week: 0 weeks is clamped to 1');
+  const overMaxResult = buildMultiWeekRota(multiWeekInputs, 99);
+  assert(overMaxResult.length === 8, 'Multi-week: 99 weeks is clamped to 8');
 }
