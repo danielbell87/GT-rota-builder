@@ -165,7 +165,7 @@ export async function runUiTests(assert) {
     const persistedAfterAdditional = JSON.parse(localStorage.getItem('gtRota.state.v2'));
     assert(persistedAfterAdditional.weeklyInputs.additionalChefRequirements.some((entry) => entry.date === '2026-07-27' && entry.count === 2), 'UI: later-week additional-chef dates persist correctly');
 
-    const styles = await fetch('../styles.css').then((response) => response.text());
+    const styles = await fetch(new URL('../styles.css', import.meta.url)).then((response) => response.text());
     assert(styles.includes('@media print') && styles.includes('.week-panel[hidden]') && styles.includes('break-before: page'), 'UI: print mode includes every generated week');
 
     await setFieldValue(doc.getElementById('numWeeks'), '1');

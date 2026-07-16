@@ -380,10 +380,10 @@ function renderMultiWeekNavigation(weeks, activeWeekIndex, showAllWeeks) {
   const activeWeek = weeks[activeWeekIndex] || weeks[0];
   const previousDisabled = activeWeekIndex <= 0;
   const nextDisabled = activeWeekIndex >= weeks.length - 1;
-  const viewingLabel = showAllWeeks
-    ? `Viewing all ${weeks.length} week${weeks.length === 1 ? '' : 's'}`
-    : `Viewing Week ${activeWeekIndex + 1} of ${weeks.length}`;
-  const dateRange = activeWeek ? formatLongWeekRange(activeWeek.weekStart) : '';
+  const viewingLabel = showAllWeeks ? 'Viewing all weeks' : `Viewing Week ${activeWeekIndex + 1} of ${weeks.length}`;
+  const dateRange = showAllWeeks
+    ? `${weeks.length} generated week${weeks.length === 1 ? '' : 's'} shown below`
+    : (activeWeek ? formatLongWeekRange(activeWeek.weekStart) : '');
   const activeMio = escapeHtml(activeWeek?.mioChef || 'None');
   const tabs = weeks.map((week, index) => `
     <button
@@ -393,6 +393,7 @@ function renderMultiWeekNavigation(weeks, activeWeekIndex, showAllWeeks) {
       role="tab"
       aria-selected="${index === activeWeekIndex ? 'true' : 'false'}"
       aria-controls="results-week-panel-${index}"
+      aria-keyshortcuts="ArrowLeft ArrowRight Home End"
       tabindex="${index === activeWeekIndex ? '0' : '-1'}"
       data-results-week-index="${index}"
     >Week ${index + 1} · ${escapeHtml(formatShortWeekRange(week.weekStart))}</button>`).join('');
@@ -411,7 +412,8 @@ function renderMultiWeekNavigation(weeks, activeWeekIndex, showAllWeeks) {
         </label>
         <button type="button" class="secondary week-nav-button" data-results-week-next ${nextDisabled ? 'disabled' : ''}>Next week</button>
       </div>
-      <div class="desktop-only week-tabs" role="tablist" aria-label="Generated weeks">${tabs}</div>
+      <p id="results-week-tab-help" class="sr-only">Use Left and Right arrow keys, Home, and End to move between generated weeks.</p>
+      <div class="desktop-only week-tabs" role="tablist" aria-label="Generated weeks" aria-describedby="results-week-tab-help">${tabs}</div>
       <div class="week-navigation-secondary">
         <button type="button" class="secondary" ${showAllWeeks ? 'data-results-view-one' : 'data-results-view-all'}>${showAllWeeks ? 'View one week at a time' : 'View all weeks'}</button>
       </div>
