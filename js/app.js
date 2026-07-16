@@ -171,11 +171,6 @@ function handleAdditionalChefSave() {
   if (countErr) { errorEl.textContent = countErr; countInput.focus(); return; }
 
   const count = Number.parseInt(countInput.value, 10);
-  if (!Number.isInteger(count) || count < 1) {
-    errorEl.textContent = 'Please enter a valid quantity.';
-    countInput.focus();
-    return;
-  }
   const date = dateInput.value;
 
   if (editingReqDate) {
