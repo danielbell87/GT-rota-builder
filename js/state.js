@@ -12,6 +12,7 @@ const initialState = {
   weeklyInputs: {
     weekStart: defaultWeek,
     mioChef: '',
+    mioSelectionsByWeek: {},
     status: 'Draft',
     numWeeks: 1,
     dailyOverrides: {},
@@ -19,13 +20,15 @@ const initialState = {
     additionalChefRequirements: []
   },
   generatedRotas: {
-    current: null
+    current: null,
+    lastBuild: null
   },
   history: [],
   uiState: {
     validation: [],
     softScore: null,
-    lastError: ''
+    lastError: '',
+    activeWeekIndex: 0
   },
   availability: [],
   dailyOverrides: {}
@@ -60,6 +63,10 @@ export function setWeekStart(weekStart) {
 
 export function setMioChef(name) {
   appState.weeklyInputs.mioChef = name;
+}
+
+export function setMioSelectionsByWeek(selections) {
+  appState.weeklyInputs.mioSelectionsByWeek = { ...(selections || {}) };
 }
 
 export function setStatus(status) {

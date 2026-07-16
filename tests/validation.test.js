@@ -3,6 +3,7 @@ import { buildRota } from '../js/solver.js';
 import { validateRotaHardRules, validateRotaSoftRules, isRotaValid } from '../js/validation.js?v=20260714';
 
 function setupState() {
+  localStorage.clear();
   resetStateToDefaults();
   const state = getState();
   state.weeklyInputs.weekStart = '2026-07-13';

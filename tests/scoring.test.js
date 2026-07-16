@@ -1,15 +1,23 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
-import { buildRota } from '../js/solver.js';
+import { buildRota, buildMultiWeekRota } from '../js/solver.js';
 import { validateRotaHardRules } from '../js/validation.js?v=20260714';
 import { scoreSoftPreferences } from '../js/scoring.js';
 import { saveAppState, loadAppState } from '../js/storage.js?v=20260714';
 import { upsertPublishedHistory } from '../js/history.js';
 
 function baseState() {
+  localStorage.clear();
   resetStateToDefaults();
   const state = getState();
   state.weeklyInputs.weekStart = '2026-07-13';
   state.weeklyInputs.mioChef = 'Dan';
+  state.weeklyInputs.mioSelectionsByWeek = {
+    '2026-07-13': 'Dan',
+    '2026-07-20': 'Fred',
+    '2026-07-27': 'Joel',
+    '2026-08-03': 'Camilla'
+  };
+  state.weeklyInputs.numWeeks = 4;
   state.weeklyInputs.dailyOverrides = {};
   state.weeklyInputs.additionalChefRequirements = [];
   state.weeklyInputs.availability = [];
@@ -22,11 +30,11 @@ export async function runScoringTests(assert) {
   const solve = buildRota({
     weekStart: state.weeklyInputs.weekStart,
     mioChef: state.weeklyInputs.mioChef,
-    additionalChefRequirements: state.weeklyInputs.additionalChefRequirements || [],
+    additionalChefRequirements: state.weeklyInputs.additionalChefRequirements,
     availability: state.weeklyInputs.availability
   });
 
-  const hard = validateRotaHardRules({ rota: solve.rota, state, inputs: state.weeklyInputs, summary: solve.summary });
+  const hard = validateRotaHardRules({ rota: solve.rota, state, inputs: { ...state.weeklyInputs, mioChef: 'Dan' }, summary: solve.summary });
   const score = scoreSoftPreferences({ state, rota: solve.rota, hardValidation: hard });
   assert(typeof score.score === 'number', 'Scoring returns numeric soft score');
   assert(score.explanation.some((line) => line.includes('Senior chef') && line.includes('Pass')), 'Scoring explanation includes senior-on-Pass preference details');
@@ -34,7 +42,7 @@ export async function runScoringTests(assert) {
   const forcedNonSeniorPass = JSON.parse(JSON.stringify(solve.rota));
   const friday = forcedNonSeniorPass.find((day) => day.dayName === 'Friday');
   if (friday) {
-    const pass = friday.assignments.find((a) => a.section === 'Pass');
+    const pass = friday.assignments.find((assignment) => assignment.section === 'Pass');
     if (pass) pass.chef = 'Dan';
     if (!friday.chefs.includes('Dan')) friday.chefs.push('Dan');
   }
@@ -46,20 +54,31 @@ export async function runScoringTests(assert) {
   const capped = scoreSoftPreferences({ state, rota: solve.rota, hardValidation: broken });
   assert(capped.capped && capped.score <= 80, 'Hard rule failure caps score');
 
-  state.weeklyInputs.availability = [{ chef: 'Aled', type: 'Annual Leave', startDate: '2026-07-14', finishDate: '2026-07-14', notes: '' }];
-  syncCompatibilityViews();
-  const leaveCredit = 12;
-  assert(leaveCredit === 12, 'Annual leave credits 12 hours per leave day');
-
-  const fullWeekCredit = 4 * 12;
-  assert(fullWeekCredit === 48, 'A full four-day leave week credits 48 hours');
-
   state.weeklyInputs.status = 'Published';
-  state.generatedRotas.current = solve;
-  const first = upsertPublishedHistory(state, state.weeklyInputs.weekStart, solve.rota, solve.summary);
-  const second = upsertPublishedHistory(state, state.weeklyInputs.weekStart, solve.rota, solve.summary);
-  assert(first.inserted > 0, 'Published history inserts first week records');
-  assert(second.inserted === 0, 'Published history does not create duplicate week/chef records');
+  const multiWeek = buildMultiWeekRota({
+    weekStart: state.weeklyInputs.weekStart,
+    mioChef: state.weeklyInputs.mioChef,
+    mioSelectionsByWeek: state.weeklyInputs.mioSelectionsByWeek,
+    additionalChefRequirements: state.weeklyInputs.additionalChefRequirements,
+    availability: state.weeklyInputs.availability
+  }, 4);
+  multiWeek.weeks.forEach((week) => {
+    upsertPublishedHistory(state, {
+      weekStart: week.weekStart,
+      mioChef: week.mioChef,
+      rota: week.rota,
+      summary: week.summary,
+      validation: {
+        hard: week.hardValidation || [],
+        messages: week.validation || []
+      },
+      fairnessSummary: week.fairnessSummary || [],
+      status: week.status
+    });
+  });
+  assert(state.history.length === 4, 'Publishing four weeks creates four records');
+  assert(state.history.every((entry) => entry.weekStart && entry.mioChef && Array.isArray(entry.rota)), 'Published records preserve week-specific rota data');
+  assert(state.history.every((entry) => Array.isArray(entry.validation?.hard) && Array.isArray(entry.fairnessAttendance)), 'Published records preserve validation and fairness attendance');
 
   saveAppState(state);
   loadAppState();

@@ -20,12 +20,13 @@
       <h2>Weekly inputs</h2>
       <div class="grid">
         <label>Week commencing<input id="weekStart" type="date" min="2024-01-01" step="7"></label>
-        <label>MIO chef<select id="mioChef"></select></label>
+        <label id="singleWeekMioControl">MIO chef<select id="mioChef"></select></label>
         <label>Number of weeks<select id="numWeeks"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option></select></label>
       </div>
+      <div id="weeklyMioPlan" hidden></div>
 
       <h3 class="mb-6">Additional chefs</h3>
-      <p class="small mb-12">Request extra GT chefs for a specific date this week (e.g., private events, catering).</p>
+      <p class="small mb-12">Request extra GT chefs for any exact date in the selected planning period.</p>
       <div id="additionalChefList"></div>
       <div class="controls mt-10">
         <button id="addAdditionalChefBtn" class="secondary">Add additional chef</button>

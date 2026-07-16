@@ -1,19 +1,78 @@
-import { getState, getDefaultWeek, setWeekStart, setMioChef, setAvailability, setAdditionalChefRequirements, setNumWeeks } from './state.js';
-import { normalizeWeekStart } from './utils.js';
+import {
+  getState,
+  getDefaultWeek,
+  setWeekStart,
+  setMioChef,
+  setMioSelectionsByWeek,
+  setAvailability,
+  setAdditionalChefRequirements,
+  setNumWeeks
+} from './state.js';
+import { getPlanningHorizon, getPlanningWeekStarts, normalizeWeekStart } from './utils.js';
+
+const MIO_ROTATION = ['Dan', 'Fred', 'Joel', 'Camilla', 'Brooke'];
+
+export function getEligibleMioChefs(state = getState()) {
+  return state.staff.filter((staff) => staff.mioEligible).map((staff) => staff.name);
+}
+
+export function getSuggestedMioChef(eligibleChefs, weekIndex) {
+  if (!eligibleChefs.length) return '';
+  const rotated = MIO_ROTATION.filter((name) => eligibleChefs.includes(name));
+  const pool = rotated.length ? rotated : eligibleChefs;
+  return pool[weekIndex % pool.length] || '';
+}
+
+export function ensureMioSelectionsForPlanningHorizon(state = getState()) {
+  const weekStart = normalizeWeekStart(state.weeklyInputs.weekStart || getDefaultWeek());
+  const weekStarts = getPlanningWeekStarts(weekStart, state.weeklyInputs.numWeeks || 1);
+  const eligibleChefs = getEligibleMioChefs(state);
+  const nextSelections = { ...(state.weeklyInputs.mioSelectionsByWeek || {}) };
+
+  weekStarts.forEach((start, index) => {
+    if (!eligibleChefs.includes(nextSelections[start])) {
+      nextSelections[start] = getSuggestedMioChef(eligibleChefs, index);
+    }
+  });
+
+  setMioSelectionsByWeek(nextSelections);
+  setMioChef(nextSelections[weekStarts[0]] || eligibleChefs[0] || '');
+  return nextSelections;
+}
 
 export function collectWeeklyInputsFromDom() {
   const state = getState();
   const rawWeek = document.getElementById('weekStart').value || getDefaultWeek();
   const normalizedWeek = normalizeWeekStart(rawWeek);
   setWeekStart(normalizedWeek);
-  setMioChef(document.getElementById('mioChef').value);
   const rawNumWeeks = parseInt(document.getElementById('numWeeks')?.value || '1', 10);
   setNumWeeks(rawNumWeeks);
+  const plannedWeekStarts = getPlanningWeekStarts(normalizedWeek, state.weeklyInputs.numWeeks || 1);
+  const currentSelections = ensureMioSelectionsForPlanningHorizon(state);
+  const weeklySelects = Array.from(document.querySelectorAll('.weekly-mio-select'));
+  if (weeklySelects.length) {
+    const nextSelections = { ...currentSelections };
+    weeklySelects.forEach((select) => {
+      const weekStart = select.getAttribute('data-week-start');
+      if (weekStart) nextSelections[weekStart] = select.value;
+    });
+    setMioSelectionsByWeek(nextSelections);
+  } else {
+    const mioSelect = document.getElementById('mioChef');
+    if (mioSelect) {
+      const firstWeek = plannedWeekStarts[0];
+      const nextSelections = { ...currentSelections, [firstWeek]: mioSelect.value };
+      setMioSelectionsByWeek(nextSelections);
+    }
+  }
+  const activeSelections = state.weeklyInputs.mioSelectionsByWeek || {};
+  setMioChef(activeSelections[plannedWeekStarts[0]] || document.getElementById('mioChef')?.value || '');
   setAvailability(state.weeklyInputs.availability);
 
   return {
     weekStart: state.weeklyInputs.weekStart,
     mioChef: state.weeklyInputs.mioChef,
+    mioSelectionsByWeek: state.weeklyInputs.mioSelectionsByWeek || {},
     numWeeks: state.weeklyInputs.numWeeks,
     additionalChefRequirements: state.weeklyInputs.additionalChefRequirements || [],
     availability: state.weeklyInputs.availability,
@@ -73,16 +132,19 @@ export function removeAdditionalChefRequest(date) {
 }
 
 export function validateAdditionalChefDate(dateStr, weekStart) {
+  return validateAdditionalChefDateForHorizon(dateStr, weekStart, 1);
+}
+
+export function validateAdditionalChefDateForHorizon(dateStr, weekStart, numWeeks = 1) {
   if (!dateStr) return 'Please select a date.';
-  const parts = weekStart.split('-').map(Number);
-  const start = new Date(parts[0], parts[1] - 1, parts[2]);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
+  const { startDate, endDate } = getPlanningHorizon(weekStart, numWeeks);
+  const start = new Date(startDate.split('-').map(Number)[0], startDate.split('-').map(Number)[1] - 1, startDate.split('-').map(Number)[2]);
+  const end = new Date(endDate.split('-').map(Number)[0], endDate.split('-').map(Number)[1] - 1, endDate.split('-').map(Number)[2]);
   const dp = dateStr.split('-').map(Number);
   const selected = new Date(dp[0], dp[1] - 1, dp[2]);
   if (selected < start || selected > end) {
     const fmt = (d) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-    return `Date must be within the selected week (${fmt(start)} – ${fmt(end)}).`;
+    return `Date must be within the selected planning period (${fmt(start)} – ${fmt(end)}).`;
   }
   return '';
 }

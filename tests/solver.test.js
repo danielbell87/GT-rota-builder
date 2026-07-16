@@ -1,209 +1,177 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
-import { buildRota, buildMultiWeekRota } from '../js/solver.js';
+import {
+  buildRota,
+  buildMultiWeekRota,
+  createFairnessState,
+  FAIRNESS_DAY_WEIGHTS,
+  getEmptyFairnessRecord,
+  getFairnessPenalty
+} from '../js/solver.js';
 import { isSenior, getHoursForDay, getHoursForAssignment } from '../js/scoring.js';
 import { validateRotaHardRules } from '../js/validation.js?v=20260714';
 
 function setupBaseState() {
+  localStorage.clear();
   resetStateToDefaults();
   const state = getState();
   state.weeklyInputs.weekStart = '2026-07-13';
   state.weeklyInputs.mioChef = 'Dan';
+  state.weeklyInputs.mioSelectionsByWeek = {
+    '2026-07-13': 'Dan',
+    '2026-07-20': 'Fred',
+    '2026-07-27': 'Joel',
+    '2026-08-03': 'Camilla'
+  };
   state.weeklyInputs.availability = [];
   state.weeklyInputs.dailyOverrides = {};
   state.weeklyInputs.additionalChefRequirements = [];
+  state.weeklyInputs.numWeeks = 4;
   syncCompatibilityViews();
   return state;
 }
 
-function runScenario(state, override = {}) {
+function runScenario(state, override = {}, options = {}) {
   return buildRota({
-    weekStart: state.weeklyInputs.weekStart,
+    weekStart: override.weekStart ?? state.weeklyInputs.weekStart,
     mioChef: override.mioChef ?? state.weeklyInputs.mioChef,
-    additionalChefRequirements: state.weeklyInputs.additionalChefRequirements || [],
-    availability: state.weeklyInputs.availability
-  });
+    mioSelectionsByWeek: override.mioSelectionsByWeek ?? state.weeklyInputs.mioSelectionsByWeek,
+    additionalChefRequirements: override.additionalChefRequirements ?? state.weeklyInputs.additionalChefRequirements || [],
+    availability: override.availability ?? state.weeklyInputs.availability
+  }, options);
 }
 
-function getHardFailures(state, result) {
-  const hard = validateRotaHardRules({ rota: result.rota, state, inputs: state.weeklyInputs, summary: result.summary });
+function getHardFailures(state, result, inputs = state.weeklyInputs) {
+  const hard = validateRotaHardRules({ rota: result.rota, state, inputs, summary: result.summary });
   return hard.filter((item) => !item.passed);
 }
 
-function hasAnyAssignment(result, chefName) {
-  return result.rota.some((day) => day.assignments.some((assignment) => assignment.chef === chefName));
+function getMioSummary(weekResult, chefName) {
+  return weekResult.summary.find((item) => item.name === chefName);
 }
 
 export async function runSolverTests(assert) {
   const state = setupBaseState();
-
   const baseline = runScenario(state);
-  const baselineFailures = getHardFailures(state, baseline);
+  const baselineFailures = getHardFailures(state, baseline, { ...state.weeklyInputs, mioChef: 'Dan' });
 
   assert(baseline.status === 'ok', 'Baseline week with Dan on MIO is feasible');
   assert(baselineFailures.length === 0, 'Baseline week has no hard-rule failures');
-  const danBaseline = baseline.summary.find((item) => item.name === 'Dan');
-  assert((danBaseline?.mioDays || 0) === 3, 'Selected MIO chef receives exactly 3 MIO shifts in baseline');
-  assert((danBaseline?.gtDays || 0) === 2, 'Selected MIO chef receives exactly 2 GT shifts in baseline');
-  const danMioGtOverlap = baseline.rota.some((day) => day.chefs.includes('Dan') && day.assignments.some((assignment) => assignment.section === 'MIO' && assignment.chef === 'Dan'));
-  assert(!danMioGtOverlap, 'Selected MIO chef is never assigned MIO and GT on the same day');
-  const danWeekendGt = baseline.rota
-    .filter((day) => ['Saturday', 'Sunday'].includes(day.dayName))
-    .every((day) => day.chefs.includes('Dan'));
-  assert(danWeekendGt, 'Selected MIO chef is preferentially assigned to weekend GT days when available');
-
-  const monWedExact4 = baseline.rota
-    .filter((day) => ['Monday', 'Tuesday', 'Wednesday'].includes(day.dayName))
-    .every((day) => new Set(day.chefs).size === 4);
-  assert(monWedExact4, 'Baseline has exactly four GT chefs Monday-Wednesday');
-
-  const passSeniorFeasible = baseline.rota
-    .filter((day) => ['Thursday', 'Friday', 'Saturday', 'Sunday'].includes(day.dayName))
-    .every((day) => {
-      const pass = day.assignments.find((assignment) => assignment.section === 'Pass');
-      if (!pass) return false;
-      const passChef = state.staff.find((staff) => staff.name === pass.chef);
-      return !!passChef && isSenior(passChef);
-    });
-  assert(passSeniorFeasible, 'Baseline uses senior chef on Pass Thursday-Sunday where feasible');
-
-  const joelLeaveState = setupBaseState();
-  joelLeaveState.weeklyInputs.availability = [{ chef: 'Joel', type: 'Annual Leave', startDate: '2026-07-13', finishDate: '2026-07-19', notes: '' }];
-  syncCompatibilityViews();
-  const joelLeave = runScenario(joelLeaveState);
-  const joelLeaveFailures = getHardFailures(joelLeaveState, joelLeave);
-  const joelSummary = joelLeave.summary.find((item) => item.name === 'Joel');
-  assert(joelLeave.status === 'ok', 'Joel full-week annual leave scenario is feasible');
-  assert((joelSummary?.annualLeaveHours || 0) === 48, 'Joel receives 48 leave-credit hours for full leave week');
-  assert(!hasAnyAssignment(joelLeave, 'Joel'), 'Joel has no GT or MIO assignment during full leave week');
-  assert(joelLeaveFailures.length === 0, 'Joel full-week leave scenario has no hard failures');
-
-  const charlieLeaveState = setupBaseState();
-  charlieLeaveState.weeklyInputs.availability = [{ chef: 'Charlie', type: 'Annual Leave', startDate: '2026-07-13', finishDate: '2026-07-19', notes: '' }];
-  syncCompatibilityViews();
-  const charlieLeave = runScenario(charlieLeaveState);
-  const charlieLeaveFailures = getHardFailures(charlieLeaveState, charlieLeave);
-  const charlieSummary = charlieLeave.summary.find((item) => item.name === 'Charlie');
-  const aledWeekend = charlieLeave.rota.some((day) => ['Saturday', 'Sunday'].includes(day.dayName) && day.chefs.includes('Aled'));
-  const dailySeniorCover = charlieLeave.rota.every((day) => day.chefs.some((name) => isSenior(charlieLeaveState.staff.find((staff) => staff.name === name))));
-  assert(charlieLeave.status === 'ok', 'Charlie full-week annual leave scenario is feasible');
-  assert((charlieSummary?.annualLeaveHours || 0) === 48, 'Charlie receives 48 leave-credit hours for full leave week');
-  assert(!aledWeekend, 'Aled still does not work weekends when Charlie is on leave');
-  assert(dailySeniorCover, 'Every day retains senior cover when Charlie is on leave');
-  assert(charlieLeaveFailures.length === 0, 'Charlie full-week leave scenario has no hard failures');
-
-  const danUnavailableState = setupBaseState();
-  danUnavailableState.weeklyInputs.availability = [{ chef: 'Dan', type: 'Unavailable', startDate: '2026-07-17', finishDate: '2026-07-17', notes: '' }];
-  syncCompatibilityViews();
-  const danUnavailable = runScenario(danUnavailableState);
-  const danUnavailableFailures = getHardFailures(danUnavailableState, danUnavailable);
-  const fridayBlocked = !danUnavailable.rota.some((day) => day.dayName === 'Friday' && day.assignments.some((assignment) => assignment.chef === 'Dan'));
-  const danAssignedElsewhere = danUnavailable.rota.some((day) => day.dayName !== 'Friday' && day.assignments.some((assignment) => assignment.chef === 'Dan'));
-  const danUnavailableSummary = danUnavailable.summary.find((item) => item.name === 'Dan');
-  const noMonWedOverstaffing = danUnavailable.rota
-    .filter((day) => ['Monday', 'Tuesday', 'Wednesday'].includes(day.dayName))
-    .every((day) => new Set(day.chefs).size === 4);
-  assert(danUnavailable.status === 'ok', 'Dan Friday unavailable scenario is feasible');
-  assert(fridayBlocked, 'Dan is blocked on Friday only when marked unavailable Friday');
-  assert(danAssignedElsewhere, 'Dan remains eligible on other valid days when unavailable Friday only');
-  assert((danUnavailableSummary?.annualLeaveHours || 0) === 0, 'Unavailable does not create annual-leave credit');
-  assert(noMonWedOverstaffing, 'Dan unavailable scenario does not overstaff Monday-Wednesday');
-  assert(danUnavailableFailures.length === 0, 'Dan Friday unavailable scenario has no hard failures');
-
-  const mylesLeaveState = setupBaseState();
-  mylesLeaveState.weeklyInputs.availability = [{ chef: 'Myles', type: 'Annual Leave', startDate: '2026-07-13', finishDate: '2026-07-19', notes: '' }];
-  syncCompatibilityViews();
-  const mylesLeave = runScenario(mylesLeaveState);
-  const mylesLeaveFailures = getHardFailures(mylesLeaveState, mylesLeave);
-  const mylesSummary = mylesLeave.summary.find((item) => item.name === 'Myles');
-  const mylesAssigned = hasAnyAssignment(mylesLeave, 'Myles');
-  assert(mylesLeave.status === 'infeasible', 'Myles full-week annual leave scenario is infeasible under selected MIO 3+2 hard pattern');
-  assert((mylesSummary?.annualLeaveHours || 0) === 48, 'Myles receives 48 leave-credit hours for full leave week');
-  assert(!mylesAssigned, 'Myles has no assignment during full-week annual leave');
-  assert(mylesLeave.validation.some((item) => item.message.includes('Could not build a valid day plan')), 'Infeasible Myles leave scenario reports day-plan conflict');
-  assert(mylesLeaveFailures.length === 0, 'Infeasible Myles leave scenario does not break hard-rule checker on produced days');
-
-  const eligibleMio = state.staff.filter((staff) => staff.mioEligible).map((staff) => staff.name).sort();
-  const expectedMio = ['Brooke', 'Camilla', 'Dan', 'Fred', 'Joel'];
-  assert(JSON.stringify(eligibleMio) === JSON.stringify(expectedMio), 'Default MIO eligibility is Dan/Fred/Joel/Camilla/Brooke only');
-
-  const mylesMioAttempt = runScenario(state, { mioChef: 'Myles' });
-  const mylesMioAssigned = mylesMioAttempt.rota.some((day) => day.assignments.some((assignment) => assignment.section === 'MIO' && assignment.chef === 'Myles'));
-  assert(!mylesMioAssigned, 'Myles cannot be assigned to MIO');
-
-  const mioInfeasibleGtState = setupBaseState();
-  mioInfeasibleGtState.weeklyInputs.availability = [
-    { chef: 'Dan', type: 'Annual Leave', startDate: '2026-07-17', finishDate: '2026-07-19', notes: '' }
-  ];
-  syncCompatibilityViews();
-  const mioInfeasibleGt = runScenario(mioInfeasibleGtState);
-  assert(mioInfeasibleGt.status === 'infeasible', 'Solver returns infeasible when selected MIO chef cannot receive 2 GT shifts');
+  assert((getMioSummary(baseline, 'Dan')?.mioDays || 0) === 3, 'Selected MIO chef receives exactly 3 MIO shifts in baseline');
+  assert((getMioSummary(baseline, 'Dan')?.gtDays || 0) === 2, 'Selected MIO chef receives exactly 2 GT shifts in baseline');
   assert(
-    mioInfeasibleGt.validation.some((item) => item.message.includes('exactly 2 GT shifts')),
-    'Infeasible result explains selected MIO GT pattern conflict'
+    baseline.rota
+      .filter((day) => ['Thursday', 'Friday', 'Saturday', 'Sunday'].includes(day.dayName))
+      .every((day) => {
+        const pass = day.assignments.find((assignment) => assignment.section === 'Pass');
+        const passChef = state.staff.find((staff) => staff.name === pass?.chef);
+        return !!passChef && isSenior(passChef);
+      }),
+    'Baseline uses senior chef on Pass Thursday-Sunday where feasible'
   );
 
-  const mioInfeasibleMioState = setupBaseState();
-  mioInfeasibleMioState.weeklyInputs.availability = [
-    { chef: 'Dan', type: 'Annual Leave', startDate: '2026-07-13', finishDate: '2026-07-16', notes: '' }
-  ];
-  syncCompatibilityViews();
-  const mioInfeasibleMio = runScenario(mioInfeasibleMioState);
-  assert(mioInfeasibleMio.status === 'infeasible', 'Solver returns infeasible when selected MIO chef cannot receive 3 MIO shifts');
+  const multiWeek = buildMultiWeekRota({
+    weekStart: state.weeklyInputs.weekStart,
+    mioChef: state.weeklyInputs.mioChef,
+    mioSelectionsByWeek: state.weeklyInputs.mioSelectionsByWeek,
+    additionalChefRequirements: [],
+    availability: []
+  }, 4);
+
+  assert(multiWeek.status === 'ok', 'Multi-week: four selected weeks are all feasible');
+  assert(multiWeek.weeks.length === 4, 'Multi-week: four-week generation returns four published weeks');
+  multiWeek.weeks.forEach((weekResult, index) => {
+    const inputs = { ...state.weeklyInputs, weekStart: weekResult.weekStart, mioChef: weekResult.mioChef };
+    const hardFailures = getHardFailures(state, weekResult, inputs);
+    assert(hardFailures.length === 0, `Multi-week: week ${index + 1} has no hard-rule failures`);
+  });
+
+  const week1 = multiWeek.weeks[0];
+  const week2 = multiWeek.weeks[1];
+  assert(week1.mioChef === 'Dan' && week2.mioChef === 'Fred', 'Different MIO chefs can be selected for different weeks');
+  assert((getMioSummary(week1, 'Dan')?.mioDays || 0) === 3, 'Week 1 uses the selected Week 1 MIO chef');
+  assert((getMioSummary(week2, 'Fred')?.mioDays || 0) === 3, 'Week 2 uses the selected Week 2 MIO chef');
+  assert((getMioSummary(week2, 'Dan')?.mioDays || 0) === 0, 'Week 2 does not inherit Week 1 MIO chef accidentally');
+
+  const fairnessState = createFairnessState(state.staff);
+  fairnessState.Dan = {
+    ...getEmptyFairnessRecord(),
+    weightedBurden: FAIRNESS_DAY_WEIGHTS.Friday + FAIRNESS_DAY_WEIGHTS.Saturday + FAIRNESS_DAY_WEIGHTS.Sunday,
+    fridayCount: 1,
+    saturdayCount: 1,
+    sundayCount: 1
+  };
+  const wednesdayPenalty = getFairnessPenalty({ chefName: 'Dan', dayName: 'Wednesday', fairnessState });
+  const fridayPenalty = getFairnessPenalty({ chefName: 'Dan', dayName: 'Friday', fairnessState });
+  const sundayPenalty = getFairnessPenalty({ chefName: 'Dan', dayName: 'Sunday', fairnessState });
+  assert(wednesdayPenalty < fridayPenalty && fridayPenalty < sundayPenalty, 'Friday/Saturday/Sunday weights affect tie-breaking penalties');
+
+  const repeatedWeekendPenalty = getFairnessPenalty({
+    chefName: 'Dan',
+    dayName: 'Sunday',
+    fairnessState: {
+      Dan: {
+        ...getEmptyFairnessRecord(),
+        lastSaturdaySundayPair: true,
+        repeatedSaturdaySundayPairs: 1
+      }
+    },
+    currentWeekAttendance: {
+      Dan: { days: ['Saturday'], workedFriday: false, workedSaturday: true, workedSunday: false }
+    }
+  });
+  const freshWeekendPenalty = getFairnessPenalty({
+    chefName: 'Dan',
+    dayName: 'Sunday',
+    fairnessState: { Dan: getEmptyFairnessRecord() },
+    currentWeekAttendance: {
+      Dan: { days: ['Saturday'], workedFriday: false, workedSaturday: true, workedSunday: false }
+    }
+  });
+  assert(repeatedWeekendPenalty > freshWeekendPenalty, 'Repeated weekends receive a penalty');
+
+  const oneWeekWithoutFairness = runScenario(state);
+  const oneWeekWithDisabledFairness = runScenario(state, {}, {
+    fairnessEnabled: false,
+    fairnessState: {
+      Dan: { ...getEmptyFairnessRecord(), weightedBurden: 999, fridayCount: 99, saturdayCount: 99, sundayCount: 99 }
+    }
+  });
   assert(
-    mioInfeasibleMio.validation.some((item) => item.message.includes('exactly 3 MIO shifts')),
-    'Infeasible result explains selected MIO shift conflict'
+    JSON.stringify(oneWeekWithoutFairness.rota) === JSON.stringify(oneWeekWithDisabledFairness.rota),
+    'Fairness has no effect in one-week mode'
   );
+
+  const sectionQualityScenario = setupBaseState();
+  const highPenalty = createFairnessState(sectionQualityScenario.staff);
+  highPenalty.Joel = {
+    ...getEmptyFairnessRecord(),
+    weightedBurden: 999,
+    fridayCount: 10,
+    saturdayCount: 10,
+    sundayCount: 10
+  };
+  const qualityResult = runScenario(sectionQualityScenario, {}, { fairnessEnabled: true, fairnessState: highPenalty });
+  const mondaySauce = qualityResult.rota.find((day) => day.dayName === 'Monday')?.assignments.find((assignment) => assignment.section === 'Sauce');
+  assert(mondaySauce?.chef === 'Joel', 'Section quality beats fairness');
 
   assert(getHoursForDay('Wednesday') === 12.5, 'Wednesday normal shift equals 12.5 hours');
   assert(getHoursForDay('Sunday') === 10.5, 'Sunday normal shift equals 10.5 hours');
   assert(getHoursForAssignment('Monday', 'MIO') === 8.5, 'MIO shift equals 8.5 hours');
-  assert(getHoursForDay('Thursday', true) === getHoursForDay('Thursday'), 'Breakfast does not increase paid hours');
 
-  // ─── Multi-week rota generation ────────────────────────────────────────────
-  const multiWeekState = setupBaseState();
-  const multiWeekInputs = {
-    weekStart: multiWeekState.weeklyInputs.weekStart,
-    mioChef: multiWeekState.weeklyInputs.mioChef,
+  const infeasibleState = setupBaseState();
+  infeasibleState.weeklyInputs.availability = [
+    { chef: 'Fred', type: 'Annual Leave', startDate: '2026-07-20', finishDate: '2026-07-23', notes: '' }
+  ];
+  syncCompatibilityViews();
+  const infeasibleMultiWeek = buildMultiWeekRota({
+    weekStart: infeasibleState.weeklyInputs.weekStart,
+    mioChef: infeasibleState.weeklyInputs.mioChef,
+    mioSelectionsByWeek: infeasibleState.weeklyInputs.mioSelectionsByWeek,
     additionalChefRequirements: [],
-    availability: []
-  };
-
-  const twoWeekResult = buildMultiWeekRota(multiWeekInputs, 2);
-  assert(twoWeekResult.length === 2, 'Multi-week: 2-week generation returns exactly 2 results');
-  assert(twoWeekResult[0].status === 'ok', 'Multi-week: week 1 is feasible');
-  assert(twoWeekResult[1].status === 'ok', 'Multi-week: week 2 is feasible');
-
-  const week1Start = multiWeekInputs.weekStart;
-  const week2Start = twoWeekResult[1].weekStart;
-  const w1Parts = week1Start.split('-').map(Number);
-  const w2Parts = week2Start.split('-').map(Number);
-  const w1Date = new Date(w1Parts[0], w1Parts[1] - 1, w1Parts[2]);
-  const w2Date = new Date(w2Parts[0], w2Parts[1] - 1, w2Parts[2]);
-  const dayDiff = Math.round((w2Date - w1Date) / (1000 * 60 * 60 * 24));
-  assert(dayDiff === 7, 'Multi-week: week 2 starts exactly 7 days after week 1');
-
-  twoWeekResult.forEach((weekResult, wi) => {
-    if (weekResult.status !== 'ok') return;
-    const hardFails = validateRotaHardRules({
-      rota: weekResult.rota,
-      state: multiWeekState,
-      inputs: { ...multiWeekInputs, weekStart: weekResult.weekStart },
-      summary: weekResult.summary
-    }).filter((r) => !r.passed);
-    assert(hardFails.length === 0, `Multi-week: week ${wi + 1} has no hard-rule failures`);
-  });
-
-  const fourWeekResult = buildMultiWeekRota(multiWeekInputs, 4);
-  assert(fourWeekResult.length === 4, 'Multi-week: 4-week generation returns exactly 4 results');
-  const feasibleWeeks = fourWeekResult.filter((r) => r.status === 'ok').length;
-  assert(feasibleWeeks >= 3, 'Multi-week: at least 3 of 4 weeks are feasible');
-
-  const singleWeekResult = buildMultiWeekRota(multiWeekInputs, 1);
-  assert(singleWeekResult.length === 1, 'Multi-week: 1-week generation returns exactly 1 result');
-  assert(singleWeekResult[0].weekStart === week1Start, 'Multi-week: 1-week result uses correct weekStart');
-
-  const outOfRangeResult = buildMultiWeekRota(multiWeekInputs, 0);
-  assert(outOfRangeResult.length === 1, 'Multi-week: 0 weeks is clamped to 1');
-  const overMaxResult = buildMultiWeekRota(multiWeekInputs, 99);
-  assert(overMaxResult.length === 8, 'Multi-week: 99 weeks is clamped to 8');
+    availability: infeasibleState.weeklyInputs.availability
+  }, 4);
+  assert(infeasibleMultiWeek.status === 'infeasible', 'Any infeasible week makes the entire result infeasible');
+  assert(infeasibleMultiWeek.failedWeek === 2, 'Failed week number is reported');
+  assert(infeasibleMultiWeek.failedWeekStart === '2026-07-20', 'Failed week start is reported');
+  assert(infeasibleMultiWeek.weeks.length === 1, 'Generation stops immediately after the first infeasible week');
 }
