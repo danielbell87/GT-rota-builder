@@ -44,6 +44,8 @@ function getGtTargetForChef(chefName, mioChefName) {
   return chefName === mioChefName ? 2 : 4;
 }
 
+const HOURS_DEVIATION_THRESHOLD = 12;
+
 function stripRuleIdPrefix(message = '') {
   return String(message).replace(/^[A-Z]\d{3}:\s*/, '');
 }
@@ -196,7 +198,8 @@ function getChefRowProblems(item, view) {
       .filter((result) => result.message.startsWith(`${item.name}:`))
       .map((result) => result.ruleId)
   );
-  const hasHoursProblem = totalHours > (TARGET_HOURS.weekly + 12) || (totalHours > 0 && totalHours < (TARGET_HOURS.weekly - 12));
+  const hasHoursProblem = totalHours > (TARGET_HOURS.weekly + HOURS_DEVIATION_THRESHOLD)
+    || (totalHours > 0 && totalHours < (TARGET_HOURS.weekly - HOURS_DEVIATION_THRESHOLD));
   return {
     gt: ruleIds.has('H016'),
     mio: ['H015', 'H021', 'H022', 'H023'].some((ruleId) => ruleIds.has(ruleId)),

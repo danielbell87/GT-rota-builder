@@ -91,7 +91,12 @@ function normalizeText(value) {
 
 function getVisibleTextFromElement(element) {
   const clone = element.cloneNode(true);
-  clone.querySelectorAll('.hidden, .technical-details:not([open]) > :not(summary)').forEach((node) => node.remove());
+  clone.querySelectorAll('.hidden').forEach((node) => node.remove());
+  clone.querySelectorAll('.technical-details:not([open])').forEach((details) => {
+    [...details.children].forEach((child) => {
+      if (child.tagName !== 'SUMMARY') child.remove();
+    });
+  });
   return normalizeText(clone.textContent);
 }
 

@@ -695,7 +695,7 @@ th {
     color: #000;
   }
 
-  .week-panel.hidden {
+  .week-panels .week-panel.hidden {
     display: grid !important;
   }
 
