@@ -67,6 +67,10 @@ function getChef(staff, name) {
   return staff.find((s) => s.name === name);
 }
 
+function getGtTargetForChef(chefName, mioChefName) {
+  return chefName === mioChefName ? 2 : 4;
+}
+
 export function validateRotaHardRules({ rota, state, inputs, summary }) {
   const results = [];
   const leavesByDate = {};
@@ -148,16 +152,29 @@ export function validateRotaHardRules({ rota, state, inputs, summary }) {
     });
   });
   Object.entries(gtDaysByChef).forEach(([name, count]) => {
-    results.push(createResult('H016', count <= 4, `${name}: GT days ${count} exceeds max 4`));
+    const gtTarget = getGtTargetForChef(name, inputs.mioChef);
+    results.push(createResult('H016', count <= gtTarget, `${name}: GT days ${count} exceeds max ${gtTarget}`));
   });
 
   const mioChef = inputs.mioChef;
   if (mioChef) {
-    const mioWeekdays = rota
-      .filter((day) => ['Monday', 'Tuesday', 'Wednesday'].includes(day.dayName))
-      .flatMap((day) => day.assignments.filter((a) => a.section === 'MIO'))
-      .filter((a) => a.chef === mioChef).length;
-    results.push(createResult('H015', mioWeekdays >= 1, `${mioChef}: should receive weekday MIO assignment`));
+    const mioDays = rota.filter((day) => day.assignments.some((a) => a.section === 'MIO' && a.chef === mioChef));
+    const mioCount = mioDays.length;
+    const hasWeekendMio = mioDays.some((day) => ['Saturday', 'Sunday'].includes(day.dayName));
+    results.push(createResult('H015', mioCount === 3, `${mioChef}: expected exactly 3 MIO shifts (actual ${mioCount})`));
+    results.push(createResult('H021', !hasWeekendMio, `${mioChef}: MIO cannot be assigned on Saturday or Sunday`));
+
+    const mioGtDays = rota
+      .filter((day) => day.chefs.includes(mioChef))
+      .map((day) => day.dayName);
+    results.push(createResult('H022', mioGtDays.length === 2, `${mioChef}: expected exactly 2 GT shifts (actual ${mioGtDays.length})`));
+
+    const mioOverlap = rota.some((day) => {
+      const hasMio = day.assignments.some((assignment) => assignment.section === 'MIO' && assignment.chef === mioChef);
+      const hasGt = day.chefs.includes(mioChef);
+      return hasMio && hasGt;
+    });
+    results.push(createResult('H023', !mioOverlap, `${mioChef}: cannot be assigned to both MIO and GT on the same day`));
   }
 
   const summaryByChef = Object.fromEntries((summary || []).map((item) => [item.name, item]));

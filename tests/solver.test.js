@@ -42,6 +42,15 @@ export async function runSolverTests(assert) {
 
   assert(baseline.status === 'ok', 'Baseline week with Dan on MIO is feasible');
   assert(baselineFailures.length === 0, 'Baseline week has no hard-rule failures');
+  const danBaseline = baseline.summary.find((item) => item.name === 'Dan');
+  assert((danBaseline?.mioDays || 0) === 3, 'Selected MIO chef receives exactly 3 MIO shifts in baseline');
+  assert((danBaseline?.gtDays || 0) === 2, 'Selected MIO chef receives exactly 2 GT shifts in baseline');
+  const danMioGtOverlap = baseline.rota.some((day) => day.chefs.includes('Dan') && day.assignments.some((assignment) => assignment.section === 'MIO' && assignment.chef === 'Dan'));
+  assert(!danMioGtOverlap, 'Selected MIO chef is never assigned MIO and GT on the same day');
+  const danWeekendGt = baseline.rota
+    .filter((day) => ['Saturday', 'Sunday'].includes(day.dayName))
+    .every((day) => day.chefs.includes('Dan'));
+  assert(danWeekendGt, 'Selected MIO chef is preferentially assigned to weekend GT days when available');
 
   const monWedExact4 = baseline.rota
     .filter((day) => ['Monday', 'Tuesday', 'Wednesday'].includes(day.dayName))
@@ -108,12 +117,11 @@ export async function runSolverTests(assert) {
   const mylesLeaveFailures = getHardFailures(mylesLeaveState, mylesLeave);
   const mylesSummary = mylesLeave.summary.find((item) => item.name === 'Myles');
   const mylesAssigned = hasAnyAssignment(mylesLeave, 'Myles');
-  const validLarderCover = mylesLeave.rota.every((day) => day.assignments.some((assignment) => assignment.section === 'Larder' && assignment.chef !== 'Myles'));
-  assert(mylesLeave.status === 'ok', 'Myles full-week annual leave scenario is feasible');
+  assert(mylesLeave.status === 'infeasible', 'Myles full-week annual leave scenario is infeasible under selected MIO 3+2 hard pattern');
   assert((mylesSummary?.annualLeaveHours || 0) === 48, 'Myles receives 48 leave-credit hours for full leave week');
   assert(!mylesAssigned, 'Myles has no assignment during full-week annual leave');
-  assert(validLarderCover, 'Remaining Larder cover remains valid when Myles is on leave');
-  assert(mylesLeaveFailures.length === 0, 'Myles full-week leave scenario has no hard failures');
+  assert(mylesLeave.validation.some((item) => item.message.includes('Could not build a valid day plan')), 'Infeasible Myles leave scenario reports day-plan conflict');
+  assert(mylesLeaveFailures.length === 0, 'Infeasible Myles leave scenario does not break hard-rule checker on produced days');
 
   const eligibleMio = state.staff.filter((staff) => staff.mioEligible).map((staff) => staff.name).sort();
   const expectedMio = ['Brooke', 'Camilla', 'Dan', 'Fred', 'Joel'];
@@ -122,6 +130,30 @@ export async function runSolverTests(assert) {
   const mylesMioAttempt = runScenario(state, { mioChef: 'Myles' });
   const mylesMioAssigned = mylesMioAttempt.rota.some((day) => day.assignments.some((assignment) => assignment.section === 'MIO' && assignment.chef === 'Myles'));
   assert(!mylesMioAssigned, 'Myles cannot be assigned to MIO');
+
+  const mioInfeasibleGtState = setupBaseState();
+  mioInfeasibleGtState.weeklyInputs.availability = [
+    { chef: 'Dan', type: 'Annual Leave', startDate: '2026-07-17', finishDate: '2026-07-19', notes: '' }
+  ];
+  syncCompatibilityViews();
+  const mioInfeasibleGt = runScenario(mioInfeasibleGtState);
+  assert(mioInfeasibleGt.status === 'infeasible', 'Solver returns infeasible when selected MIO chef cannot receive 2 GT shifts');
+  assert(
+    mioInfeasibleGt.validation.some((item) => item.message.includes('exactly 2 GT shifts')),
+    'Infeasible result explains selected MIO GT pattern conflict'
+  );
+
+  const mioInfeasibleMioState = setupBaseState();
+  mioInfeasibleMioState.weeklyInputs.availability = [
+    { chef: 'Dan', type: 'Annual Leave', startDate: '2026-07-13', finishDate: '2026-07-16', notes: '' }
+  ];
+  syncCompatibilityViews();
+  const mioInfeasibleMio = runScenario(mioInfeasibleMioState);
+  assert(mioInfeasibleMio.status === 'infeasible', 'Solver returns infeasible when selected MIO chef cannot receive 3 MIO shifts');
+  assert(
+    mioInfeasibleMio.validation.some((item) => item.message.includes('exactly 3 MIO shifts')),
+    'Infeasible result explains selected MIO shift conflict'
+  );
 
   assert(getHoursForDay('Wednesday') === 12.5, 'Wednesday normal shift equals 12.5 hours');
   assert(getHoursForDay('Sunday') === 10.5, 'Sunday normal shift equals 10.5 hours');

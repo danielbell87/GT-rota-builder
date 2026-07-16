@@ -31,6 +31,9 @@ export async function runValidationTests(assert) {
 
   const hasSeniorCoverageRule = validation.some((v) => v.ruleId === 'H008');
   assert(hasSeniorCoverageRule, 'Every day has senior coverage rule check');
+  const mioPatternRulesPresent = ['H015', 'H022', 'H023'].every((ruleId) => validation.some((v) => v.ruleId === ruleId));
+  assert(mioPatternRulesPresent, 'Validation includes selected MIO chef pattern hard rules');
+  assert(validation.filter((v) => ['H015', 'H022', 'H023'].includes(v.ruleId)).every((v) => v.passed), 'Baseline satisfies selected MIO chef hard pattern checks');
 
   const softValidation = validateRotaSoftRules({ rota: result.rota, state, inputs: state.weeklyInputs });
   const passPreferenceChecks = softValidation.filter((v) => v.ruleId === 'prefer-senior-on-pass');
@@ -44,6 +47,14 @@ export async function runValidationTests(assert) {
 
   const invalid = !isRotaValid(corruptedValidation);
   assert(invalid, 'Invalid rotas are rejected, not merely warned');
+
+  const mioOverlapCorrupted = JSON.parse(JSON.stringify(result.rota));
+  const monday = mioOverlapCorrupted.find((day) => day.dayName === 'Monday');
+  if (monday) {
+    monday.chefs.push('Dan');
+  }
+  const mioOverlapValidation = validateRotaHardRules({ rota: mioOverlapCorrupted, state, inputs: state.weeklyInputs, summary: result.summary });
+  assert(mioOverlapValidation.some((v) => v.ruleId === 'H023' && !v.passed), 'Hard validation rejects same-day GT and MIO for selected MIO chef');
 
   const softCorrupted = JSON.parse(JSON.stringify(result.rota));
   const thursday = softCorrupted.find((day) => day.dayName === 'Thursday');
