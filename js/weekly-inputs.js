@@ -1,4 +1,4 @@
-import { getState, getDefaultWeek, setWeekStart, setMioChef, setAvailability, setAdditionalChefRequirements } from './state.js';
+import { getState, getDefaultWeek, setWeekStart, setMioChef, setAvailability, setAdditionalChefRequirements, setNumWeeks } from './state.js';
 import { normalizeWeekStart } from './utils.js';
 
 export function collectWeeklyInputsFromDom() {
@@ -7,11 +7,14 @@ export function collectWeeklyInputsFromDom() {
   const normalizedWeek = normalizeWeekStart(rawWeek);
   setWeekStart(normalizedWeek);
   setMioChef(document.getElementById('mioChef').value);
+  const rawNumWeeks = parseInt(document.getElementById('numWeeks')?.value || '1', 10);
+  setNumWeeks(rawNumWeeks);
   setAvailability(state.weeklyInputs.availability);
 
   return {
     weekStart: state.weeklyInputs.weekStart,
     mioChef: state.weeklyInputs.mioChef,
+    numWeeks: state.weeklyInputs.numWeeks,
     additionalChefRequirements: state.weeklyInputs.additionalChefRequirements || [],
     availability: state.weeklyInputs.availability,
     status: state.weeklyInputs.status

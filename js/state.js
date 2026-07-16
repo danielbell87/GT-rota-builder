@@ -13,6 +13,7 @@ const initialState = {
     weekStart: defaultWeek,
     mioChef: '',
     status: 'Draft',
+    numWeeks: 1,
     dailyOverrides: {},
     availability: [],
     additionalChefRequirements: []
@@ -73,6 +74,10 @@ export function setAvailability(entries) {
 export function setDailyOverrides(overrides) {
   appState.weeklyInputs.dailyOverrides = overrides;
   syncCompatibilityViews();
+}
+
+export function setNumWeeks(n) {
+  appState.weeklyInputs.numWeeks = Math.max(1, Math.min(8, Number(n) || 1));
 }
 
 export function setAdditionalChefRequirements(entries) {

@@ -22,10 +22,23 @@ const MIO_FALLBACK_DAYS = ['Thursday', 'Friday'];
 const MIO_GT_PRIMARY_DAYS = ['Saturday', 'Sunday'];
 const MIO_GT_FALLBACK_DAYS = ['Thursday', 'Friday', 'Monday', 'Tuesday', 'Wednesday'];
 
-export const SOLVER_ENGINE_VERSION = '2026-07-16-additional-chef-modal';
+export const SOLVER_ENGINE_VERSION = '2026-07-16-multi-week-rota';
+
+// Bias applied per GT day the chef with the most prior-week GT days worked more than a candidate.
+// Small enough to not override section skill differences, but enough to break ties fairly.
+const CROSS_WEEK_BIAS_WEIGHT = 0.5;
 
 function getGtTargetForChef(chefName, mioChefName) {
   return chefName === mioChefName ? 2 : 4;
+}
+
+function getCrossWeekBias(name, priorGtDays, maxPrior) {
+  return (maxPrior - ((priorGtDays || {})[name] || 0)) * CROSS_WEEK_BIAS_WEIGHT;
+}
+
+function maxPriorGtDays(priorGtDays) {
+  const values = Object.values(priorGtDays || {});
+  return values.length ? Math.max(...values) : 0;
 }
 
 function buildWeekDates(weekStart) {
@@ -149,7 +162,9 @@ function chooseSeniorPassPlan({ state, dates, ruleOverrides, mioChefName, mioDay
   return forcedByDay;
 }
 
-function pickBestForSection({ section, dayName, candidates, selectedNames, ruleOverrides, gtDaysByChef, mioChefName }) {
+function pickBestForSection({ section, dayName, candidates, selectedNames, ruleOverrides, gtDaysByChef, mioChefName, priorGtDays }) {
+  const maxPrior = maxPriorGtDays(priorGtDays);
+
   const sectionCandidates = candidates
     .filter((staff) => !selectedNames.has(staff.name))
     .sort((a, b) => {
@@ -161,6 +176,8 @@ function pickBestForSection({ section, dayName, candidates, selectedNames, ruleO
       const passSeniorB = section === 'Pass' && PASS_DAYS.includes(dayName) && isSenior(b) ? 120 : 0;
       const passPrefA = section === 'Pass' && (a.preferredSections || []).includes('Pass') ? 8 : 0;
       const passPrefB = section === 'Pass' && (b.preferredSections || []).includes('Pass') ? 8 : 0;
+      const crossWeekBiasA = getCrossWeekBias(a.name, priorGtDays, maxPrior);
+      const crossWeekBiasB = getCrossWeekBias(b.name, priorGtDays, maxPrior);
 
       const scoreA = (getSectionScore(a, section, ruleOverrides) * 10)
         + getRoleBonus(a, dayName)
@@ -168,6 +185,7 @@ function pickBestForSection({ section, dayName, candidates, selectedNames, ruleO
         + mioWeekendBoostA
         + passSeniorA
         + passPrefA
+        + crossWeekBiasA
         - getSoftRulePenalty(a.name, dayName)
         - (gtDaysByChef[a.name] || 0);
 
@@ -177,6 +195,7 @@ function pickBestForSection({ section, dayName, candidates, selectedNames, ruleO
         + mioWeekendBoostB
         + passSeniorB
         + passPrefB
+        + crossWeekBiasB
         - getSoftRulePenalty(b.name, dayName)
         - (gtDaysByChef[b.name] || 0);
 
@@ -230,7 +249,8 @@ function createDayPlan({
   breakfastCounts,
   mioChefName,
   forcedPassSeniorName,
-  forcedChefName
+  forcedChefName,
+  priorGtDays
 }) {
   if (requiredChefs < coreSections.length) return null;
   if (candidates.length < requiredChefs) return null;
@@ -267,7 +287,8 @@ function createDayPlan({
       selectedNames,
       ruleOverrides,
       gtDaysByChef,
-      mioChefName
+      mioChefName,
+      priorGtDays
     });
     if (!best) return;
     assignments.push({ chef: best.name, section });
@@ -279,6 +300,7 @@ function createDayPlan({
   ensureSeniorCoverage({ assignments, dayName, candidates, selectedNames, ruleOverrides });
 
   while (selectedNames.size < requiredChefs) {
+    const maxPrior = maxPriorGtDays(priorGtDays);
     const extra = candidates
       .filter((staff) => !selectedNames.has(staff.name))
       .sort((a, b) => {
@@ -286,9 +308,13 @@ function createDayPlan({
         const urgencyB = Math.max(getGtTargetForChef(b.name, mioChefName) - (gtDaysByChef[b.name] || 0), 0);
         const seniorA = isSenior(a) ? 1 : 0;
         const seniorB = isSenior(b) ? 1 : 0;
+        const crossWeekBiasA = getCrossWeekBias(a.name, priorGtDays, maxPrior);
+        const crossWeekBiasB = getCrossWeekBias(b.name, priorGtDays, maxPrior);
         if (seniorB !== seniorA) return seniorB - seniorA;
         if (urgencyB !== urgencyA) return urgencyB - urgencyA;
-        return getRoleBonus(b, dayName) - getRoleBonus(a, dayName);
+        const biasA = crossWeekBiasA + getRoleBonus(a, dayName);
+        const biasB = crossWeekBiasB + getRoleBonus(b, dayName);
+        return biasB - biasA;
       })[0];
 
     if (!extra) return null;
@@ -317,7 +343,8 @@ function createDayPlan({
   };
 }
 
-export function buildRota(inputs) {
+export function buildRota(inputs, options = {}) {
+  const priorGtDays = options.priorGtDays || {};
   const state = getState();
   const dates = buildWeekDates(inputs.weekStart);
   const weekDateSet = new Set(dates.map((item) => item.date));
@@ -385,7 +412,8 @@ export function buildRota(inputs) {
         breakfastCounts,
         mioChefName,
         forcedPassSeniorName: forcedSeniorPassByDay[dayName],
-        forcedChefName: mioGtDays.has(dayName) ? mioChefName : null
+        forcedChefName: mioGtDays.has(dayName) ? mioChefName : null,
+        priorGtDays
       });
 
       if (!dayPlan) {
@@ -456,4 +484,32 @@ export function buildRota(inputs) {
     validation: [{ day: 'Overall', message: 'Could not build a valid week plan with current hard constraints.', severity: 'bad' }],
     summary: []
   };
+}
+
+function advanceWeekStart(weekStart, days) {
+  const parts = weekStart.split('-').map(Number);
+  const d = new Date(parts[0], parts[1] - 1, parts[2]);
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export function buildMultiWeekRota(inputs, numWeeks) {
+  const weeks = Math.max(1, Math.min(8, Number(numWeeks) || 1));
+  const cumulativeGtDays = {};
+  const results = [];
+
+  for (let i = 0; i < weeks; i += 1) {
+    const weekStart = advanceWeekStart(inputs.weekStart, i * 7);
+    const weekInputs = { ...inputs, weekStart };
+    const result = buildRota(weekInputs, { priorGtDays: { ...cumulativeGtDays } });
+    results.push({ weekIndex: i, weekStart, ...result });
+
+    if (result.summary) {
+      result.summary.forEach((item) => {
+        cumulativeGtDays[item.name] = (cumulativeGtDays[item.name] || 0) + (item.gtDays || 0);
+      });
+    }
+  }
+
+  return results;
 }

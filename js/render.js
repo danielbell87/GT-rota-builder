@@ -2,7 +2,7 @@ import { CHEF_ROLES, CORE_SECTIONS, DISPLAY_SECTIONS } from './constants.js';
 import { getState } from './state.js';
 import { formatDate, formatWeekCommencing, parseLocalDate } from './utils.js';
 import { getQualityScore, scoreSoftPreferences } from './scoring.js';
-import { buildRota } from './solver.js';
+import { buildMultiWeekRota } from './solver.js';
 import { validateRotaHardRules, validateRotaSoftRules, isRotaValid } from './validation.js?v=20260714';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
 
@@ -99,24 +99,11 @@ export function renderAvailabilityTable() {
   });
 }
 
-export function renderResultsPanel() {
-  const state = getState();
-  const inputs = collectWeeklyInputsFromDom();
-  const container = document.getElementById('results');
-  const solveResult = buildRota(inputs);
-
-  if (solveResult.status === 'infeasible') {
-    container.innerHTML = `<div class="pill bad">No feasible rota could be generated with current hard constraints.</div>`;
-    return;
-  }
-
+function renderWeekHtml(solveResult, state, inputs) {
   const hardValidation = validateRotaHardRules({ rota: solveResult.rota, state, inputs, summary: solveResult.summary });
   const softValidation = validateRotaSoftRules({ rota: solveResult.rota, state, inputs });
   const softScore = scoreSoftPreferences({ state, rota: solveResult.rota, hardValidation });
   const valid = isRotaValid(hardValidation);
-  state.generatedRotas.current = solveResult;
-  state.uiState.validation = hardValidation;
-  state.uiState.softScore = softScore;
 
   const summaryCards = solveResult.summary.map((item) => `<div class="card"><strong>${item.name}</strong><div class="small">${item.hours.toFixed(1)} hrs this week</div></div>`).join('');
   const validationCards = hardValidation.map((item) => `<div class="pill ${item.passed ? 'good' : 'bad'}">${item.ruleId}: ${item.message}</div>`).join('');
@@ -177,7 +164,7 @@ export function renderResultsPanel() {
     ? `<div class="small">${softScore.explanation.map((line) => `• ${line}`).join('<br>')}</div>`
     : '<div class="small">• No soft-rule trade-offs detected.</div>';
 
-  container.innerHTML = `
+  return `
     <div class="summary-grid">
       <div class="card"><h3 class="mb-6">Weekly context</h3><div class="small">Week commencing: ${formatWeekCommencing(inputs.weekStart)}<br>MIO chef: ${inputs.mioChef || 'None'}<br>Status: ${inputs.status}</div></div>
       <div class="card"><h3 class="mb-6">Hours rota</h3><div class="row">${summaryCards}</div>${scoreLine}<div class="small">Hard validation: ${valid ? 'PASS' : 'FAIL'}</div></div>
@@ -194,6 +181,43 @@ export function renderResultsPanel() {
     ${qualityNotes.length ? `<div class="quality-box">${qualityNotes.join('<br>')}</div>` : '<div class="small">No section assignments to analyze</div>'}
     <h3 class="mt-16">Rota</h3>
     <table class="rota-table"><thead><tr><th>Section</th>${dayHeaders}</tr></thead><tbody>${sectionCells}</tbody></table>`;
+}
+
+export function renderResultsPanel() {
+  const state = getState();
+  const inputs = collectWeeklyInputsFromDom();
+  const container = document.getElementById('results');
+  const numWeeks = inputs.numWeeks || 1;
+  const weekResults = buildMultiWeekRota(inputs, numWeeks);
+
+  // Keep current rota pointing to the first feasible week for downstream consumers (e.g. publish).
+  // Set to null when all weeks are infeasible so callers can distinguish clearly.
+  const firstOk = weekResults.find((r) => r.status === 'ok');
+  state.generatedRotas.current = firstOk || null;
+
+  // Populate uiState with first feasible week's validation for external consumers
+  if (firstOk) {
+    const firstOkInputs = { ...inputs, weekStart: firstOk.weekStart };
+    const firstHardValidation = validateRotaHardRules({ rota: firstOk.rota, state, inputs: firstOkInputs, summary: firstOk.summary });
+    state.uiState.validation = firstHardValidation;
+    state.uiState.softScore = scoreSoftPreferences({ state, rota: firstOk.rota, hardValidation: firstHardValidation });
+  } else {
+    state.uiState.validation = [];
+    state.uiState.softScore = null;
+  }
+
+  // Unified rendering: single-week omits the week heading; multi-week adds a labelled section per week.
+  container.innerHTML = weekResults.map((weekResult, i) => {
+    const weekInputs = { ...inputs, weekStart: weekResult.weekStart };
+    const isInfeasible = weekResult.status === 'infeasible';
+    const infeasibleMsg = numWeeks === 1
+      ? '<div class="pill bad">No feasible rota could be generated with current hard constraints.</div>'
+      : '<div class="pill bad">No feasible rota could be generated for this week with current hard constraints.</div>';
+    const weekBody = isInfeasible ? infeasibleMsg : renderWeekHtml(weekResult, state, weekInputs);
+    if (numWeeks === 1) return weekBody;
+    const weekLabel = `Week ${i + 1} — ${formatWeekCommencing(weekResult.weekStart)}`;
+    return `<div class="multi-week-section"><h3 class="multi-week-heading">${weekLabel}</h3>${weekBody}</div>`;
+  }).join('');
 }
 
 export function renderAll() {
