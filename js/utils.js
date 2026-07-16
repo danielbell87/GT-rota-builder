@@ -65,11 +65,10 @@ export function formatCompactWeekRange(weekStart) {
   const end = addDays(start, 6);
   const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
   const startLabel = start.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
-  const endLabel = end.toLocaleDateString('en-GB', sameMonth ? { day: 'numeric', month: 'long' } : { day: 'numeric', month: 'long' });
   if (sameMonth) {
     return `${start.getDate()}-${end.getDate()} ${end.toLocaleDateString('en-GB', { month: 'long' })}`;
   }
-  return `${startLabel}-${endLabel}`;
+  return `${startLabel}-${end.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}`;
 }
 
 export function formatPlanningHorizonLabel(weekStart, numWeeks = 1) {

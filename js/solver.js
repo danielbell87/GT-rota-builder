@@ -225,9 +225,6 @@ export function compareFairnessTieBreak(a, b, dayName, fairnessContext, currentW
 
   const comparisons = [
     fairnessA.weightedBurden - fairnessB.weightedBurden,
-    fairnessA.fridayCount - fairnessB.fridayCount,
-    fairnessA.saturdayCount - fairnessB.saturdayCount,
-    fairnessA.sundayCount - fairnessB.sundayCount,
     fairnessA.repeatedSaturdaySundayPair - fairnessB.repeatedSaturdaySundayPair,
     fairnessA.repeatedFullWeekend - fairnessB.repeatedFullWeekend,
     fairnessA.repeatedExactPattern - fairnessB.repeatedExactPattern,
