@@ -201,10 +201,10 @@ function renderWeekHtml(weekResult, state, inputs) {
     const byQuality = { 3: [], 2: [], 1: [], 0: [] };
     assignments.forEach((assignment) => byQuality[assignment.quality].push(assignment.section));
     const parts = [];
-    if (byQuality[3].length) parts.push(`preferred: ${byQuality[3].join(', ')}`);
-    if (byQuality[2].length) parts.push(`proficient: ${byQuality[2].join(', ')}`);
-    if (byQuality[1].length) parts.push(`training: ${byQuality[1].join(', ')}`);
-    return parts.length ? `<span class="small"><strong>${escapeHtml(name)}</strong>: ${escapeHtml(parts.join('; '))}</span>` : '';
+    if (byQuality[3].length) parts.push(`preferred: ${byQuality[3].map((section) => escapeHtml(section)).join(', ')}`);
+    if (byQuality[2].length) parts.push(`proficient: ${byQuality[2].map((section) => escapeHtml(section)).join(', ')}`);
+    if (byQuality[1].length) parts.push(`training: ${byQuality[1].map((section) => escapeHtml(section)).join(', ')}`);
+    return parts.length ? `<span class="small"><strong>${escapeHtml(name)}</strong>: ${parts.join('; ')}</span>` : '';
   }).filter(Boolean);
 
   const dayHeaders = weekResult.rota.map((day) => `<th>${escapeHtml(day.dayName)}<br><span class="small">${escapeHtml(formatDate(day.date))}</span></th>`).join('');

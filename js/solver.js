@@ -33,6 +33,7 @@ export const FAIRNESS_DAY_WEIGHTS = {
   Saturday: 4,
   Sunday: 4
 };
+const MAX_FAIRNESS_PENALTY = 8;
 
 function getGtTargetForChef(chefName, mioChefName) {
   return chefName === mioChefName ? 2 : 4;
@@ -234,7 +235,7 @@ export function getFairnessPenalty({ chefName, dayName, fairnessState = {}, curr
     penalty += 3 + (prior.repeatedExactGtWorkingDayPatterns || 0);
   }
 
-  return Math.min(penalty, 8);
+  return Math.min(penalty, MAX_FAIRNESS_PENALTY);
 }
 
 export function summarizeWeekFairness(rota, staff) {

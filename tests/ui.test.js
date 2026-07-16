@@ -35,7 +35,7 @@ async function loadPageInIframe(src) {
 export async function runUiTests(assert) {
   const [indexHtml, legacyHtml] = await Promise.all([
     fetch('../index.html').then((response) => response.text()),
-    fetch('../GT%20Rota%20builder.html').then((response) => response.text())
+    fetch('../GT Rota builder.html').then((response) => response.text())
   ]);
   const parser = new DOMParser();
   const indexDoc = parser.parseFromString(indexHtml, 'text/html');
@@ -46,7 +46,7 @@ export async function runUiTests(assert) {
 
   const [indexFrame, legacyFrame] = await Promise.all([
     loadPageInIframe('../index.html'),
-    loadPageInIframe('../GT%20Rota%20builder.html')
+    loadPageInIframe('../GT Rota builder.html')
   ]);
 
   assert(indexFrame.contentWindow.__gtRotaBootstrap?.ok === true, 'index.html initialises without errors');

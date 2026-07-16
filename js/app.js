@@ -8,6 +8,7 @@ import { renderAll, renderResultsPanel, renderAdditionalChefRequirements, render
 import { upsertPublishedHistory } from './history.js';
 
 const state = getState();
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
 function persistState() {
   saveAppState(state);
@@ -159,7 +160,7 @@ function openAdditionalChefModal(editDate) {
     editingRequirementDate = null;
     const existingDates = new Set((state.weeklyInputs.additionalChefRequirements || []).map((item) => item.date));
     let defaultDate = startDate;
-    const spanDays = Math.round((end - start) / (1000 * 60 * 60 * 24));
+    const spanDays = Math.round((end - start) / MS_PER_DAY);
     for (let index = 0; index <= spanDays; index += 1) {
       const nextDate = new Date(start);
       nextDate.setDate(start.getDate() + index);
