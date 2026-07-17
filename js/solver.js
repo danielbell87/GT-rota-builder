@@ -9,12 +9,13 @@ import {
   getHoursForDay,
   getHoursForAssignment
 } from './scoring.js';
+import { canCoverSection, sectionCandidateScore } from './section-levels.js';
 import {
   isUnavailable,
   getRequiredChefCount,
   getCoreSections,
   validateRotaHardRules
-} from './validation.js?v=20260717a';
+} from './validation.js?v=20260717b';
 import { filterAvailabilityForWeek, filterAdditionalChefRequirementsForWeek } from './weekly-inputs.js';
 
 const PASS_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -143,6 +144,7 @@ function chooseSeniorPassPlan({ state, dates, ruleOverrides, mioChefName, mioDay
       .filter((staff) => !isUnavailable(staff, dateInfo.date, dayName, ruleOverrides))
       .filter((staff) => !(staff.name === mioChefName && mioDays.has(dayName)))
       .filter((staff) => plannedCounts[staff.name] < getGtTargetForChef(staff.name, mioChefName))
+      .filter((staff) => canCoverSection(staff, 'Pass'))
       .sort((a, b) => {
         const passA = getSectionScore(a, 'Pass', ruleOverrides);
         const passB = getSectionScore(b, 'Pass', ruleOverrides);
@@ -281,17 +283,17 @@ function updateFairnessContext(fairnessContext, rota) {
   return Object.values(fairnessContext.stats).map((entry) => ({ ...entry }));
 }
 
-function getSectionCandidateBaseScore({ staff, section, dayName, ruleOverrides, gtDaysByChef, mioChefName }) {
+export function getSectionCandidateBaseScore({ staff, section, dayName, ruleOverrides, gtDaysByChef, mioChefName }) {
+  const sectionScore = sectionCandidateScore(staff, section);
+  if (!Number.isFinite(sectionScore)) return Number.NEGATIVE_INFINITY;
   const urgency = Math.max(getGtTargetForChef(staff.name, mioChefName) - (gtDaysByChef[staff.name] || 0), 0) * 2;
   const mioWeekendBoost = staff.name === mioChefName && ['Saturday', 'Sunday'].includes(dayName) ? 10 : 0;
   const passSenior = section === 'Pass' && PASS_DAYS.includes(dayName) && isSenior(staff) ? 120 : 0;
-  const passPref = section === 'Pass' && (staff.preferredSections || []).includes('Pass') ? 8 : 0;
-  return (getSectionScore(staff, section, ruleOverrides) * 10)
+  return sectionScore
     + getRoleBonus(staff, dayName)
     + urgency
     + mioWeekendBoost
     + passSenior
-    + passPref
     - getSoftRulePenalty(staff.name, dayName)
     - (gtDaysByChef[staff.name] || 0);
 }
@@ -305,6 +307,7 @@ function getExtraCandidateBaseScore({ staff, dayName, gtDaysByChef, mioChefName 
 function pickBestForSection({ section, dayName, candidates, selectedNames, ruleOverrides, gtDaysByChef, mioChefName, fairnessContext, currentWeekDaysByChef }) {
   const sectionCandidates = candidates
     .filter((staff) => !selectedNames.has(staff.name))
+    .filter((staff) => canCoverSection(staff, section))
     .sort((a, b) => {
       const scoreDiff = getSectionCandidateBaseScore({ staff: b, section, dayName, ruleOverrides, gtDaysByChef, mioChefName })
         - getSectionCandidateBaseScore({ staff: a, section, dayName, ruleOverrides, gtDaysByChef, mioChefName });
@@ -319,29 +322,31 @@ function ensureSeniorCoverage({ assignments, dayName, candidates, selectedNames,
   const hasSenior = [...selectedNames].some((name) => isSenior(candidates.find((item) => item.name === name)));
   if (hasSenior) return;
 
-  const replacementSenior = candidates
+  const replacementSeniors = candidates
     .filter((staff) => isSenior(staff))
     .filter((staff) => !selectedNames.has(staff.name))
-    .sort((a, b) => getRoleBonus(b, dayName) - getRoleBonus(a, dayName))[0];
-
-  if (!replacementSenior) return;
+    .sort((a, b) => getRoleBonus(b, dayName) - getRoleBonus(a, dayName));
+  if (!replacementSeniors.length) return;
 
   let weakest = null;
-  assignments.forEach((assignment, index) => {
-    const incumbent = candidates.find((item) => item.name === assignment.chef);
-    if (!incumbent) return;
-    const incumbentScore = getSectionScore(incumbent, assignment.section, ruleOverrides);
-    const seniorScore = getSectionScore(replacementSenior, assignment.section, ruleOverrides);
-    const degradation = incumbentScore - seniorScore;
-    if (weakest === null || degradation < weakest.degradation) {
-      weakest = { index, chef: incumbent.name, degradation };
-    }
+  replacementSeniors.forEach((replacementSenior) => {
+    assignments.forEach((assignment, index) => {
+      if (!canCoverSection(replacementSenior, assignment.section)) return;
+      const incumbent = candidates.find((item) => item.name === assignment.chef);
+      if (!incumbent) return;
+      const incumbentScore = getSectionScore(incumbent, assignment.section, ruleOverrides);
+      const seniorScore = getSectionScore(replacementSenior, assignment.section, ruleOverrides);
+      const degradation = incumbentScore - seniorScore;
+      if (weakest === null || degradation < weakest.degradation) {
+        weakest = { index, chef: incumbent.name, degradation, replacementSenior };
+      }
+    });
   });
 
   if (!weakest) return;
-  assignments[weakest.index].chef = replacementSenior.name;
+  assignments[weakest.index].chef = weakest.replacementSenior.name;
   selectedNames.delete(weakest.chef);
-  selectedNames.add(replacementSenior.name);
+  selectedNames.add(weakest.replacementSenior.name);
 }
 
 function createDayPlan({
@@ -380,8 +385,10 @@ function createDayPlan({
     const availableSections = coreSections.filter((section) => !assignments.some((item) => item.section === section));
     if (!availableSections.length) return null;
     const bestSection = availableSections
+      .filter((section) => canCoverSection(forced, section))
       .slice()
       .sort((a, b) => getSectionScore(forced, b, ruleOverrides) - getSectionScore(forced, a, ruleOverrides))[0];
+    if (!bestSection) return null;
     assignments.push({ chef: forced.name, section: bestSection });
     selectedNames.add(forced.name);
   }
@@ -425,7 +432,7 @@ function createDayPlan({
   const coreChefs = assignments.map((assignment) => assignment.chef);
   const breakfastChef = coreChefs
     .map((name) => state.staff.find((staff) => staff.name === name))
-    .filter((staff) => staff && staff.breakfastEligible)
+    .filter((staff) => staff && staff.breakfastEligible && canCoverSection(staff, 'Breakfast'))
     .sort((a, b) => {
       const countA = breakfastCounts[a.name] || 0;
       const countB = breakfastCounts[b.name] || 0;

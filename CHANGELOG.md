@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.3.0 - 2026-07-17
+- Simplified chef profiles by removing the unused hierarchy number, service pace, and separate preferred-sections fields.
+- Replaced visible numeric section scores with descriptive section levels: Should not cover, In training, Competent, Preferred.
+- Centralised section-level helpers so suitability, preference, validation, and ranking all use the same mapping.
+- Preserved senior-on-Pass behaviour, fairness ordering, MIO handling, leave/unavailability handling, additional-chef requests, and specialist defaults.
+- Added schema v6 migration that removes obsolete staff fields while preserving stable chef IDs, section values, and weekly data.
+- Expanded browser tests for popup field removal, section labels, migration idempotency, section ranking, and section-coverage warnings.
+
 ## 2.2.0 - 2026-07-17
 - Replaced the permanently expanded staff table with a compact **Chefs** list that shows only chef name, role, and one small status badge where useful.
 - Added a reusable chef editor popup for add, edit, and remove flows, with grouped sections for profile, section skills, availability/preferences, and advanced settings.

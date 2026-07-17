@@ -10,7 +10,7 @@ export const STORAGE_KEYS = {
   staffProfilesByChef: 'gtRota.staffProfilesByChef'
 };
 
-const CURRENT_SCHEMA_VERSION = 5;
+const CURRENT_SCHEMA_VERSION = 6;
 
 function safeParse(raw, fallback) {
   if (!raw) return fallback;
@@ -180,6 +180,9 @@ export function migrateStorageIfNeeded() {
       saved.weeklyInputs = normalizeWeeklyInputsShape(saved.weeklyInputs, fallbackWeekStart);
     }
     if (current < 5 && Array.isArray(saved.staff)) {
+      saved.staff = normalizeStaffRecords(saved.staff);
+    }
+    if (current < 6 && Array.isArray(saved.staff)) {
       saved.staff = normalizeStaffRecords(saved.staff);
     }
     localStorage.setItem(STORAGE_KEYS.appState, JSON.stringify(saved));
