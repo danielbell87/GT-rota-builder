@@ -1,4 +1,4 @@
-import { CHEF_ROLES, EDITABLE_SKILL_SECTIONS, WEEKDAYS, WEEKEND_RULE_OPTIONS } from './constants.js';
+import { CHEF_ROLES, EDITABLE_SKILL_SECTIONS, WEEKDAYS } from './constants.js';
 import { DEFAULT_STAFF } from '../data/default-staff.js';
 import { getState, resetStateToDefaults, syncCompatibilityViews } from './state.js';
 import { normalizeSectionSkills, parseSectionLevel } from './section-levels.js';
@@ -35,9 +35,8 @@ export function normalizeChefRecord(chef = {}, index = 0, usedIds = new Set()) {
     seniorStatus: !!chef.seniorStatus,
     breakfastEligible: chef.breakfastEligible !== false,
     mioEligible: !!chef.mioEligible,
-    weekendRule: WEEKEND_RULE_OPTIONS.includes(chef.weekendRule || '') ? (chef.weekendRule || '') : '',
     fixedDayOff: WEEKDAYS.includes(chef.fixedDayOff) ? chef.fixedDayOff : '',
-    preferredDaysOff: Array.isArray(chef.preferredDaysOff) ? chef.preferredDaysOff.filter((day) => WEEKDAYS.includes(day)) : [],
+    preferredDaysOff: Array.isArray(chef.preferredDaysOff) ? [...new Set(chef.preferredDaysOff.filter((day) => WEEKDAYS.includes(day)))] : [],
     skills,
     preferredBreakfast: WEEKDAYS.includes(chef.preferredBreakfast) ? chef.preferredBreakfast : '',
     notes: String(chef.notes || '')
@@ -65,7 +64,6 @@ export function createBlankChefDraft() {
     seniorStatus: false,
     breakfastEligible: true,
     mioEligible: false,
-    weekendRule: '',
     fixedDayOff: '',
     preferredDaysOff: [],
     skills: Object.fromEntries(EDITABLE_SKILL_SECTIONS.map((section) => [section, 0])),

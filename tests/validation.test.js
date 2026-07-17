@@ -1,6 +1,6 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota } from '../js/solver.js';
-import { validateRotaHardRules, validateRotaSoftRules, isRotaValid, getStaffConfigurationWarnings } from '../js/validation.js?v=20260717e';
+import { validateRotaHardRules, validateRotaSoftRules, isRotaValid, getStaffConfigurationWarnings } from '../js/validation.js?v=20260717f';
 
 function createSummary(state, annualLeaveHoursByChef = {}) {
   return state.staff.map((chef) => {
@@ -157,7 +157,7 @@ export async function runValidationTests(assert) {
   const fridayLeaveTarget = parseGtDayRule(fridayLeaveH016);
   assert(fridayLeaveH016?.passed, 'Partial rota stopping on Wednesday correctly adjusts the GT target for Friday leave');
   assert(fridayLeaveTarget?.target === 3 && fridayLeaveTarget?.actual === 3, 'Later Friday leave still reduces the expected GT target');
-  const fridayFailurePartial = result.rota.filter((day) => ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].includes(day.dayName));
+  const fridayFailurePartial = result.rota.filter((day) => day.chefs.includes('Fred'));
   const fridayLeaveFailureValidation = validateRotaHardRules({
     rota: fridayFailurePartial,
     state: fridayLeaveState,

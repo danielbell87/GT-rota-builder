@@ -9,7 +9,6 @@ export const PRIMARY_GT_SECTIONS = [...CORE_SECTIONS, 'Float'];
 
 export function isUnavailable(staff, date, dayName, ruleOverrides) {
   const availability = ruleOverrides._availability || [];
-  const weekendBlocked = staff.weekendRule === 'Does not work weekends' && ['Saturday', 'Sunday'].includes(dayName);
   const fixedOff = staff.fixedDayOff && staff.fixedDayOff.toLowerCase() === dayName.toLowerCase();
   const leave = availability.some((entry) => {
     if (entry.chef !== staff.name) return false;
@@ -21,7 +20,7 @@ export function isUnavailable(staff, date, dayName, ruleOverrides) {
     const finishDate = parseLocalDate(finish);
     return current >= startDate && current <= finishDate;
   });
-  return weekendBlocked || fixedOff || leave;
+  return fixedOff || leave;
 }
 
 export function getWeeklyContextAdjustments(inputs, dayName, date) {
@@ -238,7 +237,6 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
       results.push(createResult('H014', !!chef?.mioEligible, `${day.dayName}: MIO chef must be eligible`));
     });
 
-    results.push(createResult('H001', !(['Saturday', 'Sunday'].includes(day.dayName) && day.chefs.includes('Aled')), `${day.dayName}: Aled must not work weekends`));
     results.push(createResult('H002', !(day.dayName === 'Tuesday' && day.chefs.includes('Charlie')), `${day.dayName}: Charlie must not work Tuesday`));
 
     day.assignments.forEach((assignment) => {

@@ -12,7 +12,7 @@ import {
 import { scoreSoftPreferences } from './scoring.js';
 import { isSenior } from './scoring.js';
 import { buildRota, buildMultiWeekRota } from './solver.js';
-import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260717e';
+import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260717f';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
 
 function getRequiredElement(id) {
@@ -479,7 +479,6 @@ export function populateChefModal({ chef, mode = 'create', showRemove = false })
   getRequiredElement('chefNameInput').value = chef.name || '';
   roleSelect.value = chef.role || '';
   getRequiredElement('chefSeniorInput').checked = !!(chef.senior || chef.seniorStatus);
-  getRequiredElement('chefWeekendRuleInput').value = chef.weekendRule || '';
   getRequiredElement('chefFixedDayOffInput').value = chef.fixedDayOff || '';
   getRequiredElement('chefPreferredBreakfastInput').value = chef.preferredBreakfast || '';
   getRequiredElement('chefMioEligibleInput').checked = !!chef.mioEligible;
@@ -502,7 +501,6 @@ export function readChefDraftFromModal() {
     role: getRequiredElement('chefRoleInput').value,
     senior: getRequiredElement('chefSeniorInput').checked,
     seniorStatus: getRequiredElement('chefSeniorInput').checked,
-    weekendRule: getRequiredElement('chefWeekendRuleInput').value,
     fixedDayOff: getRequiredElement('chefFixedDayOffInput').value,
     preferredBreakfast: getRequiredElement('chefPreferredBreakfastInput').value,
     mioEligible: getRequiredElement('chefMioEligibleInput').checked,

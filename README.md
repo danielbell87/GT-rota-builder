@@ -34,6 +34,7 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 - Saving a chef updates browser storage and refreshes rota generation without changing solver rules or defaults.
 - The popup uses four section levels everywhere: **Should not cover**, **In training**, **Competent**, **Preferred**.
 - **Preferred** combines strongest suitability and generic section preference; there is no separate preferred-section field.
+- **Preferred Days Off** is the sole day-off preference mechanism and supports every day from Monday through Sunday.
 - Role and Senior status now replace the obsolete hierarchy number field.
 - Service pace has been removed because it is not used by rota generation.
 
@@ -200,7 +201,7 @@ Saved browser data is persisted with migration-safe localStorage keys.
   - `gtRota.mioEligibilityByChef`
   - `gtRota.staffProfilesByChef`
 
-Schema version `6` removes obsolete `hierarchy`, `servicePace`, and `preferredSections` fields while preserving stable chef IDs, section levels, weekly inputs, and published history snapshots.
+Schema version `7` also removes the obsolete chef weekend setting. Legacy values are ignored rather than converted, while stable chef IDs, Preferred Days Off, section levels, weekly inputs, and published history snapshots are preserved.
 
 No external API keys or secrets are required.
 

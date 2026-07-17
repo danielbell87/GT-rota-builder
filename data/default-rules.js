@@ -1,5 +1,4 @@
 export const DEFAULT_RULES = [
-  { id: 'H001', title: 'Aled weekend restriction', description: 'Aled does not work weekends.', type: 'hard', enabled: true },
   { id: 'H002', title: 'Charlie Tuesday restriction', description: 'Charlie does not work Tuesday.', type: 'hard', enabled: true },
   { id: 'H003', title: 'Myles larder only', description: 'Myles only works Larder unless edited in staff skills.', type: 'hard', enabled: true },
   { id: 'H004', title: 'Fred garnish only', description: 'Fred only works Garnish unless edited in staff skills.', type: 'hard', enabled: true },

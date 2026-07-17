@@ -54,7 +54,6 @@ Weekly GT allocation is solved across the whole week rather than as seven isolat
 
 ## Hard Rules
 Implemented as structured hard validation checks in `js/validation.js` and rule metadata in `data/default-rules.js`, including:
-- Aled no weekends
 - Charlie no Tuesday
 - Myles Larder-only default
 - Fred Garnish-only default

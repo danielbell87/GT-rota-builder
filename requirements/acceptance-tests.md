@@ -12,10 +12,10 @@ These tests are designed to prove that each hard rule is enforced.
 - when the validation runs,
 - then the rota must fail and the reason must identify the duplicate breakfast assignment.
 
-## 3. Aled weekend availability
-- Given a rota that places Aled on Saturday or Sunday,
-- when the validation runs,
-- then the rota must fail with a fixed-rule breach for the Aled weekend restriction.
+## 3. Preferred days off
+- Given a chef with Friday, Saturday, or Sunday selected as a preferred day off,
+- when the solver ranks otherwise equivalent assignments,
+- then it should prefer another valid chef while retaining the selected chef as a fallback when required.
 
 ## 4. Charlie Tuesday availability
 - Given a rota that places Charlie on Tuesday,

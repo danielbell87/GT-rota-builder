@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-17
+
+- Removed the obsolete chef weekend setting and its hard-coded validation/scoring behavior.
+- Preferred Days Off now supplies the day-off preference signal for every day, including Friday, Saturday, and Sunday.
+- Added schema-safe handling that ignores legacy values and omits them from subsequent saves without converting user preferences.
+
 ## 2.4.0 - 2026-07-17
 - Finalized the chef section-level and exact weekly GT target integration on build `2026.07.17.5` / cache `20260717e`.
 - Preserved full-week validation horizons (`fullWeekDates` / H024) while keeping exact GT target, explicit Float, and annual-leave-adjusted validation behavior.

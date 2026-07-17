@@ -13,7 +13,7 @@ Fields:
 - seniority_rank: numeric seniority value
 - contract_hours: target or contractual weekly hours
 - mio_eligible: boolean
-- weekend_rule: text or enum
+- preferred_days_off: list of day names (Sunday through Saturday)
 - fixed_day_off: optional day name
 - can_lead_service: boolean
 - can_run_pass: boolean
@@ -56,7 +56,7 @@ Represents a configurable rule or requirement.
 
 Fields:
 - id: unique identifier
-- rule_id: short code such as H001
+- rule_id: short code such as H002
 - priority: enum (Hard, High, Medium, Low)
 - active: boolean
 - rule_text: long-form description

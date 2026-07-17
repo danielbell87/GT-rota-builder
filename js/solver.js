@@ -4,7 +4,7 @@ import { parseLocalDate, toDateString, getWeekStartAtOffset, normalizeWeekStart 
 import {
   getSectionScore,
   getRoleBonus,
-  getSoftRulePenalty,
+  getPreferredDayOffPenalty,
   isSenior,
   getHoursForDay,
   getHoursForAssignment
@@ -17,7 +17,7 @@ import {
   validateRotaHardRules,
   getAdjustedGtTargetsByChef,
   getAnnualLeaveDatesByChef
-} from './validation.js?v=20260717e';
+} from './validation.js?v=20260717f';
 import { filterAvailabilityForWeek, filterAdditionalChefRequirementsForWeek } from './weekly-inputs.js';
 
 const PASS_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -308,7 +308,7 @@ export function getSectionCandidateBaseScore({
     + specialistBoost
     + mioWeekendBoost
     + passSenior
-    - getSoftRulePenalty(staff.name, dayName)
+    - getPreferredDayOffPenalty(staff, dayName)
     - (gtDaysByChef[staff.name] || 0);
 }
 
@@ -321,7 +321,7 @@ function getExtraCandidateBaseScore({ staff, dayName, gtDaysByChef, mioChefName,
     : 0;
   const mustUseBoost = urgency > 0 && Number.isFinite(remainingAvailability) && remainingAvailability <= urgency ? 200 : 0;
   const seniorPenalty = isSenior(staff) ? 4 : 0;
-  return (urgency * 20) + scarcityBoost + mustUseBoost + getRoleBonus(staff, dayName) - seniorPenalty - getSoftRulePenalty(staff.name, dayName);
+  return (urgency * 20) + scarcityBoost + mustUseBoost + getRoleBonus(staff, dayName) - seniorPenalty - getPreferredDayOffPenalty(staff, dayName);
 }
 
 function pickBestForSection({
