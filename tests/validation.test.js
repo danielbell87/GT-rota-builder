@@ -1,6 +1,6 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota } from '../js/solver.js';
-import { validateRotaHardRules, validateRotaSoftRules, isRotaValid } from '../js/validation.js?v=20260717a';
+import { validateRotaHardRules, validateRotaSoftRules, isRotaValid, getStaffConfigurationWarnings } from '../js/validation.js?v=20260717b';
 
 function createSummary(state, annualLeaveHoursByChef = {}) {
   return state.staff.map((chef) => {
@@ -251,4 +251,9 @@ export async function runValidationTests(assert) {
   });
   const unavailableWorked = rerun.rota.some((day) => day.date === '2026-07-14' && day.chefs.includes('Dan'));
   assert(!unavailableWorked, 'Unavailable request counts as normal day off for scheduling');
+
+  const warningState = setupState();
+  warningState.staff = warningState.staff.map((chef) => ({ ...chef, skills: { ...chef.skills, Sauce: 0 } }));
+  const warnings = getStaffConfigurationWarnings(warningState.staff);
+  assert(warnings.length === 1 && warnings[0].message.includes('Sauce'), 'Staff validation warns when no chef can cover a required section');
 }

@@ -12,7 +12,7 @@ import {
 import { scoreSoftPreferences } from './scoring.js';
 import { isSenior } from './scoring.js';
 import { buildRota, buildMultiWeekRota } from './solver.js';
-import { validateRotaHardRules, validateRotaSoftRules } from './validation.js?v=20260717a';
+import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260717b';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
 
 function getRequiredElement(id) {
@@ -408,9 +408,12 @@ function getStaffForDisplay() {
   return state.staff
     .map((chef, index) => ({ chef, index }))
     .sort((a, b) => {
-      const hierarchyA = Number.isFinite(a.chef.hierarchy) ? a.chef.hierarchy : Number.MAX_SAFE_INTEGER;
-      const hierarchyB = Number.isFinite(b.chef.hierarchy) ? b.chef.hierarchy : Number.MAX_SAFE_INTEGER;
-      if (hierarchyA !== hierarchyB) return hierarchyA - hierarchyB;
+      const seniorA = isSenior(a.chef) ? 1 : 0;
+      const seniorB = isSenior(b.chef) ? 1 : 0;
+      if (seniorA !== seniorB) return seniorB - seniorA;
+      const roleA = CHEF_ROLES.indexOf(a.chef.role);
+      const roleB = CHEF_ROLES.indexOf(b.chef.role);
+      if (roleA !== roleB) return roleA - roleB;
       return a.index - b.index;
     });
 }
@@ -477,8 +480,6 @@ export function populateChefModal({ chef, mode = 'create', showRemove = false })
 
   getRequiredElement('chefNameInput').value = chef.name || '';
   roleSelect.value = chef.role || '';
-  getRequiredElement('chefHierarchyInput').value = String(chef.hierarchy ?? '');
-  getRequiredElement('chefServicePaceInput').value = chef.servicePace || 'steady';
   getRequiredElement('chefSeniorInput').checked = !!(chef.senior || chef.seniorStatus);
   getRequiredElement('chefWeekendRuleInput').value = chef.weekendRule || '';
   getRequiredElement('chefFixedDayOffInput').value = chef.fixedDayOff || '';
@@ -491,7 +492,6 @@ export function populateChefModal({ chef, mode = 'create', showRemove = false })
     if (field) field.value = String(chef.skills?.[section] ?? 0);
   });
   setCheckboxGroupValues('input[data-preferred-day-off]', chef.preferredDaysOff || []);
-  setCheckboxGroupValues('input[data-preferred-section]', chef.preferredSections || []);
   removeSection.classList.toggle('hidden', !showRemove);
   advancedSection.open = false;
   setChefRemovalConfirmation(false, chef.name || '');
@@ -502,8 +502,6 @@ export function readChefDraftFromModal() {
   return {
     name: getRequiredElement('chefNameInput').value.trim(),
     role: getRequiredElement('chefRoleInput').value,
-    hierarchy: Number.parseInt(getRequiredElement('chefHierarchyInput').value, 10),
-    servicePace: getRequiredElement('chefServicePaceInput').value,
     senior: getRequiredElement('chefSeniorInput').checked,
     seniorStatus: getRequiredElement('chefSeniorInput').checked,
     weekendRule: getRequiredElement('chefWeekendRuleInput').value,
@@ -512,7 +510,6 @@ export function readChefDraftFromModal() {
     mioEligible: getRequiredElement('chefMioEligibleInput').checked,
     breakfastEligible: getRequiredElement('chefBreakfastEligibleInput').checked,
     preferredDaysOff: [...document.querySelectorAll('input[data-preferred-day-off]:checked')].map((input) => input.dataset.preferredDayOff),
-    preferredSections: [...document.querySelectorAll('input[data-preferred-section]:checked')].map((input) => input.dataset.preferredSection),
     notes: getRequiredElement('chefNotesInput').value,
     skills: Object.fromEntries(EDITABLE_SKILL_SECTIONS.map((section) => [
       section,
@@ -582,6 +579,7 @@ export function renderStaffTable() {
   const state = getState();
   const container = getRequiredElement('staffList');
   const countLabel = getRequiredElement('staffCountLabel');
+  const warnings = getStaffConfigurationWarnings(state.staff);
   countLabel.textContent = `· ${state.staff.length}`;
 
   if (!state.staff.length) {
@@ -594,7 +592,9 @@ export function renderStaffTable() {
     return;
   }
 
-  container.innerHTML = getStaffForDisplay().map(({ chef }) => {
+  container.innerHTML = `
+    ${warnings.map((warning) => `<p class="section-note">${escapeHtml(warning.message)}</p>`).join('')}
+    ${getStaffForDisplay().map(({ chef }) => {
     const label = formatChefSecondaryLabel(chef);
     return `
       <button
@@ -612,7 +612,7 @@ export function renderStaffTable() {
           <span class="chef-list-action" aria-hidden="true">Edit ›</span>
         </span>
       </button>`;
-  }).join('');
+  }).join('')}`;
   renderMioControls();
 }
 

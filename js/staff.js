@@ -1,6 +1,7 @@
-import { CHEF_ROLES, CORE_SECTIONS, EDITABLE_SKILL_SECTIONS, SERVICE_PACE_OPTIONS, WEEKDAYS, WEEKEND_RULE_OPTIONS } from './constants.js';
+import { CHEF_ROLES, EDITABLE_SKILL_SECTIONS, WEEKDAYS, WEEKEND_RULE_OPTIONS } from './constants.js';
 import { DEFAULT_STAFF } from '../data/default-staff.js';
 import { getState, resetStateToDefaults, syncCompatibilityViews } from './state.js';
+import { normalizeSectionSkills, parseSectionLevel } from './section-levels.js';
 
 function slugify(value) {
   return String(value || '')
@@ -8,17 +9,6 @@ function slugify(value) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'chef';
-}
-
-function clampSkill(value) {
-  const numeric = Number.parseInt(value, 10);
-  if (!Number.isFinite(numeric)) return 0;
-  return Math.max(0, Math.min(3, numeric));
-}
-
-export function getDefaultHierarchyForRole(role) {
-  const index = CHEF_ROLES.indexOf(role);
-  return index >= 0 ? index + 1 : CHEF_ROLES.indexOf('Chef de Partie') + 1;
 }
 
 export function createChefId(name, index, usedIds = new Set()) {
@@ -34,23 +24,13 @@ export function createChefId(name, index, usedIds = new Set()) {
 }
 
 export function normalizeChefRecord(chef = {}, index = 0, usedIds = new Set()) {
-  const skills = {};
-  EDITABLE_SKILL_SECTIONS.forEach((section) => {
-    skills[section] = clampSkill(chef.skills?.[section] ?? 0);
-  });
-
-  Object.entries(chef.skills || {}).forEach(([section, value]) => {
-    if (!(section in skills)) skills[section] = clampSkill(value);
-  });
-
+  const skills = normalizeSectionSkills(chef.skills);
   const role = CHEF_ROLES.includes(chef.role) ? chef.role : '';
-  const hierarchy = Number.parseInt(chef.hierarchy, 10);
   const normalizedName = String(chef.name || '').trim();
   const normalized = {
     id: typeof chef.id === 'string' && chef.id.trim() ? chef.id.trim() : createChefId(normalizedName || `chef-${index + 1}`, index, usedIds),
     name: normalizedName,
     role,
-    hierarchy: Number.isInteger(hierarchy) && hierarchy > 0 ? hierarchy : getDefaultHierarchyForRole(role),
     senior: !!chef.senior,
     seniorStatus: !!chef.seniorStatus,
     breakfastEligible: chef.breakfastEligible !== false,
@@ -58,8 +38,6 @@ export function normalizeChefRecord(chef = {}, index = 0, usedIds = new Set()) {
     weekendRule: WEEKEND_RULE_OPTIONS.includes(chef.weekendRule || '') ? (chef.weekendRule || '') : '',
     fixedDayOff: WEEKDAYS.includes(chef.fixedDayOff) ? chef.fixedDayOff : '',
     preferredDaysOff: Array.isArray(chef.preferredDaysOff) ? chef.preferredDaysOff.filter((day) => WEEKDAYS.includes(day)) : [],
-    preferredSections: Array.isArray(chef.preferredSections) ? chef.preferredSections.filter((section) => EDITABLE_SKILL_SECTIONS.includes(section) || CORE_SECTIONS.includes(section)) : [],
-    servicePace: SERVICE_PACE_OPTIONS.includes(chef.servicePace) ? chef.servicePace : 'steady',
     skills,
     preferredBreakfast: WEEKDAYS.includes(chef.preferredBreakfast) ? chef.preferredBreakfast : '',
     notes: String(chef.notes || '')
@@ -83,7 +61,6 @@ export function createBlankChefDraft() {
     id: '',
     name: '',
     role: '',
-    hierarchy: getDefaultHierarchyForRole('Chef de Partie'),
     senior: false,
     seniorStatus: false,
     breakfastEligible: true,
@@ -91,8 +68,6 @@ export function createBlankChefDraft() {
     weekendRule: '',
     fixedDayOff: '',
     preferredDaysOff: [],
-    preferredSections: [],
-    servicePace: 'steady',
     skills: Object.fromEntries(EDITABLE_SKILL_SECTIONS.map((section) => [section, 0])),
     preferredBreakfast: '',
     notes: ''
@@ -122,14 +97,11 @@ export function validateChefData(chef, options = {}) {
     return { valid: false, field: 'chefRoleInput', message: 'Please choose a valid chef role.' };
   }
 
-  if (!Number.isInteger(normalized.hierarchy) || normalized.hierarchy < 1 || normalized.hierarchy > 99) {
-    return { valid: false, field: 'chefHierarchyInput', message: 'Hierarchy must be a whole number between 1 and 99.' };
-  }
-
   for (const section of EDITABLE_SKILL_SECTIONS) {
-    const score = Number(normalized.skills?.[section] ?? 0);
-    if (!Number.isFinite(score) || score < 0 || score > 3) {
-      return { valid: false, field: `chefSkill${section}Input`, message: `${section} skill must be between 0 and 3.` };
+    const rawValue = chef.skills?.[section] ?? normalized.skills?.[section];
+    const score = parseSectionLevel(rawValue);
+    if (score === null) {
+      return { valid: false, field: `chefSkill${section}Input`, message: `${section} level must be one of: Should not cover, In training, Competent, or Preferred.` };
     }
   }
 

@@ -9,7 +9,7 @@
 
 ## Completed Features
 - Weekly rota generation with live updates
-- Staff CRUD and skill editing
+- Staff CRUD and section-level editing
 - Compact chefs list with modal-based staff editing and confirmed removals
 - Leave and unavailable handling
 - MIO assignment and eligibility handling
@@ -30,7 +30,7 @@
 - Free-text rule parser is intentionally narrow and pattern-based
 
 ## localStorage Keys
-- `gtRota.schemaVersion`: schema/migration marker (current: 5)
+- `gtRota.schemaVersion`: schema/migration marker (current: 6)
 - `gtRota.state.v2`: primary persisted application state snapshot
 - `gtRota.history.v1`: published history records
 - `gtRota.mioEligibilityByChef`: legacy compatibility map for MIO eligibility by chef name
@@ -40,6 +40,8 @@
 - The main chefs panel is intentionally compact and hides technical rule data until a chef popup is opened.
 - Staff edits are draft-based inside the modal and apply only when the user clicks **Save changes**.
 - Chef renames update active weekly references (for example MIO selection and persistent availability entries) while published history snapshots keep their original names.
+- Staff section selectors use descriptive levels only: Should not cover, In training, Competent, Preferred.
+- Hierarchy, service pace, and separate preferred sections have been removed from the active staff model and storage schema.
 
 ## Deployment Method
 - Static site served from repository root files via GitHub Pages

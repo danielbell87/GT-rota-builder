@@ -1,6 +1,7 @@
 import { CORE_SECTIONS, ROLE_WEIGHT } from './constants.js';
 import { normalizeWeekStart, parseLocalDate, toDateString } from './utils.js';
 import { isSenior } from './scoring.js';
+import { canCoverSection } from './section-levels.js';
 
 // Weekly leave credit is capped at four days because a standard GT week targets four credited workdays.
 const MAX_CREDITABLE_LEAVE_DAYS = 4;
@@ -218,12 +219,12 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
       }
       if (assignment.chef === 'Fred' && assignment.section !== 'Garnish' && assignment.section !== 'Breakfast' && assignment.section !== 'MIO') {
         const chef = getChef(state.staff, 'Fred');
-        const overridden = (chef?.skills?.[assignment.section] || 0) > 0;
+        const overridden = canCoverSection(chef, assignment.section);
         results.push(createResult('H004', overridden, `${day.dayName}: Fred assigned outside Garnish without skill override`));
       }
       if (assignment.chef === 'Joel' && assignment.section !== 'Sauce' && assignment.section !== 'Breakfast' && assignment.section !== 'MIO') {
         const chef = getChef(state.staff, 'Joel');
-        const overridden = (chef?.skills?.[assignment.section] || 0) > 0;
+        const overridden = canCoverSection(chef, assignment.section);
         results.push(createResult('H005', overridden, `${day.dayName}: Joel assigned outside Sauce without skill override`));
       }
     });
@@ -301,6 +302,22 @@ export function validateRotaSoftRules({ rota, state, inputs }) {
           message: `${day.dayName}: Pass is missing so senior-on-Pass preference cannot be met`
         });
         return;
+      }
+
+      export function getStaffConfigurationWarnings(staff = []) {
+        const requiredSections = [...CORE_SECTIONS, 'Breakfast'];
+        const missingSections = requiredSections.filter((section) => {
+          if (section === 'Breakfast') {
+            return !staff.some((chef) => chef.breakfastEligible !== false && canCoverSection(chef, 'Breakfast'));
+          }
+          return !staff.some((chef) => canCoverSection(chef, section));
+        });
+
+        if (!missingSections.length) return [];
+        return [{
+          code: 'staff-section-coverage',
+          message: `Staff configuration warning: no chef can currently cover ${missingSections.join(', ')}. Rota generation may be infeasible until coverage is restored.`
+        }];
       }
 
       const passChef = getChef(state.staff, passAssignments[0].chef);

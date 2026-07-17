@@ -1,8 +1,8 @@
 import { ROLE_WEIGHT, SCORING_WEIGHTS, SHIFT_LENGTHS } from './constants.js';
+import { getSectionLevel, getSectionLevelLabel, SECTION_LEVELS } from './section-levels.js';
 
 export function getSectionScore(staff, section, ruleOverrides) {
-  const score = staff.skills?.[section] ?? 0;
-  return score;
+  return getSectionLevel(staff, section);
 }
 
 export function getRoleWeight(staff) {
@@ -36,7 +36,7 @@ function getSoftRuleWeight(state, ruleId, fallbackWeight) {
 }
 
 export function getQualityScore(staff, section) {
-  return staff.skills?.[section] ?? 0;
+  return getSectionLevel(staff, section);
 }
 
 export function getHoursForDay(dayName, isBreakfast = false) {
@@ -69,13 +69,29 @@ export function scoreSoftPreferences({ state, rota, hardValidation }) {
       const quality = getQualityScore(chef, assignment.section);
       if (quality >= 3) {
         score += SCORING_WEIGHTS.preferredSection;
+        if (assignment.section !== 'Breakfast' && assignment.section !== 'MIO') {
+          explanations.push(`${chef.name} was assigned ${assignment.section} because it is a Preferred section.`);
+        }
       } else if (quality === 2) {
         score += SCORING_WEIGHTS.proficientSection;
+        if (assignment.section !== 'Breakfast' && assignment.section !== 'MIO') {
+          explanations.push(`${chef.name} covered ${assignment.section} at Competent level.`);
+        }
       } else if (quality === 1) {
         score += SCORING_WEIGHTS.trainingSection;
+        if (assignment.section !== 'Breakfast' && assignment.section !== 'MIO') {
+          const supportedBySenior = day.chefs
+            .map((name) => state.staff.find((s) => s.name === name))
+            .some((candidate) => candidate && candidate.name !== chef.name && isSenior(candidate));
+          if (supportedBySenior) {
+            explanations.push(`${chef.name} covered ${assignment.section} as a supervised training allocation while senior and section coverage remained valid.`);
+          } else {
+            explanations.push(`${chef.name} covered ${assignment.section} at ${getSectionLevelLabel(quality)} level because no materially stronger valid option was available.`);
+          }
+        }
       } else if (quality === 0 && assignment.section !== 'Breakfast' && assignment.section !== 'MIO') {
         score += SCORING_WEIGHTS.avoidedSectionPenalty;
-        explanations.push(`${chef.name} assigned to a weak-fit section (${assignment.section}).`);
+        explanations.push(`${chef.name} was not used on ${assignment.section} because it is marked ${getSectionLevelLabel(SECTION_LEVELS.SHOULD_NOT_COVER)}.`);
       }
     });
   });

@@ -32,7 +32,7 @@
 
 ### Staff
 - Purpose: master staff database.
-- Holds staff names, roles, seniority, contract hours, section skill scores, eligibility, fixed day-off information, and notes.
+- Holds staff names, roles, seniority, contract hours, section levels, eligibility, fixed day-off information, and notes.
 
 ### Settings
 - Purpose: rule catalog and configuration.
@@ -67,7 +67,7 @@
 - Unavailable entries
 
 ### Staff
-- Staff name, role, seniority rank, contract hours, eligibility flags, section skill scores, fixed day off, notes
+- Staff name, role, seniority rank, contract hours, eligibility flags, section levels, fixed day off, notes
 
 ### Settings
 - Rule text and active flags

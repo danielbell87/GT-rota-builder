@@ -407,10 +407,14 @@ export async function runUiTests(assert) {
     const danRow = await openChefEditorByName(doc, 'Dan');
     assert(doc.getElementById('chefModalTitle').textContent === 'Edit chef', 'UI: clicking a chef opens the edit popup');
     assert(normalizeText(doc.getElementById('chefModalSubtitle').textContent) === 'Dan · Chef de Partie', 'UI: the chef popup identifies the selected chef');
-    assert(getModalText(doc).includes('Profile') && getModalText(doc).includes('Section skills') && getModalText(doc).includes('Availability and preferences') && getModalText(doc).includes('Advanced settings'), 'UI: chef popup is organised into clear sections');
+    assert(getModalText(doc).includes('Profile') && getModalText(doc).includes('Section suitability') && getModalText(doc).includes('Availability and preferences') && getModalText(doc).includes('Advanced settings'), 'UI: chef popup is organised into clear sections');
+    assert(!getModalText(doc).includes('Hierarchy') && !getModalText(doc).includes('Service pace') && !getModalText(doc).includes('Preferred sections'), 'UI: chef popup hides obsolete hierarchy, service pace, and preferred sections fields');
     assert(doc.getElementById('chefNameInput').value === 'Dan', 'UI: chef popup loads the selected chef name');
     assert(doc.getElementById('chefRoleInput').value === 'Chef de Partie', 'UI: chef popup loads the selected chef role');
     assert(doc.getElementById('chefSkillPassInput').value === '2' && doc.getElementById('chefSkillGarnishInput').value === '3', 'UI: chef popup loads the selected chef skill values');
+    const passLevelLabels = [...doc.getElementById('chefSkillPassInput').options].map((option) => option.textContent.trim());
+    assert(JSON.stringify(passLevelLabels) === JSON.stringify(['Should not cover', 'In training', 'Competent', 'Preferred']), 'UI: each section selector uses the four descriptive section labels');
+    assert(!passLevelLabels.some((label) => /^[0-3]$/.test(label)), 'UI: normal section selectors do not display raw numeric levels');
 
     const danPersistedBeforeCancel = cloneData(getPersistedAppState(frameWindow));
     doc.getElementById('chefNameInput').value = 'Dan Cancel Test';
@@ -468,11 +472,9 @@ export async function runUiTests(assert) {
 
     await setFieldValue(doc.getElementById('chefNameInput'), 'Test Chef');
     await setFieldValue(doc.getElementById('chefRoleInput'), 'Chef de Partie');
-    await setFieldValue(doc.getElementById('chefHierarchyInput'), '4');
-    await setFieldValue(doc.getElementById('chefSkillSauceInput'), '2');
+    await setFieldValue(doc.getElementById('chefSkillSauceInput'), '3');
     await setFieldValue(doc.getElementById('chefWeekendRuleInput'), 'Works weekends');
     await setCheckboxValue(frameWindow, doc.querySelector('input[data-preferred-day-off="Monday"]'), true);
-    await setCheckboxValue(frameWindow, doc.querySelector('input[data-preferred-section="Sauce"]'), true);
     await setCheckboxValue(frameWindow, doc.getElementById('chefMioEligibleInput'), true);
     doc.getElementById('chefAdvancedSection').open = true;
     await clickElement(doc.getElementById('saveChefBtn'));
@@ -484,7 +486,8 @@ export async function runUiTests(assert) {
       testChefReloadFrame = await loadFrame('../index.html');
       const persisted = getPersistedAppState(testChefReloadFrame.contentWindow);
       const testChef = persisted.staff.find((chef) => chef.name === 'Test Chef');
-      assert(testChef?.weekendRule === 'Works weekends' && testChef?.preferredDaysOff?.includes('Monday') && testChef?.preferredSections?.includes('Sauce'), 'UI: chef availability and preference changes persist after reload');
+      assert(testChef?.weekendRule === 'Works weekends' && testChef?.preferredDaysOff?.includes('Monday') && testChef?.skills?.Sauce === 3, 'UI: chef availability and section-level changes persist after reload');
+      assert(!Object.prototype.hasOwnProperty.call(testChef || {}, 'preferredSections') && !Object.prototype.hasOwnProperty.call(testChef || {}, 'hierarchy') && !Object.prototype.hasOwnProperty.call(testChef || {}, 'servicePace'), 'UI: saved chefs do not persist obsolete profile fields');
     } finally {
       destroyFrame(testChefReloadFrame);
     }
@@ -550,19 +553,44 @@ export async function runUiTests(assert) {
   }
 
   localStorage.clear();
-  localStorage.setItem('gtRota.schemaVersion', '4');
+  localStorage.setItem('gtRota.schemaVersion', '5');
   const legacyStaffState = cloneData(migrationSeedState);
-  legacyStaffState.staff = legacyStaffState.staff.map(({ id, ...chef }) => chef);
+  let migratedSnapshot = null;
+  legacyStaffState.staff = legacyStaffState.staff.map((chef) => ({
+    ...chef,
+    hierarchy: 4,
+    servicePace: 'steady',
+    preferredSections: Object.entries(chef.skills || {}).filter(([, level]) => level === 3).map(([section]) => section)
+  }));
+  legacyStaffState.weeklyInputs.availability = [
+    { chef: 'Dan', type: 'Annual Leave', startDate: '2026-07-13', finishDate: '2026-07-16', notes: 'Migrated leave' },
+    { chef: 'Connor', type: 'Unavailable', startDate: '2026-07-17', finishDate: '2026-07-17', notes: 'Migrated unavailable' }
+  ];
   localStorage.setItem('gtRota.state.v2', JSON.stringify(legacyStaffState));
   let migrationFrame = null;
   try {
     migrationFrame = await loadFrame('../index.html');
     const migratedState = getPersistedAppState(migrationFrame.contentWindow);
+    migratedSnapshot = cloneData(migratedState);
     const ids = migratedState.staff.map((chef) => chef.id).filter(Boolean);
     assert(ids.length === migratedState.staff.length && new Set(ids).size === ids.length, 'UI: existing staff records migrate to stable chef IDs');
     assert(migratedState.staff.find((chef) => chef.name === 'Dan')?.skills?.Pass === legacyStaffState.staff.find((chef) => chef.name === 'Dan')?.skills?.Pass, 'UI: staff migration preserves existing skill values');
+    assert(migratedState.staff.every((chef) => !Object.prototype.hasOwnProperty.call(chef, 'hierarchy') && !Object.prototype.hasOwnProperty.call(chef, 'servicePace') && !Object.prototype.hasOwnProperty.call(chef, 'preferredSections')), 'UI: schema migration removes hierarchy, service pace, and preferred sections');
+    assert(migratedState.staff.find((chef) => chef.name === 'Dan')?.id === legacyStaffState.staff.find((chef) => chef.name === 'Dan')?.id, 'UI: schema migration preserves stable chef IDs');
+    assert(migratedState.staff.find((chef) => chef.name === 'Charlie')?.role === legacyStaffState.staff.find((chef) => chef.name === 'Charlie')?.role && migratedState.staff.find((chef) => chef.name === 'Charlie')?.seniorStatus === legacyStaffState.staff.find((chef) => chef.name === 'Charlie')?.seniorStatus, 'UI: schema migration preserves roles and senior status');
+    assert(migratedState.staff.find((chef) => chef.name === 'Camilla')?.mioEligible === legacyStaffState.staff.find((chef) => chef.name === 'Camilla')?.mioEligible, 'UI: schema migration preserves MIO eligibility');
+    assert(JSON.stringify(migratedState.weeklyInputs.availability) === JSON.stringify(legacyStaffState.weeklyInputs.availability), 'UI: schema migration preserves annual leave and unavailable entries');
+    assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '6', 'UI: storage schema version increments to 6');
   } finally {
     destroyFrame(migrationFrame);
+  }
+
+  let migrationReloadFrame = null;
+  try {
+    migrationReloadFrame = await loadFrame('../index.html');
+    assert(JSON.stringify(getPersistedAppState(migrationReloadFrame.contentWindow)) === JSON.stringify(migratedSnapshot), 'UI: schema migration is idempotent across reloads');
+  } finally {
+    destroyFrame(migrationReloadFrame);
   }
 
   localStorage.clear();
@@ -574,7 +602,7 @@ export async function runUiTests(assert) {
   singleChefState.weeklyInputs.mioChef = 'History Chef';
   singleChefState.weeklyInputs.weeklyMioSelections = { [singleChefState.weeklyInputs.weekStart]: 'History Chef' };
   singleChefState.weeklyInputs.availability = [{ chef: 'History Chef', type: 'Unavailable', startDate: singleChefState.weeklyInputs.weekStart, finishDate: singleChefState.weeklyInputs.weekStart, notes: '' }];
-  localStorage.setItem('gtRota.schemaVersion', String(5));
+  localStorage.setItem('gtRota.schemaVersion', String(6));
   localStorage.setItem('gtRota.state.v2', JSON.stringify(singleChefState));
   localStorage.setItem('gtRota.history.v1', JSON.stringify([{
     key: '2026-07-13__History Chef',
