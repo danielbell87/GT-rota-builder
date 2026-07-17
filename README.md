@@ -1,11 +1,11 @@
 # GT Rota Builder
 
-A web-based chef scheduling application that generates weekly rotas based on availability, skills, and business rules.
+A web-based chef scheduling application that generates weekly rotas based on availability, section levels, and business rules.
 
 ## Features
 
 - **Live rota generation** with real-time updates as inputs change
-- **Chef scheduling** with skill-based section assignments
+- **Chef scheduling** with descriptive section-level assignments
 - **Compact chefs list** with click-to-edit popup profiles
 - **Availability management** for annual leave and unavailable dates
 - **Additional chef requests** via compact date-based list and modal dialog
@@ -19,7 +19,7 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 
 1. Open `index.html` in a web browser (or use the legacy `GT Rota builder.html` bookmark, which redirects to `index.html`)
 2. Enter the week commencing date
-3. Use the **Chefs** list to add staff or open a chef popup for profile, skills, and preference edits
+3. Use the **Chefs** list to add staff or open a chef popup for profile, section-level, and preference edits
 4. Select a MIO (Management Improvement Officer) chef if needed
 5. Add any additional chef requests (e.g., private events) using the **Add additional chef** button
 6. Review the generated rota, chef-hours summary, and any failed checks
@@ -29,9 +29,13 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 - The **Chefs** section now shows a compact staff list with chef name, role, and at most one small status badge.
 - Click **Add chef** to open the staff editor in creation mode.
 - Click any chef row to open the full editable popup profile.
-- The popup keeps profile fields, section skills, availability preferences, and advanced settings in one place.
+- The popup keeps profile fields, section suitability, availability preferences, and advanced settings in one place.
 - **Remove chef** is only available inside the popup and requires confirmation.
 - Saving a chef updates browser storage and refreshes rota generation without changing solver rules or defaults.
+- The popup uses four section levels everywhere: **Should not cover**, **In training**, **Competent**, **Preferred**.
+- **Preferred** combines strongest suitability and generic section preference; there is no separate preferred-section field.
+- Role and Senior status now replace the obsolete hierarchy number field.
+- Service pace has been removed because it is not used by rota generation.
 
 ## Results UI
 
@@ -73,9 +77,18 @@ Requests are tied to a specific calendar date and do not carry across week chang
 - Saturday: 12.5 hours
 - Sunday: 11 hours
 
+### Section levels
+- **Should not cover** — never assign that chef to the section
+- **In training** — valid only as a lower-priority supervised/training option
+- **Competent** — normal acceptable assignment level
+- **Preferred** — strongest and favoured section level
+
+The solver uses the section level as the single source of truth for both suitability and generic section preference.
+
 ### Senior On Pass Preference (Soft Rule)
 - Thursday to Sunday, Pass is strongly weighted toward an available senior chef.
 - Senior status is determined from structured staff data using the senior flag.
+- Among valid senior candidates, stronger Pass levels are preferred first.
 - If no valid senior assignment is available without breaking hard rules, non-senior Pass coverage is allowed.
 - Weight is configurable in rule metadata via rule id prefer-senior-on-pass (default weight 12).
 
@@ -182,16 +195,16 @@ Saved browser data is persisted with migration-safe localStorage keys.
   - `gtRota.mioEligibilityByChef`
   - `gtRota.staffProfilesByChef`
 
-Schema version `5` adds stable chef IDs to stored staff records while preserving existing chef names, skills, preferences, weekly inputs, and published history snapshots.
+Schema version `6` removes obsolete `hierarchy`, `servicePace`, and `preferredSections` fields while preserving stable chef IDs, section levels, weekly inputs, and published history snapshots.
 
 No external API keys or secrets are required.
 
 ## Recent Updates
 
-- ✅ Fixed timezone-related date display issues
-- ✅ Implemented breakfast shift constraints (max 1 per chef per week)
-- ✅ Updated hours calculation for 7:30am breakfast start times
-- ✅ Added validation for breakfast constraint violations
+- ✅ Simplified chef profiles to section levels only
+- ✅ Removed obsolete hierarchy, service pace, and separate preferred-sections fields
+- ✅ Added schema-safe migration for existing saved staff profiles
+- ✅ Preserved senior-on-Pass, MIO, fairness, leave, and specialist rota rules
 
 ## License
 

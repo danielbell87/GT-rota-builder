@@ -1,7 +1,8 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
-import { buildRota, buildMultiWeekRota, compareFairnessTieBreak } from '../js/solver.js';
+import { buildRota, buildMultiWeekRota, compareFairnessTieBreak, getSectionCandidateBaseScore } from '../js/solver.js';
 import { isSenior, getHoursForDay, getHoursForAssignment } from '../js/scoring.js';
-import { validateRotaHardRules } from '../js/validation.js?v=20260717a';
+import { validateRotaHardRules } from '../js/validation.js?v=20260717b';
+import { canCoverSection, sectionCandidateScore } from '../js/section-levels.js';
 
 function setupBaseState() {
   resetStateToDefaults();
@@ -31,6 +32,33 @@ function getHardFailures(state, result) {
 
 function hasAnyAssignment(result, chefName) {
   return result.rota.some((day) => day.assignments.some((assignment) => assignment.chef === chefName));
+}
+
+function createTestChef(name, role, skills = {}, extra = {}) {
+  return {
+    id: `test-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+    name,
+    role,
+    senior: false,
+    seniorStatus: false,
+    breakfastEligible: true,
+    mioEligible: false,
+    weekendRule: '',
+    fixedDayOff: '',
+    preferredDaysOff: [],
+    preferredBreakfast: '',
+    notes: '',
+    skills: {
+      Pass: 0,
+      Sauce: 0,
+      Garnish: 0,
+      Larder: 0,
+      Pastry: 0,
+      Breakfast: 2,
+      ...skills
+    },
+    ...extra
+  };
 }
 
 export async function runSolverTests(assert) {
@@ -125,10 +153,57 @@ export async function runSolverTests(assert) {
   const eligibleMio = state.staff.filter((staff) => staff.mioEligible).map((staff) => staff.name).sort();
   const expectedMio = ['Brooke', 'Camilla', 'Dan', 'Fred', 'Joel'];
   assert(JSON.stringify(eligibleMio) === JSON.stringify(expectedMio), 'Default MIO eligibility is Dan/Fred/Joel/Camilla/Brooke only');
+  assert(state.staff.find((chef) => chef.name === 'Myles')?.skills?.Larder === 3 && Object.entries(state.staff.find((chef) => chef.name === 'Myles')?.skills || {}).every(([section, level]) => section === 'Larder' || section === 'Breakfast' || level === 0), 'Defaults: Myles remains Larder-only');
+  assert(state.staff.find((chef) => chef.name === 'Fred')?.skills?.Garnish === 3 && Object.entries(state.staff.find((chef) => chef.name === 'Fred')?.skills || {}).every(([section, level]) => section === 'Garnish' || section === 'Breakfast' || level === 0), 'Defaults: Fred remains Garnish-only');
+  assert(state.staff.find((chef) => chef.name === 'Joel')?.skills?.Sauce === 3 && Object.entries(state.staff.find((chef) => chef.name === 'Joel')?.skills || {}).every(([section, level]) => section === 'Sauce' || section === 'Breakfast' || level === 0), 'Defaults: Joel remains Sauce-only');
+  assert((state.staff.find((chef) => chef.name === 'Brooke')?.notes || '').includes('3 pastry and 1 larder'), 'Defaults: Brooke soft Pastry/Larder rule remains present');
 
   const mylesMioAttempt = runScenario(state, { mioChef: 'Myles' });
   const mylesMioAssigned = mylesMioAttempt.rota.some((day) => day.assignments.some((assignment) => assignment.section === 'MIO' && assignment.chef === 'Myles'));
   assert(!mylesMioAssigned, 'Myles cannot be assigned to MIO');
+
+  const preferredGarnish = createTestChef('Chef A', 'Chef de Partie', { Garnish: 3, Breakfast: 2 });
+  const competentGarnish = createTestChef('Chef B', 'Chef de Partie', { Garnish: 2, Breakfast: 2 });
+  const garnishCandidates = [preferredGarnish, competentGarnish].sort((a, b) => (
+    getSectionCandidateBaseScore({ staff: b, section: 'Garnish', dayName: 'Thursday', ruleOverrides: {}, gtDaysByChef: {}, mioChefName: '' })
+    - getSectionCandidateBaseScore({ staff: a, section: 'Garnish', dayName: 'Thursday', ruleOverrides: {}, gtDaysByChef: {}, mioChefName: '' })
+  ));
+  assert(garnishCandidates[0].name === 'Chef A', 'Scenario A: Preferred candidate outranks otherwise equivalent Competent candidate');
+
+  const competentSauce = createTestChef('Chef A', 'Chef de Partie', { Sauce: 2, Breakfast: 2 });
+  const trainingSauce = createTestChef('Chef B', 'Chef de Partie', { Sauce: 1, Breakfast: 2 });
+  const sauceCandidates = [competentSauce, trainingSauce].sort((a, b) => (
+    getSectionCandidateBaseScore({ staff: b, section: 'Sauce', dayName: 'Thursday', ruleOverrides: {}, gtDaysByChef: {}, mioChefName: '' })
+    - getSectionCandidateBaseScore({ staff: a, section: 'Sauce', dayName: 'Thursday', ruleOverrides: {}, gtDaysByChef: {}, mioChefName: '' })
+  ));
+  assert(sauceCandidates[0].name === 'Chef A', 'Scenario B: Competent candidate outranks otherwise equivalent In training candidate');
+
+  const fairnessConflictCandidates = [createTestChef('Preferred Sauce', 'Chef de Partie', { Sauce: 3, Breakfast: 2 }), createTestChef('Training Sauce', 'Chef de Partie', { Sauce: 1, Breakfast: 2 })];
+  const fairnessContext = {
+    stats: {
+      'Preferred Sauce': { weightedBurden: 8, fridayCount: 1, saturdayCount: 1, sundayCount: 1, repeatedSaturdaySundayPairCount: 0, repeatedFullWeekendCount: 0, repeatedExactPatternCount: 0 },
+      'Training Sauce': { weightedBurden: 0, fridayCount: 0, saturdayCount: 0, sundayCount: 0, repeatedSaturdaySundayPairCount: 0, repeatedFullWeekendCount: 0, repeatedExactPatternCount: 0 }
+    },
+    previousWeekPatterns: {}
+  };
+  const rankedWithFairness = fairnessConflictCandidates.sort((a, b) => {
+    const scoreDiff = getSectionCandidateBaseScore({ staff: b, section: 'Sauce', dayName: 'Saturday', ruleOverrides: {}, gtDaysByChef: {}, mioChefName: '' })
+      - getSectionCandidateBaseScore({ staff: a, section: 'Sauce', dayName: 'Saturday', ruleOverrides: {}, gtDaysByChef: {}, mioChefName: '' });
+    if (scoreDiff !== 0) return scoreDiff;
+    return compareFairnessTieBreak(a, b, 'Saturday', fairnessContext, {});
+  });
+  assert(rankedWithFairness[0].name === 'Preferred Sauce', 'Scenario D: section suitability stays ahead of weekend fairness when levels differ meaningfully');
+
+  const seniorCompetentPass = createTestChef('Senior Pass', 'Sous Chef', { Pass: 2, Breakfast: 2 }, { senior: true, seniorStatus: true });
+  const nonSeniorPreferredPass = createTestChef('Non-senior Pass', 'Chef de Partie', { Pass: 3, Breakfast: 2 });
+  const passCandidates = [seniorCompetentPass, nonSeniorPreferredPass].sort((a, b) => (
+    getSectionCandidateBaseScore({ staff: b, section: 'Pass', dayName: 'Friday', ruleOverrides: {}, gtDaysByChef: {}, mioChefName: '' })
+    - getSectionCandidateBaseScore({ staff: a, section: 'Pass', dayName: 'Friday', ruleOverrides: {}, gtDaysByChef: {}, mioChefName: '' })
+  ));
+  assert(passCandidates[0].name === 'Senior Pass', 'Scenario E: senior Competent Pass candidate outranks non-senior Preferred fallback on Pass');
+  assert(sectionCandidateScore(preferredGarnish, 'Garnish') > sectionCandidateScore(competentGarnish, 'Garnish'), 'Section levels: Preferred ranks above Competent');
+  assert(sectionCandidateScore(competentSauce, 'Sauce') > sectionCandidateScore(trainingSauce, 'Sauce'), 'Section levels: Competent ranks above In training');
+  assert(!canCoverSection(createTestChef('Blocked Pastry', 'Chef de Partie', { Pastry: 0 }), 'Pastry'), 'Section levels: Should not cover excludes the chef from that section');
 
   const mioInfeasibleGtState = setupBaseState();
   mioInfeasibleGtState.weeklyInputs.availability = [
@@ -254,4 +329,10 @@ export async function runSolverTests(assert) {
   });
   const weekTwoPassChef = sectionQualityResult.weeks[1].rota.find((day) => day.dayName === 'Friday')?.assignments.find((assignment) => assignment.section === 'Pass')?.chef;
   assert(['Aled', 'Charlie', 'Adam', 'Connor'].includes(weekTwoPassChef), 'Multi-week: section quality remains higher priority than fairness on Pass');
+
+  const noPastryState = setupBaseState();
+  noPastryState.staff = noPastryState.staff.map((chef) => ({ ...chef, skills: { ...chef.skills, Pastry: 0 } }));
+  const noPastryResult = runScenario(noPastryState);
+  assert(noPastryResult.status === 'infeasible', 'Scenario C: solver returns infeasible when no valid Pastry cover exists');
+  assert(!noPastryResult.rota.some((day) => day.assignments.some((assignment) => assignment.section === 'Pastry' && !canCoverSection(noPastryState.staff.find((chef) => chef.name === assignment.chef), 'Pastry'))), 'Scenario C: Should not cover Pastry chefs are never assigned Pastry');
 }

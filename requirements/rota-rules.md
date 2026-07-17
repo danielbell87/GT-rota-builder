@@ -30,7 +30,7 @@ These are scoring and quality objectives rather than hard blocking rules.
 
 1. Target about 48 credited hours per chef each week, with a tolerance of about ±2 hours.
 2. Prefer two consecutive days off where possible.
-3. Prefer assigning chefs to their preferred sections (strength 3) before assigning them to competent sections (strength 2) or training (strength 1).
+3. Prefer assigning chefs at Preferred level before Competent level, and Competent level before In training.
 4. Use fair Friday/Saturday/Sunday rotation where possible.
 5. Provide useful training opportunities without weakening service.
 6. Avoid more than one breakfast assignment per chef in a week unless required.
@@ -56,13 +56,13 @@ These are scoring and quality objectives rather than hard blocking rules.
 - **Breakfast**: One chef who is already assigned to a core section that day (not separate)
 - **MIO**: A separate kitchen for events (chefs loaned from GT); requires eligible junior chef assigned Mon-Wed at MIO and Sat-Sun at GT
 
-### Preferred sections quality score (weighted)
-- **0**: Chef cannot work this section
-- **1**: Chef is training on this section
-- **2**: Chef is proficient on this section
-- **3**: Chef is proficient AND this is their preferred/strongest section
+### Section levels
+- **Should not cover (0)**: Chef cannot work this section
+- **In training (1)**: Chef is training on this section
+- **Competent (2)**: Chef is proficient on this section
+- **Preferred (3)**: Chef is proficient and this is their strongest/favoured section
 
-**Strategy**: Prioritize assigning strength-3 chefs to each section, then strength-2, then strength-1. Display explanation box showing each chef's assignment and quality score.
+**Strategy**: Prioritize Preferred chefs on each section, then Competent, then In training. Display explanation text using level names rather than raw numeric values.
 
 ### Seniority validation
 - **Daily requirement**: At least one Sous Chef or higher must work in the kitchen each day
@@ -77,4 +77,4 @@ These are scoring and quality objectives rather than hard blocking rules.
 
 ### Section mapping
 - Section names in Staff table (Pass, Sauce, Garnish, Larder, Pastry) map directly to rota sections
-- Chef strength value 0-3 indicates capability/preference for that section
+- Chef section level 0-3 indicates capability/preference for that section

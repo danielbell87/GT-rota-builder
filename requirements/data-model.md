@@ -17,11 +17,11 @@ Fields:
 - fixed_day_off: optional day name
 - can_lead_service: boolean
 - can_run_pass: boolean
-- pass_skill: numeric skill score
-- sauce_skill: numeric skill score
-- garnish_skill: numeric skill score
-- larder_skill: numeric skill score
-- pastry_skill: numeric skill score
+- pass_skill: numeric section level (0-3)
+- sauce_skill: numeric section level (0-3)
+- garnish_skill: numeric section level (0-3)
+- larder_skill: numeric section level (0-3)
+- pastry_skill: numeric section level (0-3)
 - breakfast_eligible: boolean
 - preferred_breakfast: optional day name
 - notes: free-text notes
