@@ -1,8 +1,10 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota, buildMultiWeekRota, compareFairnessTieBreak, getSectionCandidateBaseScore } from '../js/solver.js';
 import { isSenior, getHoursForDay, getHoursForAssignment } from '../js/scoring.js';
-import { validateRotaHardRules } from '../js/validation.js?v=20260717b';
+import { validateRotaHardRules } from '../js/validation.js?v=20260717c';
 import { canCoverSection, sectionCandidateScore } from '../js/section-levels.js';
+
+const PRIMARY_GT_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry', 'Float'];
 
 function setupBaseState() {
   resetStateToDefaults();
@@ -32,6 +34,10 @@ function getHardFailures(state, result) {
 
 function hasAnyAssignment(result, chefName) {
   return result.rota.some((day) => day.assignments.some((assignment) => assignment.chef === chefName));
+}
+
+function getPrimaryAssignments(day, chefName) {
+  return day.assignments.filter((assignment) => assignment.chef === chefName && PRIMARY_GT_SECTIONS.includes(assignment.section));
 }
 
 function createTestChef(name, role, skills = {}, extra = {}) {
@@ -94,6 +100,25 @@ export async function runSolverTests(assert) {
     });
   assert(passSeniorFeasible, 'Baseline uses senior chef on Pass Thursday-Sunday where feasible');
 
+  const baselineNonMioExactTargets = baseline.summary
+    .filter((item) => item.name !== 'Dan')
+    .every((item) => item.gtDays === item.adjustedGtTarget && item.adjustedGtTarget === 4);
+  assert(baselineNonMioExactTargets, 'Baseline week gives every non-MIO chef exactly 4 GT days');
+
+  const baselineFloatAssignments = baseline.rota.flatMap((day) => day.assignments
+    .filter((assignment) => assignment.section === 'Float')
+    .map((assignment) => ({ ...assignment, day })));
+  assert(baselineFloatAssignments.length >= 6, 'Baseline capacity uses explicit Float assignments to fill weekly GT targets');
+  assert(baselineFloatAssignments.some((entry, index) => baselineFloatAssignments.filter((other) => other.day.date === entry.day.date).length > 1), 'Multiple Float chefs can be assigned on the same day when needed');
+  assert(baseline.rota
+    .filter((day) => ['Thursday', 'Friday', 'Saturday', 'Sunday'].includes(day.dayName))
+    .every((day) => day.chefs.length >= 5), 'Thursday-Sunday schedules at least five GT chefs');
+  assert(baselineFloatAssignments.every(({ chef, day }) => day.chefs.includes(chef)), 'Every Float chef appears in day.chefs');
+  assert(baselineFloatAssignments.every(({ chef, day }) => getPrimaryAssignments(day, chef).length === 1), 'A Float chef has exactly one primary GT assignment on that day');
+  assert(baseline.summary
+    .filter((item) => item.floatDays > 0)
+    .every((item) => item.gtHours === item.gtDays * getHoursForDay('Thursday', false) || item.gtHours > 0), 'Float days contribute to GT hours in the weekly summary');
+
   const joelLeaveState = setupBaseState();
   joelLeaveState.weeklyInputs.availability = [{ chef: 'Joel', type: 'Annual Leave', startDate: '2026-07-13', finishDate: '2026-07-19', notes: '' }];
   syncCompatibilityViews();
@@ -119,6 +144,15 @@ export async function runSolverTests(assert) {
   assert(dailySeniorCover, 'Every day retains senior cover when Charlie is on leave');
   assert(charlieLeaveFailures.length === 0, 'Charlie full-week leave scenario has no hard failures');
 
+  const fredAnnualLeaveState = setupBaseState();
+  fredAnnualLeaveState.weeklyInputs.availability = [{ chef: 'Fred', type: 'Annual Leave', startDate: '2026-07-14', finishDate: '2026-07-14', notes: '' }];
+  syncCompatibilityViews();
+  const fredAnnualLeave = runScenario(fredAnnualLeaveState);
+  const fredAnnualLeaveSummary = fredAnnualLeave.summary.find((item) => item.name === 'Fred');
+  assert(fredAnnualLeave.status === 'ok', 'One annual-leave day still allows an exact weekly GT solution when feasible');
+  assert((fredAnnualLeaveSummary?.adjustedGtTarget || 0) === 3, 'One annual-leave day reduces a normal chef GT target from four to three');
+  assert((fredAnnualLeaveSummary?.gtDays || 0) === 3, 'Adjusted annual-leave target is met exactly');
+
   const danUnavailableState = setupBaseState();
   danUnavailableState.weeklyInputs.availability = [{ chef: 'Dan', type: 'Unavailable', startDate: '2026-07-17', finishDate: '2026-07-17', notes: '' }];
   syncCompatibilityViews();
@@ -134,8 +168,18 @@ export async function runSolverTests(assert) {
   assert(fridayBlocked, 'Dan is blocked on Friday only when marked unavailable Friday');
   assert(danAssignedElsewhere, 'Dan remains eligible on other valid days when unavailable Friday only');
   assert((danUnavailableSummary?.annualLeaveHours || 0) === 0, 'Unavailable does not create annual-leave credit');
+  assert((danUnavailableSummary?.gtDays || 0) === 2, 'Unavailable does not change the selected MIO chef GT target');
   assert(noMonWedOverstaffing, 'Dan unavailable scenario does not overstaff Monday-Wednesday');
   assert(danUnavailableFailures.length === 0, 'Dan Friday unavailable scenario has no hard failures');
+
+  const connorUnavailableState = setupBaseState();
+  connorUnavailableState.weeklyInputs.mioChef = '';
+  connorUnavailableState.weeklyInputs.availability = [{ chef: 'Connor', type: 'Unavailable', startDate: '2026-07-17', finishDate: '2026-07-17', notes: '' }];
+  syncCompatibilityViews();
+  const connorUnavailable = runScenario(connorUnavailableState);
+  const connorSummary = connorUnavailable.summary.find((item) => item.name === 'Connor');
+  assert(connorUnavailable.status === 'ok', 'Normal-chef unavailable scenario remains feasible when other dates exist');
+  assert((connorSummary?.gtDays || 0) === 4, 'Unavailable does not reduce a normal chef weekly GT target when the week remains feasible');
 
   const mylesLeaveState = setupBaseState();
   mylesLeaveState.weeklyInputs.availability = [{ chef: 'Myles', type: 'Annual Leave', startDate: '2026-07-13', finishDate: '2026-07-19', notes: '' }];
@@ -144,11 +188,11 @@ export async function runSolverTests(assert) {
   const mylesLeaveFailures = getHardFailures(mylesLeaveState, mylesLeave);
   const mylesSummary = mylesLeave.summary.find((item) => item.name === 'Myles');
   const mylesAssigned = hasAnyAssignment(mylesLeave, 'Myles');
-  assert(mylesLeave.status === 'infeasible', 'Myles full-week annual leave scenario is infeasible under selected MIO 3+2 hard pattern');
+  assert(mylesLeave.status === 'ok', 'Full-week annual leave reduces a normal chef GT target to zero when cover remains feasible');
   assert((mylesSummary?.annualLeaveHours || 0) === 48, 'Myles receives 48 leave-credit hours for full leave week');
+  assert((mylesSummary?.adjustedGtTarget || 0) === 0, 'Full-week annual leave produces a zero GT target');
   assert(!mylesAssigned, 'Myles has no assignment during full-week annual leave');
-  assert(mylesLeave.validation.some((item) => item.message.includes('Could not build a valid day plan')), 'Infeasible Myles leave scenario reports day-plan conflict');
-  assert(mylesLeaveFailures.length === 0, 'Infeasible Myles leave scenario does not break hard-rule checker on produced days');
+  assert(mylesLeaveFailures.length === 0, 'Full-week annual leave scenario still passes hard validation when feasible');
 
   const eligibleMio = state.staff.filter((staff) => staff.mioEligible).map((staff) => staff.name).sort();
   const expectedMio = ['Brooke', 'Camilla', 'Dan', 'Fred', 'Joel'];
@@ -161,6 +205,14 @@ export async function runSolverTests(assert) {
   const mylesMioAttempt = runScenario(state, { mioChef: 'Myles' });
   const mylesMioAssigned = mylesMioAttempt.rota.some((day) => day.assignments.some((assignment) => assignment.section === 'MIO' && assignment.chef === 'Myles'));
   assert(!mylesMioAssigned, 'Myles cannot be assigned to MIO');
+
+  const mondayExtraState = setupBaseState();
+  mondayExtraState.weeklyInputs.additionalChefRequirements = [{ date: '2026-07-13', count: 1 }];
+  const mondayExtra = runScenario(mondayExtraState);
+  const mondayPlan = mondayExtra.rota.find((day) => day.dayName === 'Monday');
+  assert(mondayExtra.status === 'ok', 'An explicit Monday extra-chef request remains feasible');
+  assert((mondayPlan?.chefs.length || 0) === 5, 'Monday to Wednesday adds the exact requested extra GT chef only when explicitly requested');
+  assert((mondayPlan?.assignments.filter((assignment) => assignment.section === 'Float').length || 0) === 1, 'An explicit extra Monday chef is shown as Float once core sections are covered');
 
   const preferredGarnish = createTestChef('Chef A', 'Chef de Partie', { Garnish: 3, Breakfast: 2 });
   const competentGarnish = createTestChef('Chef B', 'Chef de Partie', { Garnish: 2, Breakfast: 2 });
@@ -234,6 +286,26 @@ export async function runSolverTests(assert) {
   assert(getHoursForAssignment('Monday', 'MIO') === 8.5, 'MIO shift equals 8.5 hours');
   assert(getHoursForDay('Thursday', true) === getHoursForDay('Thursday'), 'Breakfast does not increase paid hours');
 
+  const impossibleTargetState = setupBaseState();
+  impossibleTargetState.weeklyInputs.mioChef = '';
+  impossibleTargetState.weeklyInputs.availability = [
+    { chef: 'Aled', type: 'Unavailable', startDate: '2026-07-16', finishDate: '2026-07-19', notes: '' },
+    { chef: 'Aled', type: 'Unavailable', startDate: '2026-07-15', finishDate: '2026-07-15', notes: '' }
+  ];
+  syncCompatibilityViews();
+  const impossibleTarget = runScenario(impossibleTargetState);
+  assert(impossibleTarget.status === 'infeasible', 'Solver returns infeasible when a chef cannot reach an exact GT target because of hard constraints');
+  assert(impossibleTarget.validation.some((item) => item.message.includes('Aled: expected exactly 4 GT days')), 'Infeasible result names the affected chef with actual versus required GT days');
+
+  const floatSpecialistState = setupBaseState();
+  floatSpecialistState.weeklyInputs.additionalChefRequirements = [{ date: '2026-07-17', count: 2 }];
+  const floatSpecialist = runScenario(floatSpecialistState);
+  const fridayFloatChefs = floatSpecialist.rota.find((day) => day.dayName === 'Friday')?.assignments
+    .filter((assignment) => assignment.section === 'Float')
+    .map((assignment) => assignment.chef) || [];
+  assert(floatSpecialist.status === 'ok', 'Specialists can be assigned to Float without breaking the rota');
+  assert(fridayFloatChefs.some((chef) => ['Myles', 'Fred', 'Joel'].includes(chef)), 'Specialist chefs can be selected for explicit Float work');
+
   // ─── Multi-week rota generation ────────────────────────────────────────────
   const multiWeekState = setupBaseState();
   const multiWeekInputs = {
@@ -275,6 +347,7 @@ export async function runSolverTests(assert) {
       summary: weekResult.summary
     }).filter((r) => !r.passed);
     assert(hardFails.length === 0, `Multi-week: week ${wi + 1} has no hard-rule failures`);
+    assert(weekResult.summary.every((item) => item.gtDays === item.adjustedGtTarget), `Multi-week: week ${wi + 1} satisfies exact weekly GT targets`);
   });
 
   const fourWeekResult = buildMultiWeekRota({ ...multiWeekInputs, numWeeks: 4 });
@@ -296,7 +369,8 @@ export async function runSolverTests(assert) {
     ...multiWeekInputs,
     numWeeks: 3,
     availability: [
-      { chef: 'Myles', type: 'Annual Leave', startDate: '2026-07-20', finishDate: '2026-07-26', notes: '' }
+      { chef: 'Adam', type: 'Annual Leave', startDate: '2026-07-20', finishDate: '2026-07-26', notes: '' },
+      { chef: 'Connor', type: 'Annual Leave', startDate: '2026-07-20', finishDate: '2026-07-26', notes: '' }
     ]
   });
   assert(failedWeekTwo.status === 'infeasible', 'Multi-week: failed week 2 makes the overall result infeasible');

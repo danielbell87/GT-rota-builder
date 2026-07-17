@@ -12,7 +12,7 @@ import {
 import { scoreSoftPreferences } from './scoring.js';
 import { isSenior } from './scoring.js';
 import { buildRota, buildMultiWeekRota } from './solver.js';
-import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260717b';
+import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260717c';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
 
 function getRequiredElement(id) {
@@ -39,10 +39,6 @@ function hasFairnessActivity(entry) {
 
 function getEligibleMioChefs(state) {
   return state.staff.filter((staff) => staff.mioEligible);
-}
-
-function getGtTargetForChef(chefName, mioChefName) {
-  return chefName === mioChefName ? 2 : 4;
 }
 
 // Treat a full-shift-equivalent gap from the 48-hour target as a notable outlier for the compact summary.
@@ -214,10 +210,11 @@ function getChefRowProblems(item, view) {
   const totalHours = item.totalCreditedHours ?? item.hours ?? 0;
   const expectedLeaveHours = getExpectedLeaveHoursForChef(item.name, view.inputs, view.week.weekStart);
   const isSelectedMioChef = item.name === view.inputs.mioChef;
+  const adjustedGtTarget = item.adjustedGtTarget ?? (isSelectedMioChef ? 2 : 4);
   const hasHoursProblem = totalHours > (TARGET_HOURS.weekly + HOURS_DEVIATION_THRESHOLD)
     || (totalHours > 0 && totalHours < (TARGET_HOURS.weekly - HOURS_DEVIATION_THRESHOLD));
   return {
-    gt: item.gtDays > getGtTargetForChef(item.name, view.inputs.mioChef),
+    gt: item.gtDays !== adjustedGtTarget,
     mio: isSelectedMioChef && (item.mioDays !== 3 || item.gtDays !== 2),
     leave: expectedLeaveHours !== (item.annualLeaveHours || 0),
     hours: hasHoursProblem
@@ -230,10 +227,11 @@ function renderChefHoursSummary(view) {
     const totalHours = item.totalCreditedHours ?? item.hours ?? 0;
     const problems = getChefRowProblems(item, view);
     const hasProblem = Object.values(problems).some(Boolean);
+    const adjustedGtTarget = item.adjustedGtTarget ?? (item.name === view.inputs.mioChef ? 2 : 4);
     return `
       <tr class="${hasProblem ? 'summary-row-problem' : ''}">
         <th scope="row">${escapeHtml(item.name)}</th>
-        <td${problems.gt ? ' class="metric-problem"' : ''}>${item.gtDays}/${getGtTargetForChef(item.name, view.inputs.mioChef)}</td>
+        <td${problems.gt ? ' class="metric-problem"' : ''}>${item.gtDays}/${adjustedGtTarget}</td>
         <td${problems.mio ? ' class="metric-problem"' : ''}>${item.mioDays}</td>
         <td${problems.leave ? ' class="metric-problem"' : ''}>${item.annualLeaveHours.toFixed(1)}h</td>
         <td${problems.hours ? ' class="metric-problem"' : ''}>${totalHours.toFixed(1)}h</td>
@@ -641,8 +639,7 @@ function renderRotaTable(solveResult) {
   const sectionCells = DISPLAY_SECTIONS.map((section) => {
     const cells = solveResult.rota.map((day) => {
       if (section === 'Float') {
-        const coreAssignments = day.assignments.filter((assignment) => [...CORE_SECTIONS, 'Breakfast'].includes(assignment.section)).map((assignment) => assignment.chef);
-        const floatChefs = day.chefs.filter((chef) => !coreAssignments.includes(chef));
+        const floatChefs = day.assignments.filter((assignment) => assignment.section === 'Float').map((assignment) => assignment.chef);
         return `<td>${floatChefs.length ? escapeHtml(floatChefs.join(', ')) : '—'}</td>`;
       }
       const matches = day.assignments.filter((assignment) => assignment.section === section);

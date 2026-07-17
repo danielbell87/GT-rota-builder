@@ -43,8 +43,14 @@ Edit and Remove actions are available on each saved request in the compact list.
 ## Rota Model
 A rota is a 7-day structure with:
 - `dayName`, `date`
-- `chefs` (GT day allocations)
-- `assignments` (section-level placements including Breakfast and MIO)
+- `chefs` (all GT day allocations, including Float)
+- `assignments` (explicit section-level placements including Float, Breakfast, and MIO)
+
+Weekly GT allocation is solved across the whole week rather than as seven isolated minimum-cover days:
+- calculate each chef's adjusted weekly GT target first
+- build valid core coverage for all seven days
+- add explicit Float assignments to satisfy remaining GT deficits
+- recalculate GT days, GT hours, and summary rows from the final rota data
 
 ## Hard Rules
 Implemented as structured hard validation checks in `js/validation.js` and rule metadata in `data/default-rules.js`, including:
@@ -62,7 +68,8 @@ Implemented as structured hard validation checks in `js/validation.js` and rule 
 - No MIO at weekends
 - MIO eligibility enforcement
 - MIO weekday pattern expectation
-- Max four GT days per chef
+- Exact weekly GT targets per chef, including annual-leave adjustments and the selected MIO chef's fixed 2 GT target
+- One primary GT assignment per chef per day (Pass/Sauce/Garnish/Larder/Pastry/Float)
 - Annual leave hourly credit checks
 - Concurrent leave guardrail
 
@@ -92,6 +99,7 @@ Section levels are interpreted in order:
 - Valid weeks use a compact success state instead of listing every passed rule.
 - Multi-week results include a compact per-week checks overview and keep week navigation above the selected rota.
 - Technical diagnostics use a collapsed details section and are excluded from print output.
+- Chef-hours summary shows exact GT progress as `actual/adjustedTarget`, for example `4/4`, `3/3`, or `2/2`.
 
 ## Publication Workflow
 When weekly status is `Published`, history records are upserted by `weekStart + chef` key in `js/history.js` to avoid duplicates.
