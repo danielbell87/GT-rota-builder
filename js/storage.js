@@ -1,4 +1,5 @@
 import { getState, syncCompatibilityViews } from './state.js';
+import { normalizeStaffRecords } from './staff.js';
 import { normalizeWeekStart } from './utils.js';
 
 export const STORAGE_KEYS = {
@@ -9,7 +10,7 @@ export const STORAGE_KEYS = {
   staffProfilesByChef: 'gtRota.staffProfilesByChef'
 };
 
-const CURRENT_SCHEMA_VERSION = 4;
+const CURRENT_SCHEMA_VERSION = 5;
 
 function safeParse(raw, fallback) {
   if (!raw) return fallback;
@@ -67,13 +68,6 @@ export function applyPersistedMioEligibility() {
   });
 }
 
-export function persistMioEligibilityForChef(name, value) {
-  if (!name) return;
-  const persisted = getPersistedMioEligibilityMap();
-  persisted[name] = !!value;
-  savePersistedMioEligibilityMap(persisted);
-}
-
 export function persistAllMioEligibility() {
   const state = getState();
   const persisted = Object.fromEntries(state.staff.map((staff) => [staff.name, !!staff.mioEligible]));
@@ -107,6 +101,7 @@ export function applyPersistedStaffProfiles() {
       staff.skills = { ...(staff.skills || {}), ...profile.skills };
     }
   });
+  state.staff = normalizeStaffRecords(state.staff);
 }
 
 export function persistAllStaffProfiles() {
@@ -122,26 +117,6 @@ export function persistAllStaffProfiles() {
     }
   ]));
   savePersistedStaffProfilesMap(persisted);
-}
-
-export function renamePersistedStaffProfile(oldName, newName) {
-  if (!oldName || !newName || oldName === newName) return;
-  const persisted = getPersistedStaffProfilesMap();
-  if (Object.prototype.hasOwnProperty.call(persisted, oldName)) {
-    persisted[newName] = persisted[oldName];
-    delete persisted[oldName];
-    savePersistedStaffProfilesMap(persisted);
-  }
-}
-
-export function renamePersistedMioEligibility(oldName, newName) {
-  if (!oldName || !newName || oldName === newName) return;
-  const persisted = getPersistedMioEligibilityMap();
-  if (Object.prototype.hasOwnProperty.call(persisted, oldName)) {
-    persisted[newName] = persisted[oldName];
-    delete persisted[oldName];
-    savePersistedMioEligibilityMap(persisted);
-  }
 }
 
 function migrateLegacyAdditionalChefRequests(saved) {
@@ -204,6 +179,9 @@ export function migrateStorageIfNeeded() {
       const fallbackWeekStart = saved.weeklyInputs?.weekStart || getState().weeklyInputs.weekStart;
       saved.weeklyInputs = normalizeWeeklyInputsShape(saved.weeklyInputs, fallbackWeekStart);
     }
+    if (current < 5 && Array.isArray(saved.staff)) {
+      saved.staff = normalizeStaffRecords(saved.staff);
+    }
     localStorage.setItem(STORAGE_KEYS.appState, JSON.stringify(saved));
   }
 
@@ -214,7 +192,7 @@ export function loadAppState() {
   const state = getState();
   const persisted = safeParse(localStorage.getItem(STORAGE_KEYS.appState), null);
   if (persisted && typeof persisted === 'object') {
-    if (Array.isArray(persisted.staff)) state.staff = persisted.staff;
+    if (Array.isArray(persisted.staff)) state.staff = normalizeStaffRecords(persisted.staff);
     if (persisted.weeklyInputs && typeof persisted.weeklyInputs === 'object') {
       state.weeklyInputs = {
         ...state.weeklyInputs,
@@ -241,7 +219,7 @@ export function loadAppState() {
 export function saveAppState(state) {
   try {
     localStorage.setItem(STORAGE_KEYS.appState, JSON.stringify({
-      staff: state.staff,
+      staff: normalizeStaffRecords(state.staff),
       settings: state.settings,
       weeklyInputs: normalizeWeeklyInputsShape(state.weeklyInputs, state.weeklyInputs.weekStart),
       generatedRotas: state.generatedRotas,

@@ -1,7 +1,7 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota, buildMultiWeekRota, compareFairnessTieBreak } from '../js/solver.js';
 import { isSenior, getHoursForDay, getHoursForAssignment } from '../js/scoring.js';
-import { validateRotaHardRules } from '../js/validation.js?v=20260716c';
+import { validateRotaHardRules } from '../js/validation.js?v=20260717a';
 
 function setupBaseState() {
   resetStateToDefaults();

@@ -11,7 +11,19 @@ Generate a weekly GT kitchen rota from staff capabilities, availability, hard co
 - Soft preference: affects score and explanation but does not override hard rules
 
 ## Staff Model
-Each chef includes name, role, hierarchy/seniority, structured senior flag, MIO eligibility, section strengths, fixed day constraints, and notes.
+Each chef includes a stable `id`, name, role, hierarchy/seniority, structured senior flag, MIO eligibility, section strengths, fixed day constraints, preferences, and notes.
+
+## Staff Management UI
+- The normal **Chefs** panel is a compact clickable list that shows only identity-level information.
+- Full chef editing lives inside a modal popup with sections for:
+  - Profile
+  - Section skills
+  - Availability and preferences
+  - Advanced settings
+- Add and edit flows use the same popup.
+- Remove is confirmation-gated inside the popup only.
+- Save applies changes in one step, persists to localStorage, and refreshes generated rota output.
+- Cancel closes the popup without mutating the saved chef.
 
 ## Week Model
 Weekly inputs include week commencing date, selected MIO chef, date-based additional-chef requirements, leave/unavailability entries, and free-text rule notes.
@@ -85,6 +97,8 @@ Browser localStorage stores:
 - app state snapshot
 - history
 - legacy compatibility maps for staff profiles and MIO eligibility
+
+Schema version 5 adds stable chef IDs and migrates existing staff records idempotently without changing skill values, weekly inputs, fairness history, or published rota history.
 
 ## Known Limitations
 - No external optimization engine; candidate generation is heuristic

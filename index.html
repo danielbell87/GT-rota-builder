@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>GT Rota Builder</title>
-  <link rel="stylesheet" href="styles.css?v=20260716c" />
+  <link rel="stylesheet" href="styles.css?v=20260717a" />
 </head>
 <body>
   <div class="wrap">
@@ -13,7 +13,7 @@
       <p>Generate a rota across one to eight weeks from the workbook rules: fixed availability, annual leave, unavailability, breakfast cover, section skill scores, and the 4-day working cap.</p>
       <div class="controls space-between">
         <span class="small">Changes update the rota live.</span>
-        <span class="small">Build <span id="buildVersion">2026.07.16.3</span></span>
+        <span class="small">Build <span id="buildVersion">2026.07.17.1</span></span>
       </div>
     </div>
 
@@ -50,16 +50,13 @@
 
     <div class="panel">
       <div class="controls space-between">
-        <h2 class="m-0">Staff</h2>
+        <div>
+          <h2 class="m-0">Chefs <span id="staffCountLabel" class="chef-count">· 0</span></h2>
+          <p class="small my-8">Select a chef to view or edit their skills and working preferences.</p>
+        </div>
         <button id="addChefBtn" class="secondary">Add chef</button>
       </div>
-      <p class="small my-8">Use the strength values to show how strong each chef is on each section: 0 = not suitable, 1 = limited, 2 = capable, 3 = preferred.</p>
-      <table>
-        <thead>
-          <tr><th>Name</th><th>Role</th><th>MIO eligible</th><th>Weekend rule</th><th>Fixed day off</th><th></th></tr>
-        </thead>
-        <tbody id="staffBody"></tbody>
-      </table>
+      <div id="staffList" class="chef-list" aria-live="polite"></div>
     </div>
 
     <div class="panel">
@@ -68,27 +65,110 @@
     </div>
   </div>
 
-  <div id="chefModal" class="modal">
-    <div class="modal-card">
-      <h3 class="mt-0">Add chef</h3>
-      <div class="grid">
-        <label>Name<input id="newChefName" type="text"></label>
-        <label>Role<select id="newChefRole"></select></label>
-        <label>MIO eligible<select id="newChefMio"><option value="true">Yes</option><option value="false">No</option></select></label>
-        <label>Weekend rule<select id="newChefWeekendRule"><option value="">None</option><option>Works weekends</option><option>Does not work weekends</option></select></label>
-        <label>Fixed day off<select id="newChefFixedDayOff"><option value="">None</option><option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option><option>Saturday</option><option>Sunday</option></select></label>
+  <div id="chefModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="chefModalTitle" aria-describedby="chefModalDescription" aria-hidden="true">
+    <div class="modal-card chef-modal-card">
+      <div class="chef-modal-header">
+        <div>
+          <h3 class="mt-0 mb-6" id="chefModalTitle">Add chef</h3>
+          <p class="small my-8" id="chefModalSubtitle"></p>
+        </div>
       </div>
-      <h4 class="mb-8">Skills</h4>
-      <div class="grid">
-        <label>Pass<select data-skill="Pass" class="new-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
-        <label>Sauce<select data-skill="Sauce" class="new-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
-        <label>Garnish<select data-skill="Garnish" class="new-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
-        <label>Larder<select data-skill="Larder" class="new-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
-        <label>Pastry<select data-skill="Pastry" class="new-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
-      </div>
-      <div class="controls mt-14 justify-end">
-        <button id="cancelChefBtn" class="secondary">Cancel</button>
-        <button id="saveChefBtn">Save chef</button>
+      <p class="small mb-12" id="chefModalDescription">Edit one chef profile at a time. Skills, preferences, and advanced staff settings stay inside this popup.</p>
+      <div id="chefFormError" class="chef-form-error" role="alert" aria-live="assertive"></div>
+      <form id="chefForm" class="chef-modal-body" novalidate>
+        <section class="chef-form-section">
+          <h4 class="m-0">Profile</h4>
+          <div class="grid mt-10">
+            <label>Name<input id="chefNameInput" type="text" autocomplete="off"></label>
+            <label>Role<select id="chefRoleInput"></select></label>
+            <label>Hierarchy<input id="chefHierarchyInput" type="number" min="1" max="99" step="1"></label>
+            <label>Service pace
+              <select id="chefServicePaceInput">
+                <option value="learning">Learning</option>
+                <option value="steady">Steady</option>
+                <option value="focused">Focused</option>
+                <option value="fast">Fast</option>
+              </select>
+            </label>
+          </div>
+          <div class="checkbox-row mt-10">
+            <label class="checkbox-label"><input id="chefSeniorInput" type="checkbox"> Senior chef status</label>
+          </div>
+        </section>
+
+        <section class="chef-form-section">
+          <div class="controls space-between">
+            <h4 class="m-0">Section skills</h4>
+            <span class="small">0 = Cannot cover · 1 = Developing · 2 = Competent · 3 = Strong</span>
+          </div>
+          <div class="grid mt-10">
+            <label>Pass<select id="chefSkillPassInput" data-skill="Pass" class="chef-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+            <label>Sauce<select id="chefSkillSauceInput" data-skill="Sauce" class="chef-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+            <label>Garnish<select id="chefSkillGarnishInput" data-skill="Garnish" class="chef-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+            <label>Larder<select id="chefSkillLarderInput" data-skill="Larder" class="chef-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+            <label>Pastry<select id="chefSkillPastryInput" data-skill="Pastry" class="chef-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+            <label>Breakfast<select id="chefSkillBreakfastInput" data-skill="Breakfast" class="chef-skill-select"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+          </div>
+        </section>
+
+        <section class="chef-form-section">
+          <h4 class="m-0">Availability and preferences</h4>
+          <div class="grid mt-10">
+            <label>Weekend rule<select id="chefWeekendRuleInput"><option value="">None</option><option value="Works weekends">Works weekends</option><option value="Does not work weekends">Does not work weekends</option></select></label>
+            <label>Fixed unavailable day<select id="chefFixedDayOffInput"><option value="">None</option><option value="Sunday">Sunday</option><option value="Monday">Monday</option><option value="Tuesday">Tuesday</option><option value="Wednesday">Wednesday</option><option value="Thursday">Thursday</option><option value="Friday">Friday</option><option value="Saturday">Saturday</option></select></label>
+            <label>Preferred breakfast day<select id="chefPreferredBreakfastInput"><option value="">No preference</option><option value="Sunday">Sunday</option><option value="Monday">Monday</option><option value="Tuesday">Tuesday</option><option value="Wednesday">Wednesday</option><option value="Thursday">Thursday</option><option value="Friday">Friday</option><option value="Saturday">Saturday</option></select></label>
+          </div>
+          <div class="mt-10">
+            <span class="input-heading">Preferred days off</span>
+            <div class="chip-group">
+              <label class="choice-chip"><input type="checkbox" data-preferred-day-off="Monday"> Monday</label>
+              <label class="choice-chip"><input type="checkbox" data-preferred-day-off="Tuesday"> Tuesday</label>
+              <label class="choice-chip"><input type="checkbox" data-preferred-day-off="Wednesday"> Wednesday</label>
+              <label class="choice-chip"><input type="checkbox" data-preferred-day-off="Thursday"> Thursday</label>
+              <label class="choice-chip"><input type="checkbox" data-preferred-day-off="Friday"> Friday</label>
+              <label class="choice-chip"><input type="checkbox" data-preferred-day-off="Saturday"> Saturday</label>
+              <label class="choice-chip"><input type="checkbox" data-preferred-day-off="Sunday"> Sunday</label>
+            </div>
+          </div>
+          <div class="mt-10">
+            <span class="input-heading">Preferred sections</span>
+            <div class="chip-group">
+              <label class="choice-chip"><input type="checkbox" data-preferred-section="Pass"> Pass</label>
+              <label class="choice-chip"><input type="checkbox" data-preferred-section="Sauce"> Sauce</label>
+              <label class="choice-chip"><input type="checkbox" data-preferred-section="Garnish"> Garnish</label>
+              <label class="choice-chip"><input type="checkbox" data-preferred-section="Larder"> Larder</label>
+              <label class="choice-chip"><input type="checkbox" data-preferred-section="Pastry"> Pastry</label>
+              <label class="choice-chip"><input type="checkbox" data-preferred-section="Breakfast"> Breakfast</label>
+            </div>
+          </div>
+        </section>
+
+        <details id="chefAdvancedSection" class="chef-form-section chef-advanced-section">
+          <summary>Advanced settings</summary>
+          <div class="grid mt-10">
+            <label class="checkbox-label"><input id="chefMioEligibleInput" type="checkbox"> MIO eligible</label>
+            <label class="checkbox-label"><input id="chefBreakfastEligibleInput" type="checkbox"> Breakfast eligible</label>
+          </div>
+          <label class="mt-10">Notes<textarea id="chefNotesInput"></textarea></label>
+        </details>
+
+        <section id="chefDangerZone" class="chef-form-section chef-danger-zone hidden">
+          <h4 class="m-0">Danger zone</h4>
+          <p class="small my-8">Removing a chef will also clear current staff references such as weekly MIO selections and persistent availability entries.</p>
+          <button id="removeChefBtn" type="button" class="danger">Remove chef</button>
+          <div id="chefRemoveConfirmation" class="remove-confirmation hidden" role="alertdialog" aria-modal="true" aria-labelledby="chefRemoveConfirmationTitle">
+            <h5 id="chefRemoveConfirmationTitle" class="m-0">Confirm removal</h5>
+            <p id="chefRemoveConfirmationText" class="small my-8"></p>
+            <div class="controls">
+              <button id="cancelRemoveChefBtn" type="button" class="secondary">Cancel</button>
+              <button id="confirmRemoveChefBtn" type="button" class="danger">Remove chef</button>
+            </div>
+          </div>
+        </section>
+      </form>
+      <div class="controls mt-14 justify-end chef-modal-footer">
+        <button id="cancelChefBtn" type="button" class="secondary">Cancel</button>
+        <button id="saveChefBtn" type="submit" form="chefForm">Save changes</button>
       </div>
     </div>
   </div>
@@ -111,6 +191,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260716c"></script>
+  <script type="module" src="js/app.js?v=20260717a"></script>
 </body>
 </html>

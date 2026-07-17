@@ -18,11 +18,19 @@ async function runAllTests() {
   const results = [];
   const assert = createAssert(results);
 
-  await runSolverTests(assert);
-  await runValidationTests(assert);
-  await runScoringTests(assert);
-  await runAdditionalChefTests(assert);
-  await runUiTests(assert);
+  try {
+    await runSolverTests(assert);
+    await runValidationTests(assert);
+    await runScoringTests(assert);
+    await runAdditionalChefTests(assert);
+    await runUiTests(assert);
+  } catch (error) {
+    results.push({
+      passed: false,
+      title: 'Unhandled test runner error',
+      details: error?.stack || error?.message || String(error)
+    });
+  }
 
   const passed = results.filter((r) => r.passed).length;
   const failed = results.length - passed;

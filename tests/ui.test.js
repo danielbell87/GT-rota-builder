@@ -148,6 +148,33 @@ async function setFieldValue(element, value) {
   await wait(150);
 }
 
+async function setCheckboxValue(frameWindow, element, checked) {
+  element.checked = checked;
+  element.dispatchEvent(new frameWindow.Event('change', { bubbles: true }));
+  await wait(150);
+}
+
+async function clickElement(element) {
+  element.click();
+  await wait(150);
+}
+
+async function openChefEditorByName(doc, chefName) {
+  const row = [...doc.querySelectorAll('[data-open-chef-id]')].find((button) => normalizeText(button.textContent).includes(chefName));
+  if (!row) throw new Error(`Chef row not found for ${chefName}`);
+  row.click();
+  await waitFor(() => doc.getElementById('chefModal').classList.contains('open'));
+  return row;
+}
+
+function getModal(doc) {
+  return doc.getElementById('chefModal');
+}
+
+function getModalText(doc) {
+  return normalizeText(doc.getElementById('chefModal').textContent);
+}
+
 export async function runUiTests(assert) {
   localStorage.clear();
   const stateModule = await import('../js/state.js');
@@ -356,5 +383,228 @@ export async function runUiTests(assert) {
     assert(legacyFrame.contentWindow.__gtRotaBootstrap?.status === 'ok', 'UI: legacy bookmarked URL loads without console errors');
   } finally {
     destroyFrame(legacyFrame);
+  }
+
+  localStorage.clear();
+  let staffFrame = null;
+  let migrationSeedState = null;
+  try {
+    staffFrame = await loadFrame('../index.html');
+    const doc = staffFrame.contentDocument;
+    const frameWindow = staffFrame.contentWindow;
+    const staffPanel = doc.getElementById('staffList')?.closest('.panel');
+
+    await setFieldValue(doc.getElementById('weekStart'), '2026-07-13');
+    await setFieldValue(doc.getElementById('numWeeks'), '1');
+
+    assert(doc.querySelectorAll('#staffList [data-open-chef-id]').length === 10, 'UI: chefs section renders compact chef rows by default');
+    assert(normalizeText(doc.getElementById('staffCountLabel').textContent) === '· 10', 'UI: chefs section heading shows the current chef count');
+    const staffPanelText = getVisibleTextFromElement(staffPanel);
+    assert(!staffPanelText.includes('Weekend rule') && !staffPanelText.includes('Fixed unavailable day'), 'UI: chef rows do not permanently show weekend or fixed-day rules');
+    assert(!staffPanelText.includes('Pass 0') && !staffPanelText.includes('Section skills'), 'UI: chef rows do not permanently show skill scores');
+    assert(doc.querySelectorAll('#staffList .danger').length === 0, 'UI: remove buttons are hidden from the main chef list');
+
+    const danRow = await openChefEditorByName(doc, 'Dan');
+    assert(doc.getElementById('chefModalTitle').textContent === 'Edit chef', 'UI: clicking a chef opens the edit popup');
+    assert(normalizeText(doc.getElementById('chefModalSubtitle').textContent) === 'Dan · Chef de Partie', 'UI: the chef popup identifies the selected chef');
+    assert(getModalText(doc).includes('Profile') && getModalText(doc).includes('Section skills') && getModalText(doc).includes('Availability and preferences') && getModalText(doc).includes('Advanced settings'), 'UI: chef popup is organised into clear sections');
+    assert(doc.getElementById('chefNameInput').value === 'Dan', 'UI: chef popup loads the selected chef name');
+    assert(doc.getElementById('chefRoleInput').value === 'Chef de Partie', 'UI: chef popup loads the selected chef role');
+    assert(doc.getElementById('chefSkillPassInput').value === '2' && doc.getElementById('chefSkillGarnishInput').value === '3', 'UI: chef popup loads the selected chef skill values');
+
+    const danPersistedBeforeCancel = cloneData(getPersistedAppState(frameWindow));
+    doc.getElementById('chefNameInput').value = 'Dan Cancel Test';
+    doc.getElementById('chefSkillPassInput').value = '1';
+    await clickElement(doc.getElementById('cancelChefBtn'));
+    await waitFor(() => !getModal(doc).classList.contains('open'));
+    assert(JSON.stringify(getPersistedAppState(frameWindow)) === JSON.stringify(danPersistedBeforeCancel), 'UI: cancelling a chef edit leaves staff state unchanged');
+
+    await openChefEditorByName(doc, 'Dan');
+    assert(doc.getElementById('chefNameInput').value === 'Dan' && doc.getElementById('chefSkillPassInput').value === '2', 'UI: cancelled chef edits do not leak back into the popup');
+    doc.getElementById('chefSkillPassInput').value = '3';
+    await clickElement(doc.getElementById('saveChefBtn'));
+    await waitFor(() => !getModal(doc).classList.contains('open'));
+    const afterDanSave = getPersistedAppState(frameWindow);
+    assert(afterDanSave.staff.filter((chef) => chef.name === 'Dan').length === 1, 'UI: saving a chef edit updates the existing chef record once');
+    assert(afterDanSave.staff.find((chef) => chef.name === 'Dan')?.skills?.Pass === 3, 'UI: saving a chef edit persists the changed skill value');
+
+    let danReloadFrame = null;
+    try {
+      danReloadFrame = await loadFrame('../index.html');
+      assert(danReloadFrame.contentWindow.localStorage.getItem('gtRota.state.v2').includes('"Pass":3'), 'UI: edited chef skill values persist after reload');
+    } finally {
+      destroyFrame(danReloadFrame);
+    }
+
+    await openChefEditorByName(doc, 'Camilla');
+    await setCheckboxValue(frameWindow, doc.getElementById('chefMioEligibleInput'), false);
+    await clickElement(doc.getElementById('saveChefBtn'));
+    await waitFor(() => !getModal(doc).classList.contains('open'));
+
+    let camillaReloadFrame = null;
+    try {
+      camillaReloadFrame = await loadFrame('../index.html');
+      const persisted = getPersistedAppState(camillaReloadFrame.contentWindow);
+      assert(persisted.staff.find((chef) => chef.name === 'Camilla')?.mioEligible === false, 'UI: MIO eligibility changes persist after reload');
+    } finally {
+      destroyFrame(camillaReloadFrame);
+    }
+
+    await clickElement(doc.getElementById('addChefBtn'));
+    await waitFor(() => getModal(doc).classList.contains('open'));
+    assert(doc.getElementById('chefModalTitle').textContent === 'Add chef' && doc.getElementById('chefDangerZone').classList.contains('hidden'), 'UI: the Add chef button opens the popup in creation mode');
+
+    await setFieldValue(doc.getElementById('chefNameInput'), 'Dan');
+    await setFieldValue(doc.getElementById('chefRoleInput'), 'Chef de Partie');
+    await clickElement(doc.getElementById('saveChefBtn'));
+    await waitFor(() => doc.getElementById('chefFormError').textContent.length > 0);
+    assert(doc.getElementById('chefFormError').textContent.includes('unique'), 'UI: duplicate chef names are rejected');
+
+    doc.getElementById('chefNameInput').value = '';
+    doc.getElementById('chefNameInput').dispatchEvent(new frameWindow.Event('change', { bubbles: true }));
+    await clickElement(doc.getElementById('saveChefBtn'));
+    await waitFor(() => doc.getElementById('chefFormError').textContent.length > 0);
+    assert(doc.getElementById('chefFormError').textContent.includes('required'), 'UI: empty chef names are rejected');
+
+    await setFieldValue(doc.getElementById('chefNameInput'), 'Test Chef');
+    await setFieldValue(doc.getElementById('chefRoleInput'), 'Chef de Partie');
+    await setFieldValue(doc.getElementById('chefHierarchyInput'), '4');
+    await setFieldValue(doc.getElementById('chefSkillSauceInput'), '2');
+    await setFieldValue(doc.getElementById('chefWeekendRuleInput'), 'Works weekends');
+    await setCheckboxValue(frameWindow, doc.querySelector('input[data-preferred-day-off="Monday"]'), true);
+    await setCheckboxValue(frameWindow, doc.querySelector('input[data-preferred-section="Sauce"]'), true);
+    await setCheckboxValue(frameWindow, doc.getElementById('chefMioEligibleInput'), true);
+    doc.getElementById('chefAdvancedSection').open = true;
+    await clickElement(doc.getElementById('saveChefBtn'));
+    await waitFor(() => !getModal(doc).classList.contains('open'));
+    assert(getPersistedAppState(frameWindow).staff.filter((chef) => chef.name === 'Test Chef').length === 1, 'UI: adding a valid chef creates one staff record');
+
+    let testChefReloadFrame = null;
+    try {
+      testChefReloadFrame = await loadFrame('../index.html');
+      const persisted = getPersistedAppState(testChefReloadFrame.contentWindow);
+      const testChef = persisted.staff.find((chef) => chef.name === 'Test Chef');
+      assert(testChef?.weekendRule === 'Works weekends' && testChef?.preferredDaysOff?.includes('Monday') && testChef?.preferredSections?.includes('Sauce'), 'UI: chef availability and preference changes persist after reload');
+    } finally {
+      destroyFrame(testChefReloadFrame);
+    }
+
+    await setFieldValue(doc.getElementById('mioChef'), 'Test Chef');
+    doc.getElementById('addAvailabilityBtn').click();
+    await waitFor(() => doc.querySelectorAll('#availabilityBody tr').length === 1);
+    const tempAvailabilityRow = doc.querySelector('#availabilityBody tr');
+    await setFieldValue(tempAvailabilityRow.querySelector('.entry-chef'), 'Test Chef');
+    await setFieldValue(tempAvailabilityRow.querySelector('.entry-type'), 'Unavailable');
+    await setFieldValue(tempAvailabilityRow.querySelector('.entry-start-date'), '2026-07-13');
+    await setFieldValue(tempAvailabilityRow.querySelector('.entry-finish-date'), '2026-07-13');
+
+    await openChefEditorByName(doc, 'Test Chef');
+    await setFieldValue(doc.getElementById('chefNameInput'), 'Test Chef Renamed');
+    await clickElement(doc.getElementById('saveChefBtn'));
+    await waitFor(() => !getModal(doc).classList.contains('open'));
+    const renamedState = getPersistedAppState(frameWindow);
+    assert(renamedState.staff.filter((chef) => chef.name === 'Test Chef Renamed').length === 1, 'UI: renaming a chef does not create a duplicate record');
+    assert(renamedState.weeklyInputs.mioChef === 'Test Chef Renamed', 'UI: renaming a chef safely updates current MIO references');
+    assert((renamedState.weeklyInputs.availability || []).some((entry) => entry.chef === 'Test Chef Renamed'), 'UI: renaming a chef safely updates current availability references');
+
+    await openChefEditorByName(doc, 'Aled');
+    const aledRowSelector = '[data-open-chef-id="chef-aled-1"]';
+    doc.getElementById('saveChefBtn').focus();
+    doc.dispatchEvent(new frameWindow.KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    await wait(100);
+    assert(doc.activeElement.id === 'chefNameInput', 'UI: chef modal traps keyboard focus');
+    doc.dispatchEvent(new frameWindow.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await waitFor(() => !getModal(doc).classList.contains('open'));
+    assert(!getModal(doc).classList.contains('open'), 'UI: Escape closes a normal chef popup');
+    await waitFor(() => doc.activeElement === doc.querySelector(aledRowSelector));
+    assert(doc.activeElement === doc.querySelector(aledRowSelector), 'UI: focus returns to the triggering chef row after closing the popup');
+
+    await openChefEditorByName(doc, 'Test Chef Renamed');
+    assert(!doc.getElementById('chefDangerZone').classList.contains('hidden') && !!doc.getElementById('removeChefBtn'), 'UI: remove chef is available only inside the chef popup');
+    await clickElement(doc.getElementById('removeChefBtn'));
+    await waitFor(() => !doc.getElementById('chefRemoveConfirmation').classList.contains('hidden'));
+    assert(getModalText(doc).includes('Remove Test Chef Renamed from the staff list?'), 'UI: the first remove click opens a named confirmation step');
+    await clickElement(doc.getElementById('cancelRemoveChefBtn'));
+    await waitFor(() => doc.getElementById('chefRemoveConfirmation').classList.contains('hidden'));
+    assert(!![...doc.querySelectorAll('#staffList [data-open-chef-id]')].find((button) => normalizeText(button.textContent).includes('Test Chef Renamed')), 'UI: cancelling chef removal keeps the chef in the list');
+    await clickElement(doc.getElementById('removeChefBtn'));
+    await waitFor(() => !doc.getElementById('chefRemoveConfirmation').classList.contains('hidden'));
+    await clickElement(doc.getElementById('confirmRemoveChefBtn'));
+    await waitFor(() => ![...doc.querySelectorAll('#staffList [data-open-chef-id]')].find((button) => normalizeText(button.textContent).includes('Test Chef Renamed')));
+    const afterRemovalState = getPersistedAppState(frameWindow);
+    assert(afterRemovalState.staff.filter((chef) => chef.name === 'Test Chef Renamed').length === 0, 'UI: confirming removal deletes only the selected chef');
+    assert(afterRemovalState.weeklyInputs.mioChef !== 'Test Chef Renamed', 'UI: removing the selected MIO chef clears or safely replaces the invalid MIO selection');
+    assert(!(afterRemovalState.weeklyInputs.availability || []).some((entry) => entry.chef === 'Test Chef Renamed'), 'UI: removing a chef cleans up current availability references without crashing rendering');
+
+    staffFrame.style.width = '390px';
+    staffFrame.style.height = '900px';
+    await wait(200);
+    await openChefEditorByName(doc, 'Dan');
+    const modalCard = doc.querySelector('.chef-modal-card');
+    assert(modalCard.scrollWidth <= modalCard.clientWidth, 'UI: mobile chef modal layout avoids horizontal overflow');
+    await clickElement(doc.getElementById('cancelChefBtn'));
+
+    migrationSeedState = cloneData(getPersistedAppState(frameWindow));
+  } finally {
+    destroyFrame(staffFrame);
+  }
+
+  localStorage.clear();
+  localStorage.setItem('gtRota.schemaVersion', '4');
+  const legacyStaffState = cloneData(migrationSeedState);
+  legacyStaffState.staff = legacyStaffState.staff.map(({ id, ...chef }) => chef);
+  localStorage.setItem('gtRota.state.v2', JSON.stringify(legacyStaffState));
+  let migrationFrame = null;
+  try {
+    migrationFrame = await loadFrame('../index.html');
+    const migratedState = getPersistedAppState(migrationFrame.contentWindow);
+    const ids = migratedState.staff.map((chef) => chef.id).filter(Boolean);
+    assert(ids.length === migratedState.staff.length && new Set(ids).size === ids.length, 'UI: existing staff records migrate to stable chef IDs');
+    assert(migratedState.staff.find((chef) => chef.name === 'Dan')?.skills?.Pass === legacyStaffState.staff.find((chef) => chef.name === 'Dan')?.skills?.Pass, 'UI: staff migration preserves existing skill values');
+  } finally {
+    destroyFrame(migrationFrame);
+  }
+
+  localStorage.clear();
+  const singleChefState = cloneData(migrationSeedState);
+  singleChefState.staff = [cloneData(singleChefState.staff.find((chef) => chef.name === 'Dan'))];
+  singleChefState.staff[0].name = 'History Chef';
+  singleChefState.staff[0].id = 'chef-history-1';
+  singleChefState.staff[0].mioEligible = true;
+  singleChefState.weeklyInputs.mioChef = 'History Chef';
+  singleChefState.weeklyInputs.weeklyMioSelections = { [singleChefState.weeklyInputs.weekStart]: 'History Chef' };
+  singleChefState.weeklyInputs.availability = [{ chef: 'History Chef', type: 'Unavailable', startDate: singleChefState.weeklyInputs.weekStart, finishDate: singleChefState.weeklyInputs.weekStart, notes: '' }];
+  localStorage.setItem('gtRota.schemaVersion', String(5));
+  localStorage.setItem('gtRota.state.v2', JSON.stringify(singleChefState));
+  localStorage.setItem('gtRota.history.v1', JSON.stringify([{
+    key: '2026-07-13__History Chef',
+    weekStart: '2026-07-13',
+    chef: 'History Chef',
+    gtDays: 4,
+    mioDays: 0,
+    hours: 48,
+    breakfasts: 0,
+    fridayWorked: false,
+    saturdayWorked: false,
+    sundayWorked: false,
+    publishedAt: '2026-07-17T00:00:00.000Z'
+  }]));
+  let emptyStateFrame = null;
+  try {
+    emptyStateFrame = await loadFrame('../index.html');
+    const doc = emptyStateFrame.contentDocument;
+    await openChefEditorByName(doc, 'History Chef');
+    await clickElement(doc.getElementById('removeChefBtn'));
+    await waitFor(() => !doc.getElementById('chefRemoveConfirmation').classList.contains('hidden'));
+    await clickElement(doc.getElementById('confirmRemoveChefBtn'));
+    await waitFor(() => normalizeText(doc.getElementById('staffList').textContent).includes('No chefs have been added.'));
+    assert(normalizeText(doc.getElementById('staffList').textContent).includes('No chefs have been added.'), 'UI: the empty chefs state appears after the final chef is removed');
+    assert(!!doc.querySelector('[data-open-chef-create]'), 'UI: Add chef remains available in the empty state');
+    assert(JSON.parse(localStorage.getItem('gtRota.history.v1')).some((entry) => entry.chef === 'History Chef'), 'UI: published historical rota snapshots remain readable after a chef is removed');
+    await clickElement(doc.querySelector('[data-open-chef-create]'));
+    await waitFor(() => getModal(doc).classList.contains('open'));
+    assert(doc.getElementById('chefModalTitle').textContent === 'Add chef', 'UI: the empty-state Add chef action still opens creation mode');
+  } finally {
+    destroyFrame(emptyStateFrame);
   }
 }
