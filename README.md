@@ -10,7 +10,7 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 - **Availability management** for annual leave and unavailable dates
 - **Additional chef requests** via compact date-based list and modal dialog
 - **Breakfast shift scheduling** with max 1 breakfast per chef per week
-- **4-day working week enforcement** for staff members
+- **Exact weekly GT target enforcement** with explicit Float assignments
 - **Hours tracking** with adjusted calculations for breakfast shifts
 - **Rule-based configuration** for customizing shift preferences
 - **Validation alerts** that show only failed hard rules and unmet soft preferences in the main UI, with full diagnostics kept in technical details
@@ -58,15 +58,18 @@ Requests are tied to a specific calendar date and do not carry across week chang
 ## Scheduling Rules
 
 ### Core Constraints
-- Each chef works a maximum of 4 shifts per week
-- 4-6 chefs per day depending on weekday/weekend
+- Normal chefs work exactly 4 GT days per week unless credited annual leave reduces the target
+- Selected MIO chef works exactly 3 MIO days and exactly 2 GT days
+- Monday-Wednesday require exactly 4 GT chefs unless an explicit extra-chef request exists
+- Thursday-Sunday require at least 5 GT chefs and may include multiple Float chefs
 - Breakfast coverage every day
 - MIO assignment when specified
 - Pass must be covered Thursday to Sunday
+- Float is an explicit GT assignment used to complete contracted weekly days after core coverage
 
 ### Breakfast Shifts
 - One breakfast shift per chef per week (hard limit)
-- Breakfast counts as ONE of the 4-day working week
+- Breakfast is an overlay on a core GT section and does not replace the chef's primary section assignment
 - 7:30am start time with adjusted hours:
   - Mon-Fri: 14 hours
   - Saturday: 14.5 hours
@@ -178,6 +181,8 @@ To run the browser test suite open:
 
 Click **Run full suite**.
 
+The generated rota is valid only when no available non-MIO chef is left below their adjusted weekly GT target.
+
 ## GitHub Pages Deployment
 
 1. Push repository to GitHub.
@@ -205,6 +210,7 @@ No external API keys or secrets are required.
 - ✅ Removed obsolete hierarchy, service pace, and separate preferred-sections fields
 - ✅ Added schema-safe migration for existing saved staff profiles
 - ✅ Preserved senior-on-Pass, MIO, fairness, leave, and specialist rota rules
+- ✅ Enforced exact weekly GT targets with explicit Float assignments and adjusted leave targets
 
 ## License
 

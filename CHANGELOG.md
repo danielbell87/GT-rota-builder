@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.4.0 - 2026-07-17
+- Refactored weekly GT allocation so the solver now works to exact per-chef weekly targets instead of stopping at minimum daily cover.
+- Added explicit `Float` assignments that count as GT days and GT hours, support multiple Float chefs on one day, and remain visible in the final rota data and UI.
+- Updated hard validation to fail both above-target and below-target weekly GT totals, plus to require exactly one primary GT assignment per chef per day.
+- Preserved MIO 3+2 rules, Monday-Wednesday exact staffing, Thursday-Sunday minimum staffing, senior cover, and availability restrictions while using Float to complete contracted days.
+- Expanded browser tests and documentation for exact targets, annual-leave adjustments, infeasibility reporting, additional-chef Float handling, and multi-week behavior.
+
 ## 2.3.0 - 2026-07-17
 - Simplified chef profiles by removing the unused hierarchy number, service pace, and separate preferred-sections fields.
 - Replaced visible numeric section scores with descriptive section levels: Should not cover, In training, Competent, Preferred.
