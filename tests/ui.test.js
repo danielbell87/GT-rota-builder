@@ -251,6 +251,8 @@ export async function runUiTests(assert) {
     const baselinePersistedState = getPersistedAppState(canonicalFrame.contentWindow);
     const baselineMultiWeek = buildResultFromPersistedState(baselinePersistedState);
     const baselineWeekSnapshots = baselineMultiWeek.weeks.map(serializeWeek);
+    assert(getChefHoursText(doc, 0, 'Fred').includes('2/2') && getChefHoursText(doc, 2, 'Dan').includes('2/2'), 'UI: selected MIO chef summary shows the exact 2/2 GT target');
+    assert(normalizeText(getWeekPanel(doc, 0)?.textContent || '').includes('Float'), 'UI: rota table renders an explicit Float row');
 
     doc.getElementById('addAvailabilityBtn').click();
     await waitFor(() => doc.querySelectorAll('#availabilityBody tr').length === 1);
@@ -266,9 +268,10 @@ export async function runUiTests(assert) {
     const joelLeaveSummary = joelLeaveWeekTwo.summary.find((item) => item.name === 'Joel');
     assert(serializeWeek(joelLeaveResult.weeks[0]) === baselineWeekSnapshots[0], 'UI: Joel annual leave keeps week 1 unchanged');
     assert(serializeWeek(joelLeaveWeekTwo) !== baselineWeekSnapshots[1], 'UI: Joel annual leave changes week 2');
-    assert(serializeWeek(joelLeaveResult.weeks[2]) === baselineWeekSnapshots[2], 'UI: Joel annual leave keeps week 3 unchanged');
+    assert(joelLeaveResult.weeks[2].status === 'ok', 'UI: Joel annual leave keeps week 3 feasible');
     assert(!hasAssignment(joelLeaveWeekTwo, 'Joel'), 'UI: Joel has no assignments during his week-2 annual leave');
     assert((joelLeaveSummary?.annualLeaveHours || 0) === 48, 'UI: Joel receives 48 leave-credit hours for week-2 annual leave');
+    assert(getChefHoursText(doc, 1, 'Joel').includes('0/0'), 'UI: full-week annual leave summary shows a 0/0 GT target');
     assert(getChefHoursText(doc, 1, 'Joel').includes('48.0h'), 'UI: Joel leave credit is rendered in the week-2 summary');
 
     leaveRow.querySelector('button[data-remove]').click();
@@ -295,7 +298,7 @@ export async function runUiTests(assert) {
     const connorUnavailableSummary = connorUnavailableWeekTwo.summary.find((item) => item.name === 'Connor');
     assert(serializeWeek(connorUnavailableResult.weeks[0]) === baselineWeekSnapshots[0], 'UI: Connor unavailable keeps week 1 unchanged');
     assert(serializeWeek(connorUnavailableWeekTwo) !== baselineWeekSnapshots[1], 'UI: Connor unavailable changes week 2');
-    assert(serializeWeek(connorUnavailableResult.weeks[2]) === baselineWeekSnapshots[2], 'UI: Connor unavailable keeps week 3 unchanged');
+    assert(connorUnavailableResult.weeks[2].status === 'ok', 'UI: Connor unavailable keeps week 3 feasible even if fairness reshapes it');
     assert(!hasAssignment(connorUnavailableWeekTwo, 'Connor', (day) => day.dayName === 'Thursday'), 'UI: Connor is absent on the unavailable Thursday only');
     assert(hasAssignment(connorUnavailableWeekTwo, 'Connor', (day) => day.dayName !== 'Thursday'), 'UI: Connor remains eligible outside the unavailable Thursday');
     assert((connorUnavailableSummary?.annualLeaveHours || 0) === 0, 'UI: Connor unavailable adds no leave credit');

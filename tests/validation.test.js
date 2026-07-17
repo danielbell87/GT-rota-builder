@@ -24,7 +24,7 @@ function findRule(validation, ruleId, chefName) {
 }
 
 function parseGtDayRule(rule) {
-  const match = rule?.message?.match(/at most (\d+) GT days \(actual (\d+)\)/);
+  const match = rule?.message?.match(/exactly (\d+) GT days \(actual (\d+)\)/);
   return match ? { target: Number(match[1]), actual: Number(match[2]) } : null;
 }
 
@@ -64,6 +64,8 @@ export async function runValidationTests(assert) {
   const mioPatternRulesPresent = ['H015', 'H022', 'H023'].every((ruleId) => validation.some((v) => v.ruleId === ruleId));
   assert(mioPatternRulesPresent, 'Validation includes selected MIO chef pattern hard rules');
   assert(validation.filter((v) => ['H015', 'H022', 'H023'].includes(v.ruleId)).every((v) => v.passed), 'Baseline satisfies selected MIO chef hard pattern checks');
+  assert(validation.filter((v) => v.ruleId === 'H016').every((v) => v.passed), 'Baseline satisfies exact weekly GT target validation for every chef');
+  assert(validation.filter((v) => ['H026', 'H027'].includes(v.ruleId)).every((v) => v.passed), 'Baseline satisfies explicit primary GT assignment validation including Float');
 
   const softValidation = validateRotaSoftRules({ rota: result.rota, state, inputs: state.weeklyInputs });
   const passPreferenceChecks = softValidation.filter((v) => v.ruleId === 'prefer-senior-on-pass');
@@ -85,6 +87,26 @@ export async function runValidationTests(assert) {
   }
   const mioOverlapValidation = validateRotaHardRules({ rota: mioOverlapCorrupted, state, inputs: state.weeklyInputs, summary: result.summary, fullWeekDates: result.fullWeekDates });
   assert(mioOverlapValidation.some((v) => v.ruleId === 'H023' && !v.passed), 'Hard validation rejects same-day GT and MIO for selected MIO chef');
+
+  const exactTargetCorrupted = JSON.parse(JSON.stringify(result.rota));
+  const fredDay = exactTargetCorrupted.find((day) => day.chefs.includes('Fred'));
+  if (fredDay) {
+    fredDay.chefs = fredDay.chefs.filter((chef) => chef !== 'Fred');
+    fredDay.assignments = fredDay.assignments.filter((assignment) => assignment.chef !== 'Fred');
+  }
+  const exactTargetValidation = validateRotaHardRules({ rota: exactTargetCorrupted, state, inputs: state.weeklyInputs, summary: result.summary, fullWeekDates: result.fullWeekDates });
+  assert(
+    exactTargetValidation.some((v) => v.ruleId === 'H016' && !v.passed && v.message.includes('expected exactly 4 GT days (actual 3)')),
+    'Hard validation fails when a chef falls below their exact GT target'
+  );
+
+  const floatCorrupted = JSON.parse(JSON.stringify(result.rota));
+  const firstFloatDay = floatCorrupted.find((day) => day.assignments.some((assignment) => assignment.section === 'Float'));
+  if (firstFloatDay) {
+    firstFloatDay.assignments = firstFloatDay.assignments.filter((assignment) => assignment.section !== 'Float');
+  }
+  const floatValidation = validateRotaHardRules({ rota: floatCorrupted, state, inputs: state.weeklyInputs, summary: result.summary, fullWeekDates: result.fullWeekDates });
+  assert(floatValidation.some((v) => v.ruleId === 'H026' && !v.passed), 'Hard validation rejects a GT chef without an explicit primary assignment');
 
   const fullWeekDates = result.fullWeekDates;
 
@@ -251,6 +273,19 @@ export async function runValidationTests(assert) {
   });
   const unavailableWorked = rerun.rota.some((day) => day.date === '2026-07-14' && day.chefs.includes('Dan'));
   assert(!unavailableWorked, 'Unavailable request counts as normal day off for scheduling');
+
+  const leaveTargetState = setupState();
+  leaveTargetState.weeklyInputs.availability = [{ chef: 'Fred', type: 'Annual Leave', startDate: '2026-07-14', finishDate: '2026-07-14', notes: '' }];
+  syncCompatibilityViews();
+  const leaveTargetResult = buildRota({
+    weekStart: leaveTargetState.weeklyInputs.weekStart,
+    mioChef: leaveTargetState.weeklyInputs.mioChef,
+    additionalChefRequirements: [],
+    availability: leaveTargetState.weeklyInputs.availability
+  });
+  const leaveTargetSummary = leaveTargetResult.summary.find((item) => item.name === 'Fred');
+  assert((leaveTargetSummary?.adjustedGtTarget || 0) === 3, 'Validation fixtures expose adjusted GT targets after annual leave');
+  assert((leaveTargetSummary?.gtDays || 0) === 3, 'Adjusted GT target is matched exactly after annual leave');
 
   const warningState = setupState();
   warningState.staff = warningState.staff.map((chef) => ({ ...chef, skills: { ...chef.skills, Sauce: 0 } }));

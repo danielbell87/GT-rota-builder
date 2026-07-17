@@ -1,10 +1,11 @@
-import { CORE_SECTIONS, ROLE_WEIGHT } from './constants.js';
+import { CORE_SECTIONS, ROLE_WEIGHT, SHIFT_LENGTHS } from './constants.js';
 import { normalizeWeekStart, parseLocalDate, toDateString } from './utils.js';
 import { isSenior } from './scoring.js';
 import { canCoverSection } from './section-levels.js';
 
 // Weekly leave credit is capped at four days because a standard GT week targets four credited workdays.
 const MAX_CREDITABLE_LEAVE_DAYS = 4;
+export const PRIMARY_GT_SECTIONS = [...CORE_SECTIONS, 'Float'];
 
 export function isUnavailable(staff, date, dayName, ruleOverrides) {
   const availability = ruleOverrides._availability || [];
@@ -132,9 +133,10 @@ function resolveRequestedWeekDates({ fullWeekDates, inputs, rota, results }) {
   return null;
 }
 
-function getAnnualLeaveDatesByChef(availability, weekDateSet) {
+export function getAnnualLeaveDatesByChef(availability = [], weeklyDates = []) {
+  const weekDateSet = weeklyDates instanceof Set ? weeklyDates : new Set(weeklyDates);
   const leaveDatesByChef = {};
-  (availability || []).forEach((entry) => {
+  availability.forEach((entry) => {
     if (entry.type !== 'Annual Leave') return;
     const start = parseLocalDate(entry.startDate || entry.date);
     const finish = parseLocalDate(entry.finishDate || entry.date);
@@ -147,10 +149,21 @@ function getAnnualLeaveDatesByChef(availability, weekDateSet) {
   return leaveDatesByChef;
 }
 
-function getAdjustedGtTargetForChef(chefName, mioChefName, annualLeaveDays) {
+export function getAdjustedGtTargetForChef({ chefName, mioChefName, availability = [], weeklyDates = [] }) {
   const baseTarget = getGtTargetForChef(chefName, mioChefName);
   if (chefName === mioChefName) return baseTarget;
+  const leaveDatesByChef = getAnnualLeaveDatesByChef(availability, weeklyDates);
+  const annualLeaveDays = Math.min(leaveDatesByChef[chefName]?.size || 0, MAX_CREDITABLE_LEAVE_DAYS);
   return Math.max(0, baseTarget - annualLeaveDays);
+}
+
+export function getAdjustedGtTargetsByChef({ staff = [], mioChefName, availability = [], weeklyDates = [] }) {
+  return Object.fromEntries(staff.map((member) => [member.name, getAdjustedGtTargetForChef({
+    chefName: member.name,
+    mioChefName,
+    availability,
+    weeklyDates
+  })]));
 }
 
 // fullWeekDates is the requested Monday-to-Sunday scheduling horizon.
@@ -162,6 +175,12 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
   const requestedWeekDates = resolveRequestedWeekDates({ fullWeekDates, inputs, rota, results });
   const requestedWeekDateSet = new Set(requestedWeekDates || []);
   const annualLeaveDatesByChef = getAnnualLeaveDatesByChef(availability, requestedWeekDateSet);
+  const adjustedTargetsByChef = getAdjustedGtTargetsByChef({
+    staff: state.staff,
+    mioChefName: inputs.mioChef,
+    availability,
+    weeklyDates: requestedWeekDateSet
+  });
 
   availability.forEach((entry) => {
     if (entry.type !== 'Annual Leave') return;
@@ -182,6 +201,15 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
       const coreChefSet = new Set(day.assignments.filter((a) => CORE_SECTIONS.includes(a.section)).map((a) => a.chef));
       results.push(createResult('H007', coreChefSet.has(breakfastChef), `${day.dayName}: breakfast chef must also be on a core section`));
     }
+
+    const primaryAssignments = day.assignments.filter((assignment) => PRIMARY_GT_SECTIONS.includes(assignment.section));
+    day.chefs.forEach((chefName) => {
+      const primaryCount = primaryAssignments.filter((assignment) => assignment.chef === chefName).length;
+      results.push(createResult('H026', primaryCount === 1, `${day.dayName}: ${chefName} must have exactly one primary GT assignment`));
+    });
+    primaryAssignments.forEach((assignment) => {
+      results.push(createResult('H027', day.chefs.includes(assignment.chef), `${day.dayName}: ${assignment.chef} has a primary GT assignment but is missing from day.chefs`));
+    });
 
     const hasSenior = day.chefs.some((name) => {
       const chef = getChef(state.staff, name);
@@ -214,15 +242,15 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
     results.push(createResult('H002', !(day.dayName === 'Tuesday' && day.chefs.includes('Charlie')), `${day.dayName}: Charlie must not work Tuesday`));
 
     day.assignments.forEach((assignment) => {
-      if (assignment.chef === 'Myles' && assignment.section !== 'Larder' && assignment.section !== 'Breakfast' && assignment.section !== 'MIO') {
+      if (assignment.chef === 'Myles' && assignment.section !== 'Larder' && assignment.section !== 'Float' && assignment.section !== 'Breakfast' && assignment.section !== 'MIO') {
         results.push(createResult('H003', false, `${day.dayName}: Myles assigned outside Larder`));
       }
-      if (assignment.chef === 'Fred' && assignment.section !== 'Garnish' && assignment.section !== 'Breakfast' && assignment.section !== 'MIO') {
+      if (assignment.chef === 'Fred' && assignment.section !== 'Garnish' && assignment.section !== 'Float' && assignment.section !== 'Breakfast' && assignment.section !== 'MIO') {
         const chef = getChef(state.staff, 'Fred');
         const overridden = canCoverSection(chef, assignment.section);
         results.push(createResult('H004', overridden, `${day.dayName}: Fred assigned outside Garnish without skill override`));
       }
-      if (assignment.chef === 'Joel' && assignment.section !== 'Sauce' && assignment.section !== 'Breakfast' && assignment.section !== 'MIO') {
+      if (assignment.chef === 'Joel' && assignment.section !== 'Sauce' && assignment.section !== 'Float' && assignment.section !== 'Breakfast' && assignment.section !== 'MIO') {
         const chef = getChef(state.staff, 'Joel');
         const overridden = canCoverSection(chef, assignment.section);
         results.push(createResult('H005', overridden, `${day.dayName}: Joel assigned outside Sauce without skill override`));
@@ -241,10 +269,8 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
     });
   });
   Object.entries(gtDaysByChef).forEach(([name, count]) => {
-    if (!requestedWeekDates) return;
-    const annualLeaveDays = Math.min(annualLeaveDatesByChef[name]?.size || 0, MAX_CREDITABLE_LEAVE_DAYS);
-    const adjustedGtTarget = getAdjustedGtTargetForChef(name, inputs.mioChef, annualLeaveDays);
-    results.push(createResult('H016', count <= adjustedGtTarget, `${name}: expected at most ${adjustedGtTarget} GT days (actual ${count})`));
+    const adjustedGtTarget = adjustedTargetsByChef[name] ?? getGtTargetForChef(name, inputs.mioChef);
+    results.push(createResult('H016', count === adjustedGtTarget, `${name}: expected exactly ${adjustedGtTarget} GT days (actual ${count})`));
   });
 
   const mioChef = inputs.mioChef;
@@ -271,7 +297,7 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
   const summaryByChef = Object.fromEntries((summary || []).map((item) => [item.name, item]));
   Object.entries(annualLeaveDatesByChef).forEach(([chef, dateSet]) => {
     const leaveDays = Math.min(dateSet.size, MAX_CREDITABLE_LEAVE_DAYS);
-    const expectedCredit = leaveDays * 12;
+    const expectedCredit = leaveDays * SHIFT_LENGTHS.annualLeaveCreditPerDay;
     const actualCredit = summaryByChef[chef]?.annualLeaveHours || 0;
     results.push(createResult('H018', actualCredit === expectedCredit, `${chef}: annual leave credit ${actualCredit}h (expected ${expectedCredit}h)`));
   });
