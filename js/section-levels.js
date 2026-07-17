@@ -40,6 +40,7 @@ export function normalizeSectionSkills(skills = {}) {
   });
 
   Object.entries(skills || {}).forEach(([section, value]) => {
+    if (section === 'Breakfast') return;
     if (!(section in normalized)) normalized[section] = normalizeSectionLevel(value);
   });
 

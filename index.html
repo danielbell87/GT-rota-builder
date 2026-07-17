@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>GT Rota Builder</title>
-  <link rel="stylesheet" href="styles.css?v=20260717h" />
+  <link rel="stylesheet" href="styles.css?v=20260717i" />
 </head>
 <body>
   <div class="wrap">
@@ -98,7 +98,6 @@
             <label>Garnish<select id="chefSkillGarnishInput" data-skill="Garnish" class="chef-skill-select"><option value="0">Should not cover</option><option value="1">In training</option><option value="2">Competent</option><option value="3">Preferred</option></select></label>
             <label>Larder<select id="chefSkillLarderInput" data-skill="Larder" class="chef-skill-select"><option value="0">Should not cover</option><option value="1">In training</option><option value="2">Competent</option><option value="3">Preferred</option></select></label>
             <label>Pastry<select id="chefSkillPastryInput" data-skill="Pastry" class="chef-skill-select"><option value="0">Should not cover</option><option value="1">In training</option><option value="2">Competent</option><option value="3">Preferred</option></select></label>
-            <label>Breakfast<select id="chefSkillBreakfastInput" data-skill="Breakfast" class="chef-skill-select"><option value="0">Should not cover</option><option value="1">In training</option><option value="2">Competent</option><option value="3">Preferred</option></select></label>
           </div>
         </section>
 
@@ -116,6 +115,18 @@
               <label class="choice-chip"><input type="checkbox" data-preferred-day-off="Sunday"> Sunday</label>
             </div>
           </div>
+          <label class="mt-10">Preferred breakfast day (soft preference)
+            <select id="chefPreferredBreakfastInput">
+              <option value="">No preference</option>
+              <option value="Monday">Monday</option>
+              <option value="Tuesday">Tuesday</option>
+              <option value="Wednesday">Wednesday</option>
+              <option value="Thursday">Thursday</option>
+              <option value="Friday">Friday</option>
+              <option value="Saturday">Saturday</option>
+              <option value="Sunday">Sunday</option>
+            </select>
+          </label>
         </section>
 
         <details id="chefAdvancedSection" class="chef-form-section chef-advanced-section">
@@ -166,6 +177,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260717h"></script>
+  <script type="module" src="js/app.js?v=20260717i"></script>
 </body>
 </html>

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-17 — Breakfast settings cleanup
+- Restored Preferred breakfast day as a saved, migration-safe soft preference.
+- Removed Breakfast competency from the chef UI, core skill data, validation, scoring, and solver qualification logic.
+- Breakfast assignment now uses eligibility plus existing core-cover and rota constraints, with fairness followed by the preferred-day tie-breaker.
+- Added browser coverage for chef editing, legacy data, eligibility-only assignment, preference scoring, and soft-preference feasibility.
+
 ## 2026-07-17 — Canonical chef profiles
 
 - Made role display-only and made `senior` the sole senior-cover field.

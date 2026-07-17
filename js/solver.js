@@ -16,7 +16,7 @@ import {
   validateRotaHardRules,
   getAdjustedGtTargetsByChef,
   getAnnualLeaveDatesByChef
-} from './validation.js?v=20260717h';
+} from './validation.js?v=20260717i';
 import { filterAvailabilityForWeek, filterAdditionalChefRequirementsForWeek } from './weekly-inputs.js';
 
 const PASS_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -396,6 +396,20 @@ function ensureSeniorCoverage({ assignments, dayName, candidates, selectedNames,
   selectedNames.add(weakest.replacementSenior.name);
 }
 
+export function selectBreakfastChef(candidates, dayName, breakfastCounts = {}) {
+  return (candidates || [])
+    .filter((staff) => staff?.breakfastEligible === true)
+    .slice()
+    .sort((a, b) => {
+      const countA = breakfastCounts[a.name] || 0;
+      const countB = breakfastCounts[b.name] || 0;
+      if (countA !== countB) return countA - countB;
+      const preferenceA = a.preferredBreakfast === dayName ? 1 : 0;
+      const preferenceB = b.preferredBreakfast === dayName ? 1 : 0;
+      return preferenceB - preferenceA;
+    })[0] || null;
+}
+
 function createDayPlan({
   state,
   dayName,
@@ -497,15 +511,11 @@ function createDayPlan({
   const coreChefs = assignments
     .filter((assignment) => coreSections.includes(assignment.section))
     .map((assignment) => assignment.chef);
-  const breakfastChef = coreChefs
-    .map((name) => state.staff.find((staff) => staff.name === name))
-    .filter((staff) => staff && staff.breakfastEligible && canCoverSection(staff, 'Breakfast'))
-    .sort((a, b) => {
-      const countA = breakfastCounts[a.name] || 0;
-      const countB = breakfastCounts[b.name] || 0;
-      if (countA !== countB) return countA - countB;
-      return getSectionScore(b, 'Breakfast', ruleOverrides) - getSectionScore(a, 'Breakfast', ruleOverrides);
-    })[0];
+  const breakfastChef = selectBreakfastChef(
+    coreChefs.map((name) => state.staff.find((staff) => staff.name === name)),
+    dayName,
+    breakfastCounts
+  );
 
   if (!breakfastChef) return null;
   assignments.push({ chef: breakfastChef.name, section: 'Breakfast' });

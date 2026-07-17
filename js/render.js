@@ -12,7 +12,7 @@ import {
 import { scoreSoftPreferences } from './scoring.js';
 import { isSenior } from './scoring.js';
 import { buildRota, buildMultiWeekRota } from './solver.js';
-import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260717h';
+import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260717i';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
 
 function getRequiredElement(id) {
@@ -469,6 +469,7 @@ export function populateChefModal({ chef, mode = 'create', showRemove = false })
   getRequiredElement('chefSeniorInput').checked = chef.senior === true;
   getRequiredElement('chefMioEligibleInput').checked = !!chef.mioEligible;
   getRequiredElement('chefBreakfastEligibleInput').checked = chef.breakfastEligible !== false;
+  getRequiredElement('chefPreferredBreakfastInput').value = chef.preferredBreakfast || '';
   getRequiredElement('chefNotesInput').value = chef.notes || '';
   EDITABLE_SKILL_SECTIONS.forEach((section) => {
     const field = document.getElementById(`chefSkill${section}Input`);
@@ -488,6 +489,7 @@ export function readChefDraftFromModal() {
     senior: getRequiredElement('chefSeniorInput').checked,
     mioEligible: getRequiredElement('chefMioEligibleInput').checked,
     breakfastEligible: getRequiredElement('chefBreakfastEligibleInput').checked,
+    preferredBreakfast: getRequiredElement('chefPreferredBreakfastInput').value,
     preferredDaysOff: [...document.querySelectorAll('input[data-preferred-day-off]:checked')].map((input) => input.dataset.preferredDayOff),
     notes: getRequiredElement('chefNotesInput').value,
     skills: Object.fromEntries(EDITABLE_SKILL_SECTIONS.map((section) => [

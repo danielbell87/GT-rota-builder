@@ -56,6 +56,10 @@ export function scoreSoftPreferences({ state, rota, hardValidation }) {
 
       if (assignment.section === 'Breakfast') {
         breakfastCounts[chef.name] = (breakfastCounts[chef.name] || 0) + 1;
+        if (chef.preferredBreakfast === day.dayName) {
+          score += SCORING_WEIGHTS.preferredBreakfastDayBonus;
+        }
+        return;
       }
 
       const quality = getQualityScore(chef, assignment.section);

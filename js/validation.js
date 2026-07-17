@@ -292,7 +292,7 @@ export function getStaffConfigurationWarnings(staff = []) {
   const requiredSections = [...CORE_SECTIONS, 'Breakfast'];
   const missingSections = requiredSections.filter((section) => {
     if (section === 'Breakfast') {
-      return !staff.some((chef) => chef.breakfastEligible !== false && canCoverSection(chef, 'Breakfast'));
+      return !staff.some((chef) => chef.breakfastEligible === true);
     }
     return !staff.some((chef) => canCoverSection(chef, section));
   });

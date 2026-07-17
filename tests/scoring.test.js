@@ -1,8 +1,8 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota } from '../js/solver.js';
-import { validateRotaHardRules } from '../js/validation.js?v=20260717h';
+import { validateRotaHardRules } from '../js/validation.js?v=20260717i';
 import { scoreSoftPreferences } from '../js/scoring.js';
-import { saveAppState, loadAppState } from '../js/storage.js?v=20260717h';
+import { saveAppState, loadAppState } from '../js/storage.js?v=20260717i';
 import { upsertPublishedHistory } from '../js/history.js';
 
 function baseState() {
@@ -51,6 +51,16 @@ export async function runScoringTests(assert) {
   assert(preferredOverrideScore.score < noPreferenceScore.score, 'Working a Preferred Day Off incurs a soft score penalty');
   assert(preferredOverrideScore.explanation.some((line) => line.includes('Preferred Day Off') && line.includes('operational requirements')), 'Preferred Day Off override is explained in rota diagnostics');
 
+  const breakfastPreferenceState = baseState();
+  breakfastPreferenceState.staff.find((chef) => chef.name === 'Aled').preferredBreakfast = 'Monday';
+  const matchingBreakfastRota = [{ dayName: 'Monday', date: '2026-07-13', chefs: ['Aled'], assignments: [{ chef: 'Aled', section: 'Breakfast' }] }];
+  const nonMatchingBreakfastRota = [{ dayName: 'Tuesday', date: '2026-07-14', chefs: ['Aled'], assignments: [{ chef: 'Aled', section: 'Breakfast' }] }];
+  assert(
+    scoreSoftPreferences({ state: breakfastPreferenceState, rota: matchingBreakfastRota, hardValidation: [] }).score
+      > scoreSoftPreferences({ state: breakfastPreferenceState, rota: nonMatchingBreakfastRota, hardValidation: [] }).score,
+    'Matching Preferred breakfast day improves the soft rota score'
+  );
+
   const broken = JSON.parse(JSON.stringify(hard));
   broken.push({ ruleId: 'H999', passed: false, severity: 'hard', message: 'forced fail' });
   const capped = scoreSoftPreferences({ state, rota: solve.rota, hardValidation: broken });
@@ -83,6 +93,8 @@ export async function runScoringTests(assert) {
     fixedDayOff: 'Saturday',
     fixedDaysOff: ['Saturday'],
     fixed_days_off: ['Sunday'],
+    preferredBreakfast: 'Friday',
+    skills: { ...reloaded.staff[0].skills, Breakfast: 3 },
     preferredDaysOff: []
   };
   saveAppState(reloaded);
@@ -91,6 +103,8 @@ export async function runScoringTests(assert) {
   const subsequentlySaved = JSON.parse(localStorage.getItem('gtRota.state.v2')).staff[0];
   assert(!Object.prototype.hasOwnProperty.call(legacyReloadedChef, 'weekendRule'), 'Legacy chef data containing the obsolete field still loads safely');
   assert(!['weekend_rule', 'fixedDayOff', 'fixedDaysOff', 'fixed_days_off'].some((field) => Object.prototype.hasOwnProperty.call(legacyReloadedChef, field)), 'Legacy Fixed Days Off and Weekend Rule variants are stripped when data loads');
+  assert(legacyReloadedChef.preferredBreakfast === 'Friday', 'Preferred breakfast day survives legacy data loading');
+  assert(!Object.prototype.hasOwnProperty.call(legacyReloadedChef.skills || {}, 'Breakfast'), 'Legacy Breakfast competency is ignored during loading');
   assert(JSON.stringify(legacyReloadedChef.preferredDaysOff) === JSON.stringify(['Saturday']), 'Legacy Fixed Day Off migrates once while weekend values are not converted');
   assert(!Object.prototype.hasOwnProperty.call(subsequentlySaved, 'weekendRule'), 'The obsolete field is omitted when legacy data is subsequently saved');
   assert(!['weekend_rule', 'fixedDayOff', 'fixedDaysOff', 'fixed_days_off'].some((field) => Object.prototype.hasOwnProperty.call(subsequentlySaved, field)), 'Obsolete day-off fields are omitted when legacy data is saved again');

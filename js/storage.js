@@ -10,7 +10,7 @@ export const STORAGE_KEYS = {
 
 const LEGACY_MIO_ELIGIBILITY_KEY = 'gtRota.mioEligibilityByChef';
 const LEGACY_STAFF_PROFILES_KEY = 'gtRota.staffProfilesByChef';
-const CURRENT_SCHEMA_VERSION = 9;
+const CURRENT_SCHEMA_VERSION = 10;
 
 function safeParse(raw, fallback) {
   if (!raw) return fallback;
@@ -57,6 +57,7 @@ function migrateLegacyChefStores(staff = []) {
           skills: profile.skills && typeof profile.skills === 'object'
             ? { ...(chef.skills || {}), ...profile.skills }
             : chef.skills,
+          preferredBreakfast: chef.preferredBreakfast || profile.preferredBreakfast,
           mioEligible: typeof profile.mioEligible === 'boolean' ? profile.mioEligible : chef.mioEligible
         }
       : { ...chef };
@@ -136,6 +137,9 @@ export function migrateStorageIfNeeded() {
     }
     if (current < 9 && Array.isArray(saved.staff)) {
       saved.staff = migrateLegacyChefStores(saved.staff);
+    }
+    if (current < 10 && Array.isArray(saved.staff)) {
+      saved.staff = normalizeStaffRecords(saved.staff);
     }
     localStorage.setItem(STORAGE_KEYS.appState, JSON.stringify(saved));
   }
