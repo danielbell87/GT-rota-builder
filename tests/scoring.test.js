@@ -26,7 +26,7 @@ export async function runScoringTests(assert) {
     availability: state.weeklyInputs.availability
   });
 
-  const hard = validateRotaHardRules({ rota: solve.rota, state, inputs: state.weeklyInputs, summary: solve.summary });
+  const hard = validateRotaHardRules({ rota: solve.rota, state, inputs: state.weeklyInputs, summary: solve.summary, fullWeekDates: solve.fullWeekDates });
   const score = scoreSoftPreferences({ state, rota: solve.rota, hardValidation: hard });
   assert(typeof score.score === 'number', 'Scoring returns numeric soft score');
   assert(score.explanation.some((line) => line.includes('Senior chef') && line.includes('Pass')), 'Scoring explanation includes senior-on-Pass preference details');

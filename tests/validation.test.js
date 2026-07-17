@@ -2,6 +2,37 @@ import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/st
 import { buildRota } from '../js/solver.js';
 import { validateRotaHardRules, validateRotaSoftRules, isRotaValid } from '../js/validation.js?v=20260717a';
 
+function buildFullWeekDates(weekStart) {
+  const [year, month, day] = weekStart.split('-').map(Number);
+  const start = new Date(year, month - 1, day);
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  });
+}
+
+function createSummary(state, annualLeaveHoursByChef = {}) {
+  return state.staff.map((chef) => {
+    const annualLeaveHours = annualLeaveHoursByChef[chef.name] || 0;
+    return {
+      name: chef.name,
+      count: 0,
+      gtDays: 0,
+      mioDays: 0,
+      gtHours: 0,
+      mioHours: 0,
+      annualLeaveHours,
+      totalCreditedHours: annualLeaveHours,
+      hours: annualLeaveHours
+    };
+  });
+}
+
+function findRule(validation, ruleId, chefName) {
+  return validation.find((item) => item.ruleId === ruleId && (!chefName || item.message.startsWith(`${chefName}:`)));
+}
+
 function setupState() {
   resetStateToDefaults();
   const state = getState();
@@ -23,7 +54,7 @@ export async function runValidationTests(assert) {
     availability: []
   });
 
-  const validation = validateRotaHardRules({ rota: result.rota, state, inputs: state.weeklyInputs, summary: result.summary });
+  const validation = validateRotaHardRules({ rota: result.rota, state, inputs: state.weeklyInputs, summary: result.summary, fullWeekDates: result.fullWeekDates });
   assert((result.status === 'ok') === isRotaValid(validation), 'Solver status ok is only returned when hard validation passes');
   assert(validation.length > 0, 'Validator returns structured hard-rule checks');
   assert(validation.every((v) => v.ruleId && typeof v.passed === 'boolean' && v.severity === 'hard'), 'Validator result shape is correct');
@@ -41,7 +72,7 @@ export async function runValidationTests(assert) {
 
   const corrupted = JSON.parse(JSON.stringify(result.rota));
   corrupted[0].assignments = corrupted[0].assignments.filter((a) => a.section !== 'Breakfast');
-  const corruptedValidation = validateRotaHardRules({ rota: corrupted, state, inputs: state.weeklyInputs, summary: result.summary });
+  const corruptedValidation = validateRotaHardRules({ rota: corrupted, state, inputs: state.weeklyInputs, summary: result.summary, fullWeekDates: result.fullWeekDates });
   assert(corruptedValidation.some((v) => v.ruleId === 'H006' && !v.passed), 'Validator catches intentionally corrupted rota');
 
   const invalid = !isRotaValid(corruptedValidation);
@@ -52,8 +83,131 @@ export async function runValidationTests(assert) {
   if (monday) {
     monday.chefs.push('Dan');
   }
-  const mioOverlapValidation = validateRotaHardRules({ rota: mioOverlapCorrupted, state, inputs: state.weeklyInputs, summary: result.summary });
+  const mioOverlapValidation = validateRotaHardRules({ rota: mioOverlapCorrupted, state, inputs: state.weeklyInputs, summary: result.summary, fullWeekDates: result.fullWeekDates });
   assert(mioOverlapValidation.some((v) => v.ruleId === 'H023' && !v.passed), 'Hard validation rejects same-day GT and MIO for selected MIO chef');
+
+  const fullWeekDates = result.fullWeekDates || buildFullWeekDates(state.weeklyInputs.weekStart);
+
+  const sundayLeaveState = setupState();
+  sundayLeaveState.weeklyInputs.availability = [{ chef: 'Fred', type: 'Annual Leave', startDate: '2026-07-19', finishDate: '2026-07-19', notes: '' }];
+  syncCompatibilityViews();
+  const saturdayPartial = result.rota.filter((day) => day.dayName !== 'Sunday');
+  const sundayLeaveSummary = result.summary.map((item) => item.name === 'Fred'
+    ? {
+      ...item,
+      annualLeaveHours: 12,
+      totalCreditedHours: (item.totalCreditedHours || item.hours || 0) + 12,
+      hours: (item.hours || item.totalCreditedHours || 0) + 12
+    }
+    : item);
+  const sundayLeaveValidation = validateRotaHardRules({
+    rota: saturdayPartial,
+    state: sundayLeaveState,
+    inputs: sundayLeaveState.weeklyInputs,
+    summary: sundayLeaveSummary,
+    fullWeekDates
+  });
+  const sundayLeaveH016 = findRule(sundayLeaveValidation, 'H016', 'Fred');
+  assert(sundayLeaveH016 && !sundayLeaveH016.passed, 'Partial rota uses the full requested week for later Sunday annual leave');
+  assert(sundayLeaveH016?.message.includes('expected at most 3 GT days (actual 4)'), 'H016 reports adjusted target 3 when leave falls after partial-rota failure');
+
+  const fridayLeaveState = setupState();
+  fridayLeaveState.weeklyInputs.availability = [{ chef: 'Fred', type: 'Annual Leave', startDate: '2026-07-17', finishDate: '2026-07-17', notes: '' }];
+  syncCompatibilityViews();
+  const wednesdayPartial = result.rota.filter((day) => ['Monday', 'Tuesday', 'Wednesday'].includes(day.dayName));
+  const fridayLeaveSummary = result.summary.map((item) => item.name === 'Fred'
+    ? {
+      ...item,
+      annualLeaveHours: 12,
+      totalCreditedHours: (item.totalCreditedHours || item.hours || 0) + 12,
+      hours: (item.hours || item.totalCreditedHours || 0) + 12
+    }
+    : item);
+  const fridayLeaveValidation = validateRotaHardRules({
+    rota: wednesdayPartial,
+    state: fridayLeaveState,
+    inputs: fridayLeaveState.weeklyInputs,
+    summary: fridayLeaveSummary,
+    fullWeekDates
+  });
+  const fridayLeaveH016 = findRule(fridayLeaveValidation, 'H016', 'Fred');
+  assert(fridayLeaveH016?.passed, 'Partial rota stopping on Wednesday still credits Friday annual leave');
+  assert(fridayLeaveH016?.message.includes('expected at most 3 GT days (actual 3)'), 'Later Friday leave still reduces the expected GT target');
+
+  const weekendLeaveState = setupState();
+  weekendLeaveState.weeklyInputs.availability = [{ chef: 'Fred', type: 'Annual Leave', startDate: '2026-07-18', finishDate: '2026-07-19', notes: '' }];
+  syncCompatibilityViews();
+  const fridayPartial = result.rota.filter((day) => ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].includes(day.dayName));
+  const weekendLeaveSummary = result.summary.map((item) => item.name === 'Fred'
+    ? {
+      ...item,
+      annualLeaveHours: 24,
+      totalCreditedHours: (item.totalCreditedHours || item.hours || 0) + 24,
+      hours: (item.hours || item.totalCreditedHours || 0) + 24
+    }
+    : item);
+  const weekendLeaveValidation = validateRotaHardRules({
+    rota: fridayPartial,
+    state: weekendLeaveState,
+    inputs: weekendLeaveState.weeklyInputs,
+    summary: weekendLeaveSummary,
+    fullWeekDates
+  });
+  const weekendLeaveH016 = findRule(weekendLeaveValidation, 'H016', 'Fred');
+  assert(weekendLeaveH016 && !weekendLeaveH016.passed, 'Multiple leave dates after failure still reduce the adjusted GT target');
+  assert(weekendLeaveH016?.message.includes('expected at most 2 GT days (actual 4)'), 'Adjusted GT target reflects multiple leave dates after failure');
+
+  const noLeaveValidation = validateRotaHardRules({
+    rota: saturdayPartial,
+    state,
+    inputs: state.weeklyInputs,
+    summary: result.summary,
+    fullWeekDates
+  });
+  const noLeaveH016 = findRule(noLeaveValidation, 'H016', 'Fred');
+  assert(noLeaveH016?.passed, 'Partial rota without annual leave keeps the normal weekly GT target');
+  assert(noLeaveH016?.message.includes('expected at most 4 GT days (actual 4)'), 'No-annual-leave partial rota still expects the normal target of 4');
+
+  const emptyLeaveState = setupState();
+  emptyLeaveState.weeklyInputs.availability = [{ chef: 'Adam', type: 'Annual Leave', startDate: '2026-07-19', finishDate: '2026-07-19', notes: '' }];
+  syncCompatibilityViews();
+  const emptySummary = createSummary(emptyLeaveState, { Adam: 12 });
+  const emptyValidation = validateRotaHardRules({
+    rota: [],
+    state: emptyLeaveState,
+    inputs: emptyLeaveState.weeklyInputs,
+    summary: emptySummary,
+    fullWeekDates
+  });
+  const emptyH016 = findRule(emptyValidation, 'H016', 'Adam');
+  const emptyH018 = findRule(emptyValidation, 'H018', 'Adam');
+  assert(emptyH016?.passed && emptyH016.message.includes('expected at most 3 GT days (actual 0)'), 'Empty rota still validates GT target against the supplied full requested week');
+  assert(emptyH018?.passed, 'Empty rota still validates annual leave credit using the supplied full requested week');
+
+  const fullWeekValidation = validateRotaHardRules({
+    rota: result.rota,
+    state,
+    inputs: state.weeklyInputs,
+    summary: result.summary,
+    fullWeekDates
+  });
+  const fullWeekH016 = findRule(fullWeekValidation, 'H016', 'Fred');
+  assert(fullWeekH016?.passed && fullWeekH016.message.includes('expected at most 4 GT days (actual 4)'), 'Full rota behaviour remains unchanged with the complete week horizon');
+
+  const mioLeaveState = setupState();
+  mioLeaveState.weeklyInputs.availability = [{ chef: 'Dan', type: 'Annual Leave', startDate: '2026-07-19', finishDate: '2026-07-19', notes: '' }];
+  syncCompatibilityViews();
+  const mioLeaveValidation = validateRotaHardRules({
+    rota: saturdayPartial,
+    state: mioLeaveState,
+    inputs: mioLeaveState.weeklyInputs,
+    summary: result.summary,
+    fullWeekDates
+  });
+  const mioH015 = findRule(mioLeaveValidation, 'H015', 'Dan');
+  const mioH022 = findRule(mioLeaveValidation, 'H022', 'Dan');
+  assert(mioH015?.passed, 'Selected MIO chef still expects exactly 3 MIO shifts on the actual partial rota');
+  assert(mioH022 && !mioH022.passed && mioH022.message.includes('expected exactly 2 GT shifts (actual 1)'), 'Selected MIO chef keeps the existing 2 GT-shift rule');
 
   const softCorrupted = JSON.parse(JSON.stringify(result.rota));
   const thursday = softCorrupted.find((day) => day.dayName === 'Thursday');
