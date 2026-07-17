@@ -1,8 +1,8 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota } from '../js/solver.js';
-import { validateRotaHardRules } from '../js/validation.js?v=20260717a';
+import { validateRotaHardRules } from '../js/validation.js?v=20260717e';
 import { scoreSoftPreferences } from '../js/scoring.js';
-import { saveAppState, loadAppState } from '../js/storage.js?v=20260717a';
+import { saveAppState, loadAppState } from '../js/storage.js?v=20260717e';
 import { upsertPublishedHistory } from '../js/history.js';
 
 function baseState() {
@@ -30,6 +30,7 @@ export async function runScoringTests(assert) {
   const score = scoreSoftPreferences({ state, rota: solve.rota, hardValidation: hard });
   assert(typeof score.score === 'number', 'Scoring returns numeric soft score');
   assert(score.explanation.some((line) => line.includes('Senior chef') && line.includes('Pass')), 'Scoring explanation includes senior-on-Pass preference details');
+  assert(score.explanation.every((line) => !/\bskill\s*[0-3]\b/i.test(line) && !/\bscore\s*[0-3]\b/i.test(line)), 'Scoring explanations avoid raw skill numbers in normal text');
 
   const forcedNonSeniorPass = JSON.parse(JSON.stringify(solve.rota));
   const friday = forcedNonSeniorPass.find((day) => day.dayName === 'Friday');

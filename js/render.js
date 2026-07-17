@@ -12,7 +12,7 @@ import {
 import { scoreSoftPreferences } from './scoring.js';
 import { isSenior } from './scoring.js';
 import { buildRota, buildMultiWeekRota } from './solver.js';
-import { validateRotaHardRules, validateRotaSoftRules } from './validation.js?v=20260717a';
+import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260717e';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
 
 function getRequiredElement(id) {
@@ -39,10 +39,6 @@ function hasFairnessActivity(entry) {
 
 function getEligibleMioChefs(state) {
   return state.staff.filter((staff) => staff.mioEligible);
-}
-
-function getGtTargetForChef(chefName, mioChefName) {
-  return chefName === mioChefName ? 2 : 4;
 }
 
 // Treat a full-shift-equivalent gap from the 48-hour target as a notable outlier for the compact summary.
@@ -214,10 +210,11 @@ function getChefRowProblems(item, view) {
   const totalHours = item.totalCreditedHours ?? item.hours ?? 0;
   const expectedLeaveHours = getExpectedLeaveHoursForChef(item.name, view.inputs, view.week.weekStart);
   const isSelectedMioChef = item.name === view.inputs.mioChef;
+  const adjustedGtTarget = item.adjustedGtTarget ?? (isSelectedMioChef ? 2 : 4);
   const hasHoursProblem = totalHours > (TARGET_HOURS.weekly + HOURS_DEVIATION_THRESHOLD)
     || (totalHours > 0 && totalHours < (TARGET_HOURS.weekly - HOURS_DEVIATION_THRESHOLD));
   return {
-    gt: item.gtDays > getGtTargetForChef(item.name, view.inputs.mioChef),
+    gt: item.gtDays !== adjustedGtTarget,
     mio: isSelectedMioChef && (item.mioDays !== 3 || item.gtDays !== 2),
     leave: expectedLeaveHours !== (item.annualLeaveHours || 0),
     hours: hasHoursProblem
@@ -230,10 +227,11 @@ function renderChefHoursSummary(view) {
     const totalHours = item.totalCreditedHours ?? item.hours ?? 0;
     const problems = getChefRowProblems(item, view);
     const hasProblem = Object.values(problems).some(Boolean);
+    const adjustedGtTarget = item.adjustedGtTarget ?? (item.name === view.inputs.mioChef ? 2 : 4);
     return `
       <tr class="${hasProblem ? 'summary-row-problem' : ''}">
         <th scope="row">${escapeHtml(item.name)}</th>
-        <td${problems.gt ? ' class="metric-problem"' : ''}>${item.gtDays}/${getGtTargetForChef(item.name, view.inputs.mioChef)}</td>
+        <td${problems.gt ? ' class="metric-problem"' : ''}>${item.gtDays}/${adjustedGtTarget}</td>
         <td${problems.mio ? ' class="metric-problem"' : ''}>${item.mioDays}</td>
         <td${problems.leave ? ' class="metric-problem"' : ''}>${item.annualLeaveHours.toFixed(1)}h</td>
         <td${problems.hours ? ' class="metric-problem"' : ''}>${totalHours.toFixed(1)}h</td>
@@ -408,9 +406,12 @@ function getStaffForDisplay() {
   return state.staff
     .map((chef, index) => ({ chef, index }))
     .sort((a, b) => {
-      const hierarchyA = Number.isFinite(a.chef.hierarchy) ? a.chef.hierarchy : Number.MAX_SAFE_INTEGER;
-      const hierarchyB = Number.isFinite(b.chef.hierarchy) ? b.chef.hierarchy : Number.MAX_SAFE_INTEGER;
-      if (hierarchyA !== hierarchyB) return hierarchyA - hierarchyB;
+      const seniorA = isSenior(a.chef) ? 1 : 0;
+      const seniorB = isSenior(b.chef) ? 1 : 0;
+      if (seniorA !== seniorB) return seniorB - seniorA;
+      const roleA = CHEF_ROLES.indexOf(a.chef.role);
+      const roleB = CHEF_ROLES.indexOf(b.chef.role);
+      if (roleA !== roleB) return roleA - roleB;
       return a.index - b.index;
     });
 }
@@ -477,8 +478,6 @@ export function populateChefModal({ chef, mode = 'create', showRemove = false })
 
   getRequiredElement('chefNameInput').value = chef.name || '';
   roleSelect.value = chef.role || '';
-  getRequiredElement('chefHierarchyInput').value = String(chef.hierarchy ?? '');
-  getRequiredElement('chefServicePaceInput').value = chef.servicePace || 'steady';
   getRequiredElement('chefSeniorInput').checked = !!(chef.senior || chef.seniorStatus);
   getRequiredElement('chefWeekendRuleInput').value = chef.weekendRule || '';
   getRequiredElement('chefFixedDayOffInput').value = chef.fixedDayOff || '';
@@ -491,7 +490,6 @@ export function populateChefModal({ chef, mode = 'create', showRemove = false })
     if (field) field.value = String(chef.skills?.[section] ?? 0);
   });
   setCheckboxGroupValues('input[data-preferred-day-off]', chef.preferredDaysOff || []);
-  setCheckboxGroupValues('input[data-preferred-section]', chef.preferredSections || []);
   removeSection.classList.toggle('hidden', !showRemove);
   advancedSection.open = false;
   setChefRemovalConfirmation(false, chef.name || '');
@@ -502,8 +500,6 @@ export function readChefDraftFromModal() {
   return {
     name: getRequiredElement('chefNameInput').value.trim(),
     role: getRequiredElement('chefRoleInput').value,
-    hierarchy: Number.parseInt(getRequiredElement('chefHierarchyInput').value, 10),
-    servicePace: getRequiredElement('chefServicePaceInput').value,
     senior: getRequiredElement('chefSeniorInput').checked,
     seniorStatus: getRequiredElement('chefSeniorInput').checked,
     weekendRule: getRequiredElement('chefWeekendRuleInput').value,
@@ -512,7 +508,6 @@ export function readChefDraftFromModal() {
     mioEligible: getRequiredElement('chefMioEligibleInput').checked,
     breakfastEligible: getRequiredElement('chefBreakfastEligibleInput').checked,
     preferredDaysOff: [...document.querySelectorAll('input[data-preferred-day-off]:checked')].map((input) => input.dataset.preferredDayOff),
-    preferredSections: [...document.querySelectorAll('input[data-preferred-section]:checked')].map((input) => input.dataset.preferredSection),
     notes: getRequiredElement('chefNotesInput').value,
     skills: Object.fromEntries(EDITABLE_SKILL_SECTIONS.map((section) => [
       section,
@@ -582,6 +577,7 @@ export function renderStaffTable() {
   const state = getState();
   const container = getRequiredElement('staffList');
   const countLabel = getRequiredElement('staffCountLabel');
+  const warnings = getStaffConfigurationWarnings(state.staff);
   countLabel.textContent = `· ${state.staff.length}`;
 
   if (!state.staff.length) {
@@ -594,7 +590,9 @@ export function renderStaffTable() {
     return;
   }
 
-  container.innerHTML = getStaffForDisplay().map(({ chef }) => {
+  container.innerHTML = `
+    ${warnings.map((warning) => `<p class="section-note">${escapeHtml(warning.message)}</p>`).join('')}
+    ${getStaffForDisplay().map(({ chef }) => {
     const label = formatChefSecondaryLabel(chef);
     return `
       <button
@@ -612,7 +610,7 @@ export function renderStaffTable() {
           <span class="chef-list-action" aria-hidden="true">Edit ›</span>
         </span>
       </button>`;
-  }).join('');
+  }).join('')}`;
   renderMioControls();
 }
 
@@ -641,8 +639,7 @@ function renderRotaTable(solveResult) {
   const sectionCells = DISPLAY_SECTIONS.map((section) => {
     const cells = solveResult.rota.map((day) => {
       if (section === 'Float') {
-        const coreAssignments = day.assignments.filter((assignment) => [...CORE_SECTIONS, 'Breakfast'].includes(assignment.section)).map((assignment) => assignment.chef);
-        const floatChefs = day.chefs.filter((chef) => !coreAssignments.includes(chef));
+        const floatChefs = day.assignments.filter((assignment) => assignment.section === 'Float').map((assignment) => assignment.chef);
         return `<td>${floatChefs.length ? escapeHtml(floatChefs.join(', ')) : '—'}</td>`;
       }
       const matches = day.assignments.filter((assignment) => assignment.section === section);

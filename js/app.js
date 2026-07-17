@@ -1,8 +1,8 @@
 import { APP_BUILD_VERSION, CACHE_BUST_VERSION } from './constants.js';
 import { getState, getDefaultWeek, syncCompatibilityViews, setWeekStart, setMioChef, setNumWeeks, setWeeklyMioChef } from './state.js';
 import { normalizeWeekStart, getPlanningHorizon } from './utils.js';
-import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260717a';
-import { addChef, createBlankChefDraft, createChefDraft, getChefById, getDefaultHierarchyForRole, removeChef, updateChef } from './staff.js';
+import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260717e';
+import { addChef, createBlankChefDraft, createChefDraft, getChefById, removeChef, updateChef } from './staff.js';
 import { addAvailabilityEntry, removeAvailabilityEntry, updateAvailabilityField, addAdditionalChefRequest, updateAdditionalChefRequest, removeAdditionalChefRequest, validateAdditionalChefDate, validateAdditionalChefCount } from './weekly-inputs.js';
 import {
   renderAll,
@@ -103,10 +103,6 @@ function closeChefEditor({ restoreFocus = true, focusAfterCloseSelector = '' } =
 function handleChefSave(event) {
   event.preventDefault();
   const draft = readChefDraftFromModal();
-  if (!Number.isInteger(draft.hierarchy)) {
-    draft.hierarchy = getDefaultHierarchyForRole(draft.role);
-  }
-
   const result = activeChefId ? updateChef(activeChefId, draft) : addChef(draft);
   if (!result.valid) {
     showChefModalError(result.message, result.field);
@@ -298,19 +294,8 @@ function attachEvents() {
       return;
     }
 
-    if (event.target.matches('input[data-preferred-day-off], input[data-preferred-section]')) {
+    if (event.target.matches('input[data-preferred-day-off]')) {
       syncChefChoiceChipState(event.target);
-      return;
-    }
-
-    if (event.target.id === 'chefRoleInput') {
-      const roleSelect = event.target;
-      const hierarchyInput = requireElement('chefHierarchyInput');
-      const previousRole = roleSelect.dataset.previousRole || '';
-      if (!hierarchyInput.value || Number.parseInt(hierarchyInput.value, 10) === getDefaultHierarchyForRole(previousRole)) {
-        hierarchyInput.value = String(getDefaultHierarchyForRole(roleSelect.value));
-      }
-      roleSelect.dataset.previousRole = roleSelect.value;
       return;
     }
 

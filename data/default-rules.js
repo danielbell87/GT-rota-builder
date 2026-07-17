@@ -19,7 +19,7 @@ export const DEFAULT_RULES = [
   { id: 'H018', title: 'Annual leave credits', description: 'Annual leave credits 12 hours per leave day.', type: 'hard', enabled: true },
   { id: 'H019', title: 'Unavailable counts as day off', description: 'Unavailable requests count as one normal day off.', type: 'hard', enabled: true },
   { id: 'H020', title: 'Single concurrent leave', description: 'One chef should normally be on annual leave at a time.', type: 'hard', enabled: true },
-  { id: 'S001', title: 'Preferred sections', description: 'Prefer chefs in strongest sections.', type: 'soft', enabled: true, weight: 3 },
+  { id: 'S001', title: 'Section levels', description: 'Prefer Preferred section levels over Competent and In training levels.', type: 'soft', enabled: true, weight: 3 },
   { id: 'S002', title: 'Preferred days off', description: 'Prefer requested days off.', type: 'soft', enabled: true, weight: 2 },
   { id: 'S003', title: 'Consecutive days off', description: 'Prefer two consecutive days off.', type: 'soft', enabled: true, weight: 2 },
   { id: 'S004', title: 'Weekend fairness', description: 'Spread weekend load fairly.', type: 'soft', enabled: true, weight: 2 },

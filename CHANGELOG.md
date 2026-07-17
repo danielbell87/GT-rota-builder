@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.4.0 - 2026-07-17
+- Finalized the chef section-level and exact weekly GT target integration on build `2026.07.17.5` / cache `20260717e`.
+- Preserved full-week validation horizons (`fullWeekDates` / H024) while keeping exact GT target, explicit Float, and annual-leave-adjusted validation behavior.
+- Refactored weekly GT allocation so the solver now works to exact per-chef weekly targets instead of stopping at minimum daily cover.
+- Added explicit `Float` assignments that count as GT days and GT hours, support multiple Float chefs on one day, and remain visible in the final rota data and UI.
+- Updated hard validation to fail both above-target and below-target weekly GT totals, plus to require exactly one primary GT assignment per chef per day.
+- Preserved MIO 3+2 rules, Monday-Wednesday exact staffing, Thursday-Sunday minimum staffing, senior cover, and availability restrictions while using Float to complete contracted days.
+- Expanded browser tests and documentation for exact targets, annual-leave adjustments, infeasibility reporting, additional-chef Float handling, and multi-week behavior.
+
+## 2.3.0 - 2026-07-17
+- Simplified chef profiles by removing the unused hierarchy number, service pace, and separate preferred-sections fields.
+- Replaced visible numeric section scores with descriptive section levels: Should not cover, In training, Competent, Preferred.
+- Centralised section-level helpers so suitability, preference, validation, and ranking all use the same mapping.
+- Preserved senior-on-Pass behaviour, fairness ordering, MIO handling, leave/unavailability handling, additional-chef requests, and specialist defaults.
+- Added schema v6 migration that removes obsolete staff fields while preserving stable chef IDs, section values, and weekly data.
+- Expanded browser tests for popup field removal, section labels, migration idempotency, section ranking, and section-coverage warnings.
+
 ## 2.2.0 - 2026-07-17
 - Replaced the permanently expanded staff table with a compact **Chefs** list that shows only chef name, role, and one small status badge where useful.
 - Added a reusable chef editor popup for add, edit, and remove flows, with grouped sections for profile, section skills, availability/preferences, and advanced settings.
