@@ -1,7 +1,7 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota, buildMultiWeekRota, compareFairnessTieBreak, getSectionCandidateBaseScore } from '../js/solver.js';
 import { isSenior, getHoursForDay, getHoursForAssignment } from '../js/scoring.js';
-import { validateRotaHardRules } from '../js/validation.js?v=20260717c';
+import { validateRotaHardRules } from '../js/validation.js?v=20260717e';
 import { canCoverSection, sectionCandidateScore } from '../js/section-levels.js';
 
 const PRIMARY_GT_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry', 'Float'];

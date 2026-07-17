@@ -1,6 +1,6 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota } from '../js/solver.js';
-import { validateRotaHardRules, validateRotaSoftRules, isRotaValid, getStaffConfigurationWarnings } from '../js/validation.js?v=20260717b';
+import { validateRotaHardRules, validateRotaSoftRules, isRotaValid, getStaffConfigurationWarnings } from '../js/validation.js?v=20260717e';
 
 function createSummary(state, annualLeaveHoursByChef = {}) {
   return state.staff.map((chef) => {
@@ -220,7 +220,7 @@ export async function runValidationTests(assert) {
   const emptyH016 = findRule(emptyValidation, 'H016', 'Adam');
   const emptyH018 = findRule(emptyValidation, 'H018', 'Adam');
   const emptyTarget = parseGtDayRule(emptyH016);
-  assert(emptyH016?.passed && emptyTarget?.target === 3 && emptyTarget?.actual === 0, 'Empty rota still validates GT target against the supplied full requested week');
+  assert(emptyH016 && !emptyH016.passed && emptyTarget?.target === 3 && emptyTarget?.actual === 0, 'Empty rota still calculates the leave-adjusted GT target against the supplied full requested week');
   assert(emptyH018?.passed, 'Empty rota still validates annual leave credit using the supplied full requested week');
 
   const fullWeekValidation = validateRotaHardRules({

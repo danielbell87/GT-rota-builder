@@ -17,7 +17,7 @@ import {
   validateRotaHardRules,
   getAdjustedGtTargetsByChef,
   getAnnualLeaveDatesByChef
-} from './validation.js?v=20260717c';
+} from './validation.js?v=20260717e';
 import { filterAvailabilityForWeek, filterAdditionalChefRequirementsForWeek } from './weekly-inputs.js';
 
 const PASS_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];

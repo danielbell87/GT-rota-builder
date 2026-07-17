@@ -1,6 +1,8 @@
 # Changelog
 
 ## 2.4.0 - 2026-07-17
+- Finalized the chef section-level and exact weekly GT target integration on build `2026.07.17.5` / cache `20260717e`.
+- Preserved full-week validation horizons (`fullWeekDates` / H024) while keeping exact GT target, explicit Float, and annual-leave-adjusted validation behavior.
 - Refactored weekly GT allocation so the solver now works to exact per-chef weekly targets instead of stopping at minimum daily cover.
 - Added explicit `Float` assignments that count as GT days and GT hours, support multiple Float chefs on one day, and remain visible in the final rota data and UI.
 - Updated hard validation to fail both above-target and below-target weekly GT totals, plus to require exactly one primary GT assignment per chef per day.
