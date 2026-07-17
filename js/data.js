@@ -16,16 +16,16 @@ export const roleWeight = {
 };
 
 export const initialStaff = [
-  { name: 'Aled', role: 'Executive Chef', seniorityRank: 1, breakfastEligible: true, fixedDayOff: '', preferredDaysOff: ['Saturday', 'Sunday'], skills: { Pass: 3, Sauce: 1, Garnish: 1, Larder: 1, Pastry: 3, Breakfast: 3 }, preferredBreakfast: 'Monday', notes: 'Prefers pass or pastry' },
-  { name: 'Charlie', role: 'Head Chef', seniorityRank: 2, breakfastEligible: true, fixedDayOff: 'Tuesday', preferredDaysOff: ['Tuesday'], skills: { Pass: 3, Sauce: 2, Garnish: 2, Larder: 2, Pastry: 2, Breakfast: 2 }, preferredBreakfast: 'Sunday', notes: 'Can work any section' },
-  { name: 'Adam', role: 'Sous Chef', seniorityRank: 3, breakfastEligible: true, fixedDayOff: '', preferredDaysOff: [], skills: { Pass: 3, Sauce: 3, Garnish: 1, Larder: 3, Pastry: 1, Breakfast: 2 }, preferredBreakfast: '', notes: 'Prefers pass, larder or sauce' },
-  { name: 'Connor', role: 'Sous Chef', seniorityRank: 3, breakfastEligible: true, fixedDayOff: '', preferredDaysOff: [], skills: { Pass: 2, Sauce: 3, Garnish: 2, Larder: 2, Pastry: 2, Breakfast: 2 }, preferredBreakfast: '', notes: 'Prefers sauce; can work any section' },
-  { name: 'Dan', role: 'Chef de Partie', seniorityRank: 4, breakfastEligible: true, fixedDayOff: '', preferredDaysOff: [], skills: { Pass: 2, Sauce: 2, Garnish: 3, Larder: 2, Pastry: 2, Breakfast: 2 }, preferredBreakfast: '', notes: 'Prefers garnish; can work all sections' },
-  { name: 'Fred', role: 'Chef de Partie', seniorityRank: 4, breakfastEligible: true, fixedDayOff: '', preferredDaysOff: [], skills: { Pass: 0, Sauce: 0, Garnish: 3, Larder: 0, Pastry: 0, Breakfast: 2 }, preferredBreakfast: '', notes: 'Garnish only at present' },
-  { name: 'Joel', role: 'Chef de Partie', seniorityRank: 4, breakfastEligible: true, fixedDayOff: '', preferredDaysOff: [], skills: { Pass: 0, Sauce: 3, Garnish: 0, Larder: 0, Pastry: 0, Breakfast: 2 }, preferredBreakfast: '', notes: 'Sauce only at present' },
-  { name: 'Camilla', role: 'Demi Chef de Partie', seniorityRank: 5, breakfastEligible: true, fixedDayOff: '', preferredDaysOff: [], skills: { Pass: 0, Sauce: 0, Garnish: 0, Larder: 3, Pastry: 3, Breakfast: 2 }, preferredBreakfast: '', notes: 'Pastry and larder' },
-  { name: 'Brooke', role: 'Demi Chef de Partie', seniorityRank: 5, breakfastEligible: true, fixedDayOff: '', preferredDaysOff: [], skills: { Pass: 0, Sauce: 0, Garnish: 0, Larder: 2, Pastry: 3, Breakfast: 2 }, preferredBreakfast: '', notes: 'Prefer 3 pastry and 1 larder shift' },
-  { name: 'Myles', role: 'Commis Chef', seniorityRank: 6, breakfastEligible: true, fixedDayOff: '', preferredDaysOff: [], skills: { Pass: 0, Sauce: 0, Garnish: 0, Larder: 3, Pastry: 0, Breakfast: 2 }, preferredBreakfast: '', notes: 'Larder only' }
+  { name: 'Aled', role: 'Executive Chef', seniorityRank: 1, breakfastEligible: true, preferredDaysOff: ['Saturday', 'Sunday'], skills: { Pass: 3, Sauce: 1, Garnish: 1, Larder: 1, Pastry: 3, Breakfast: 3 }, preferredBreakfast: 'Monday', notes: 'Prefers pass or pastry' },
+  { name: 'Charlie', role: 'Head Chef', seniorityRank: 2, breakfastEligible: true, preferredDaysOff: ['Tuesday'], skills: { Pass: 3, Sauce: 2, Garnish: 2, Larder: 2, Pastry: 2, Breakfast: 2 }, preferredBreakfast: 'Sunday', notes: 'Can work any section' },
+  { name: 'Adam', role: 'Sous Chef', seniorityRank: 3, breakfastEligible: true, preferredDaysOff: [], skills: { Pass: 3, Sauce: 3, Garnish: 1, Larder: 3, Pastry: 1, Breakfast: 2 }, preferredBreakfast: '', notes: 'Prefers pass, larder or sauce' },
+  { name: 'Connor', role: 'Sous Chef', seniorityRank: 3, breakfastEligible: true, preferredDaysOff: [], skills: { Pass: 2, Sauce: 3, Garnish: 2, Larder: 2, Pastry: 2, Breakfast: 2 }, preferredBreakfast: '', notes: 'Prefers sauce; can work any section' },
+  { name: 'Dan', role: 'Chef de Partie', seniorityRank: 4, breakfastEligible: true, preferredDaysOff: [], skills: { Pass: 2, Sauce: 2, Garnish: 3, Larder: 2, Pastry: 2, Breakfast: 2 }, preferredBreakfast: '', notes: 'Prefers garnish; can work all sections' },
+  { name: 'Fred', role: 'Chef de Partie', seniorityRank: 4, breakfastEligible: true, preferredDaysOff: [], skills: { Pass: 0, Sauce: 0, Garnish: 3, Larder: 0, Pastry: 0, Breakfast: 2 }, preferredBreakfast: '', notes: 'Garnish only at present' },
+  { name: 'Joel', role: 'Chef de Partie', seniorityRank: 4, breakfastEligible: true, preferredDaysOff: [], skills: { Pass: 0, Sauce: 3, Garnish: 0, Larder: 0, Pastry: 0, Breakfast: 2 }, preferredBreakfast: '', notes: 'Sauce only at present' },
+  { name: 'Camilla', role: 'Demi Chef de Partie', seniorityRank: 5, breakfastEligible: true, preferredDaysOff: [], skills: { Pass: 0, Sauce: 0, Garnish: 0, Larder: 3, Pastry: 3, Breakfast: 2 }, preferredBreakfast: '', notes: 'Pastry and larder' },
+  { name: 'Brooke', role: 'Demi Chef de Partie', seniorityRank: 5, breakfastEligible: true, preferredDaysOff: [], skills: { Pass: 0, Sauce: 0, Garnish: 0, Larder: 2, Pastry: 3, Breakfast: 2 }, preferredBreakfast: '', notes: 'Prefer 3 pastry and 1 larder shift' },
+  { name: 'Myles', role: 'Commis Chef', seniorityRank: 6, breakfastEligible: true, preferredDaysOff: [], skills: { Pass: 0, Sauce: 0, Garnish: 0, Larder: 3, Pastry: 0, Breakfast: 2 }, preferredBreakfast: '', notes: 'Larder only' }
 ];
 
 export const state = {

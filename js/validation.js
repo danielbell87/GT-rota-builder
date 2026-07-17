@@ -9,7 +9,6 @@ export const PRIMARY_GT_SECTIONS = [...CORE_SECTIONS, 'Float'];
 
 export function isUnavailable(staff, date, dayName, ruleOverrides) {
   const availability = ruleOverrides._availability || [];
-  const fixedOff = staff.fixedDayOff && staff.fixedDayOff.toLowerCase() === dayName.toLowerCase();
   const leave = availability.some((entry) => {
     if (entry.chef !== staff.name) return false;
     if (entry.type !== 'Annual Leave' && entry.type !== 'Unavailable') return false;
@@ -20,7 +19,7 @@ export function isUnavailable(staff, date, dayName, ruleOverrides) {
     const finishDate = parseLocalDate(finish);
     return current >= startDate && current <= finishDate;
   });
-  return fixedOff || leave;
+  return leave;
 }
 
 export function getWeeklyContextAdjustments(inputs, dayName, date) {
@@ -237,8 +236,6 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
       results.push(createResult('H014', !!chef?.mioEligible, `${day.dayName}: MIO chef must be eligible`));
     });
 
-    results.push(createResult('H002', !(day.dayName === 'Tuesday' && day.chefs.includes('Charlie')), `${day.dayName}: Charlie must not work Tuesday`));
-
     day.assignments.forEach((assignment) => {
       if (assignment.chef === 'Myles' && assignment.section !== 'Larder' && assignment.section !== 'Float' && assignment.section !== 'Breakfast' && assignment.section !== 'MIO') {
         results.push(createResult('H003', false, `${day.dayName}: Myles assigned outside Larder`));
@@ -329,6 +326,19 @@ export function validateRotaSoftRules({ rota, state, inputs }) {
   const ruleOverrides = {
     _availability: inputs?.availability || state?.weeklyInputs?.availability || []
   };
+
+  rota.forEach((day) => {
+    day.chefs.forEach((chefName) => {
+      const chef = getChef(state.staff, chefName);
+      if (!chef?.preferredDaysOff?.includes(day.dayName)) return;
+      results.push({
+        ruleId: 'S002',
+        passed: false,
+        severity: 'soft',
+        message: `${day.dayName}: ${chefName} was scheduled despite a Preferred Day Off because coverage, weekly targets, section strength, or overall feasibility took priority.`
+      });
+    });
+  });
 
   rota
     .filter((day) => ['Thursday', 'Friday', 'Saturday', 'Sunday'].includes(day.dayName))

@@ -11,7 +11,7 @@ Generate a weekly GT kitchen rota from staff capabilities, availability, hard co
 - Soft preference: affects score and explanation but does not override hard rules
 
 ## Staff Model
-Each chef includes a stable `id`, name, role, structured senior flag, MIO eligibility, section levels, fixed day constraints, preferences, and notes. The obsolete hierarchy number, service pace field, and separate preferred-sections list are no longer part of the staff model.
+Each chef includes a stable `id`, name, role, structured senior flag, MIO eligibility, section levels, Preferred Days Off, other preferences, and notes. Preferred Days Off is the only recurring day-off mechanism and is always soft and overridable. Obsolete fixed-day, weekend-rule, hierarchy, service pace, and separate preferred-sections fields are not part of the active staff model.
 
 ## Staff Management UI
 - The normal **Chefs** panel is a compact clickable list that shows only identity-level information.
@@ -54,7 +54,6 @@ Weekly GT allocation is solved across the whole week rather than as seven isolat
 
 ## Hard Rules
 Implemented as structured hard validation checks in `js/validation.js` and rule metadata in `data/default-rules.js`, including:
-- Charlie no Tuesday
 - Myles Larder-only default
 - Fred Garnish-only default
 - Joel Sauce-only default
@@ -73,7 +72,7 @@ Implemented as structured hard validation checks in `js/validation.js` and rule 
 - Concurrent leave guardrail
 
 ## Soft Preferences
-Soft scoring in `js/scoring.js` evaluates section-level fit, breakfast fairness, weekend fairness, and additional preference penalties/bonuses without permitting hard-rule breaches.
+Soft scoring in `js/scoring.js` evaluates section-level fit, Preferred Days Off, breakfast fairness, weekend fairness, and additional preference penalties/bonuses without permitting hard-rule breaches. Scheduling on a Preferred Day Off remains possible and produces an explicit diagnostic explaining the operational override.
 
 Senior-on-Pass preference is implemented as a strong soft rule:
 - Thursday to Sunday, prefer assigning Pass to an available senior chef.

@@ -148,7 +148,7 @@ Edit the natural-language rule field in the app to customize:
 - Breakfast eligibility
 - Any other scheduling overrides
 
-Example: `Aled prefers Pass; Charlie off Tuesday; Dan breakfast eligible`
+Example: `Aled prefers Pass; Dan breakfast eligible`
 
 ## Technology
 
@@ -201,7 +201,7 @@ Saved browser data is persisted with migration-safe localStorage keys.
   - `gtRota.mioEligibilityByChef`
   - `gtRota.staffProfilesByChef`
 
-Schema version `7` also removes the obsolete chef weekend setting. Legacy values are ignored rather than converted, while stable chef IDs, Preferred Days Off, section levels, weekly inputs, and published history snapshots are preserved.
+Schema version `8` removes obsolete Fixed Days Off and weekend settings. Legacy camelCase and snake_case variants are ignored and stripped rather than converted, while stable chef IDs, editable Preferred Days Off, section levels, dated availability, weekly inputs, and published history snapshots are preserved.
 
 No external API keys or secrets are required.
 

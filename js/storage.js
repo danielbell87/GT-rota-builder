@@ -10,7 +10,7 @@ export const STORAGE_KEYS = {
   staffProfilesByChef: 'gtRota.staffProfilesByChef'
 };
 
-const CURRENT_SCHEMA_VERSION = 7;
+const CURRENT_SCHEMA_VERSION = 8;
 
 function safeParse(raw, fallback) {
   if (!raw) return fallback;
@@ -95,7 +95,6 @@ export function applyPersistedStaffProfiles() {
     if (!profile || typeof profile !== 'object') return;
     if (profile.role) staff.role = profile.role;
     if (typeof profile.mioEligible === 'boolean') staff.mioEligible = profile.mioEligible;
-    if (typeof profile.fixedDayOff === 'string') staff.fixedDayOff = profile.fixedDayOff;
     if (profile.skills && typeof profile.skills === 'object') {
       staff.skills = { ...(staff.skills || {}), ...profile.skills };
     }
@@ -110,7 +109,6 @@ export function persistAllStaffProfiles() {
     {
       role: staff.role,
       mioEligible: !!staff.mioEligible,
-      fixedDayOff: staff.fixedDayOff || '',
       skills: { ...(staff.skills || {}) }
     }
   ]));
@@ -184,6 +182,9 @@ export function migrateStorageIfNeeded() {
       saved.staff = normalizeStaffRecords(saved.staff);
     }
     if (current < 7 && Array.isArray(saved.staff)) {
+      saved.staff = normalizeStaffRecords(saved.staff);
+    }
+    if (current < 8 && Array.isArray(saved.staff)) {
       saved.staff = normalizeStaffRecords(saved.staff);
     }
     localStorage.setItem(STORAGE_KEYS.appState, JSON.stringify(saved));

@@ -1,8 +1,8 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota } from '../js/solver.js';
-import { validateRotaHardRules } from '../js/validation.js?v=20260717f';
+import { validateRotaHardRules } from '../js/validation.js?v=20260717g';
 import { scoreSoftPreferences } from '../js/scoring.js';
-import { saveAppState, loadAppState } from '../js/storage.js?v=20260717f';
+import { saveAppState, loadAppState } from '../js/storage.js?v=20260717g';
 import { upsertPublishedHistory } from '../js/history.js';
 
 function baseState() {
@@ -42,6 +42,15 @@ export async function runScoringTests(assert) {
   const forcedScore = scoreSoftPreferences({ state, rota: forcedNonSeniorPass, hardValidation: hard });
   assert(forcedScore.score < score.score, 'Non-senior on Pass is penalized as a strong soft preference');
 
+  const preferredOverrideState = baseState();
+  preferredOverrideState.staff.find((chef) => chef.name === 'Aled').preferredDaysOff = ['Monday'];
+  const preferredOverrideRota = [{ dayName: 'Monday', date: '2026-07-13', chefs: ['Aled'], assignments: [] }];
+  const preferredOverrideScore = scoreSoftPreferences({ state: preferredOverrideState, rota: preferredOverrideRota, hardValidation: [] });
+  preferredOverrideState.staff.find((chef) => chef.name === 'Aled').preferredDaysOff = [];
+  const noPreferenceScore = scoreSoftPreferences({ state: preferredOverrideState, rota: preferredOverrideRota, hardValidation: [] });
+  assert(preferredOverrideScore.score < noPreferenceScore.score, 'Working a Preferred Day Off incurs a soft score penalty');
+  assert(preferredOverrideScore.explanation.some((line) => line.includes('Preferred Day Off') && line.includes('operational requirements')), 'Preferred Day Off override is explained in rota diagnostics');
+
   const broken = JSON.parse(JSON.stringify(hard));
   broken.push({ ruleId: 'H999', passed: false, severity: 'hard', message: 'forced fail' });
   const capped = scoreSoftPreferences({ state, rota: solve.rota, hardValidation: broken });
@@ -70,6 +79,10 @@ export async function runScoringTests(assert) {
   reloaded.staff[0] = {
     ...reloaded.staff[0],
     weekendRule: 'Does not work weekends',
+    weekend_rule: true,
+    fixedDayOff: 'Saturday',
+    fixedDaysOff: ['Saturday'],
+    fixed_days_off: ['Sunday'],
     preferredDaysOff: []
   };
   saveAppState(reloaded);
@@ -77,6 +90,8 @@ export async function runScoringTests(assert) {
   const legacyReloadedChef = getState().staff[0];
   const subsequentlySaved = JSON.parse(localStorage.getItem('gtRota.state.v2')).staff[0];
   assert(!Object.prototype.hasOwnProperty.call(legacyReloadedChef, 'weekendRule'), 'Legacy chef data containing the obsolete field still loads safely');
+  assert(!['weekend_rule', 'fixedDayOff', 'fixedDaysOff', 'fixed_days_off'].some((field) => Object.prototype.hasOwnProperty.call(legacyReloadedChef, field)), 'Legacy Fixed Days Off and Weekend Rule variants are stripped when data loads');
   assert(legacyReloadedChef.preferredDaysOff.length === 0, 'Legacy values are not converted into Preferred Days Off');
   assert(!Object.prototype.hasOwnProperty.call(subsequentlySaved, 'weekendRule'), 'The obsolete field is omitted when legacy data is subsequently saved');
+  assert(!['weekend_rule', 'fixedDayOff', 'fixedDaysOff', 'fixed_days_off'].some((field) => Object.prototype.hasOwnProperty.call(subsequentlySaved, field)), 'Obsolete day-off fields are omitted when legacy data is saved again');
 }

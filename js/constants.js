@@ -4,7 +4,7 @@ export const DISPLAY_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry',
 export const EDITABLE_SKILL_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry', 'Breakfast'];
 
 export const APP_BUILD_VERSION = '2026.07.17.6';
-export const CACHE_BUST_VERSION = '20260717f';
+export const CACHE_BUST_VERSION = '20260717g';
 export const MIO_ROTATION_ORDER = ['Dan', 'Fred', 'Joel', 'Camilla', 'Brooke'];
 export const DAY_FAIRNESS_WEIGHTS = {
   Monday: 0,

@@ -1,7 +1,7 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota, buildMultiWeekRota, compareFairnessTieBreak, getSectionCandidateBaseScore } from '../js/solver.js';
 import { isSenior, getHoursForDay, getHoursForAssignment } from '../js/scoring.js';
-import { isUnavailable, validateRotaHardRules } from '../js/validation.js?v=20260717f';
+import { isUnavailable, validateRotaHardRules } from '../js/validation.js?v=20260717g';
 import { canCoverSection, sectionCandidateScore } from '../js/section-levels.js';
 import { normalizeChefRecord } from '../js/staff.js';
 
@@ -50,7 +50,6 @@ function createTestChef(name, role, skills = {}, extra = {}) {
     seniorStatus: false,
     breakfastEligible: true,
     mioEligible: false,
-    fixedDayOff: '',
     preferredDaysOff: [],
     preferredBreakfast: '',
     notes: '',
@@ -84,6 +83,10 @@ export async function runSolverTests(assert) {
     .filter((day) => ['Saturday', 'Sunday'].includes(day.dayName))
     .every((day) => day.chefs.includes('Dan'));
   assert(danWeekendGt, 'Selected MIO chef is preferentially assigned to weekend GT days when available');
+  ['Aled', 'Charlie', 'Connor'].forEach((name) => {
+    const chef = createTestChef(name, 'Sous Chef', { Sauce: 2 });
+    assert(!isUnavailable(chef, '2026-07-14', 'Tuesday', { _availability: [] }) && !isUnavailable(chef, '2026-07-19', 'Sunday', { _availability: [] }), `${name} receives no name-specific weekday or weekend exclusion`);
+  });
 
   const monWedExact4 = baseline.rota
     .filter((day) => ['Monday', 'Tuesday', 'Wednesday'].includes(day.dayName))
@@ -141,6 +144,16 @@ export async function runSolverTests(assert) {
   assert((charlieSummary?.annualLeaveHours || 0) === 48, 'Charlie receives 48 leave-credit hours for full leave week');
   assert(dailySeniorCover, 'Every day retains senior cover when Charlie is on leave');
   assert(charlieLeaveFailures.length === 0, 'Charlie full-week leave scenario has no hard failures');
+
+  const aledWeekendRequiredState = setupBaseState();
+  aledWeekendRequiredState.weeklyInputs.availability = [
+    { chef: 'Charlie', type: 'Annual Leave', startDate: '2026-07-13', finishDate: '2026-07-19', notes: '' },
+    { chef: 'Adam', type: 'Unavailable', startDate: '2026-07-18', finishDate: '2026-07-18', notes: '' },
+    { chef: 'Connor', type: 'Unavailable', startDate: '2026-07-18', finishDate: '2026-07-18', notes: '' }
+  ];
+  const aledWeekendRequired = runScenario(aledWeekendRequiredState);
+  const saturdayRequired = aledWeekendRequired.rota.find((day) => day.dayName === 'Saturday');
+  assert(aledWeekendRequired.status === 'ok' && saturdayRequired?.chefs.includes('Aled'), 'Aled remains schedulable on Saturday when senior coverage requires it');
 
   const fredAnnualLeaveState = setupBaseState();
   fredAnnualLeaveState.weeklyInputs.availability = [{ chef: 'Fred', type: 'Annual Leave', startDate: '2026-07-14', finishDate: '2026-07-14', notes: '' }];
@@ -244,17 +257,24 @@ export async function runSolverTests(assert) {
   });
   assert(rankedWithFairness[0].name === 'Preferred Sauce', 'Scenario D: section suitability stays ahead of weekend fairness when levels differ meaningfully');
 
-  const preferredDaysChef = createTestChef('Preferred Days', 'Chef de Partie', { Sauce: 2 }, { preferredDaysOff: ['Friday', 'Saturday', 'Sunday'] });
+  const preferredDaysChef = createTestChef('Preferred Days', 'Chef de Partie', { Sauce: 2 }, { preferredDaysOff: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] });
   const noPreferenceChef = createTestChef('No Preference', 'Chef de Partie', { Sauce: 2 });
-  ['Friday', 'Saturday', 'Sunday'].forEach((dayName) => {
+  ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].forEach((dayName) => {
     const preferredDayScore = getSectionCandidateBaseScore({ staff: preferredDaysChef, section: 'Sauce', dayName, ruleOverrides: {}, gtDaysByChef: {}, mioChefName: '' });
     const noPreferenceScore = getSectionCandidateBaseScore({ staff: noPreferenceChef, section: 'Sauce', dayName, ruleOverrides: {}, gtDaysByChef: {}, mioChefName: '' });
     assert(preferredDayScore < noPreferenceScore, `Preferred Days Off: ${dayName} is honored as a soft scheduling preference`);
   });
 
-  const legacyChef = createTestChef('Legacy Chef', 'Chef de Partie', { Sauce: 2 }, { weekendRule: 'Does not work weekends' });
+  const legacyChef = createTestChef('Legacy Chef', 'Chef de Partie', { Sauce: 2 }, {
+    weekendRule: 'Does not work weekends',
+    weekend_rule: true,
+    fixedDayOff: 'Saturday',
+    fixedDaysOff: ['Saturday'],
+    fixed_days_off: ['Sunday']
+  });
   const normalizedLegacyChef = normalizeChefRecord(legacyChef);
   assert(!Object.prototype.hasOwnProperty.call(normalizedLegacyChef, 'weekendRule'), 'Legacy chef data loads safely and drops the obsolete property during normalization');
+  assert(!['weekend_rule', 'fixedDayOff', 'fixedDaysOff', 'fixed_days_off'].some((field) => Object.prototype.hasOwnProperty.call(normalizedLegacyChef, field)), 'All legacy fixed-day and weekend field variants are dropped during normalization');
   assert(normalizedLegacyChef.preferredDaysOff.length === 0, 'Legacy weekend values are not converted into Preferred Days Off');
   assert(!isUnavailable(legacyChef, '2026-07-18', 'Saturday', { _availability: [] }), 'Legacy weekend values no longer create a solver constraint');
   assert(

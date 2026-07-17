@@ -6,30 +6,28 @@ These are treated as hard requirements and should be enforced before any soft pr
 
 1. Exactly one breakfast chef is assigned each day.
 2. At least one of Aled, Charlie, Adam, or Connor works each day.
-3. Aled does not work Saturday or Sunday.
-4. Charlie is always off Tuesday.
-5. **Weekly GT targets are exact, not maximum-only**:
+3. **Weekly GT targets are exact, not maximum-only**:
    - Normal chef: exactly 4 GT days.
    - Normal chef with annual leave: exactly `max(0, 4 - annual-leave days credited that week)` GT days.
    - Selected MIO chef: exactly 3 MIO days and exactly 2 GT days.
-6. **Monday to Wednesday require 4 GT chefs** (not 5) unless an event requires extra cover (specified in event field).
-7. **Thursday to Sunday require at least 5 GT chefs** and may include extra Float chefs to complete weekly targets.
-8. **Pass section is NOT required Monday-Wednesday** (only Sauce, Garnish, Larder, Pastry).
-9. **Float section**:
+4. **Monday to Wednesday require 4 GT chefs** (not 5) unless an event requires extra cover (specified in event field).
+5. **Thursday to Sunday require at least 5 GT chefs** and may include extra Float chefs to complete weekly targets.
+6. **Pass section is NOT required Monday-Wednesday** (only Sauce, Garnish, Larder, Pastry).
+7. **Float section**:
    - When all core sections are assigned, additional target-filling or explicitly requested chefs must be assigned to **Float**.
    - Float counts as a GT day and GT hours, appears in `day.chefs`, and is stored explicitly in `day.assignments`.
    - More than one Float chef may be used on the same day.
    - A Float chef must not also hold another primary GT section that day.
-10. Required sections must be covered by an eligible chef.
-11. A breakfast chef must also appear on a core section for that day.
-12. The rota must respect fixed availability, annual leave, and section eligibility.
-13. The rota must not invent sickness or make up unavailable time; only the provided leave/unavailability data should be used.
-14. Exactly one eligible junior chef is assigned to MIO each week.
-15. MIO pattern is Monday–Wednesday at MIO and exactly two non-overlapping GT days in the same week; if annual leave makes that impossible, the week is infeasible.
-16. If a chef is unavailable on a normal MIO day, the MIO assignment may move only to Thursday or Friday, per the AI prompt.
-17. The rota must preserve the workbook's layout, formulas, and rules when updated.
-18. At least one Sous Chef or higher must work in the kitchen each day.
-19. Chefs marked as "MIO not eligible" must never be assigned to MIO.
+8. Required sections must be covered by an eligible chef.
+9. A breakfast chef must also appear on a core section for that day.
+10. The rota must respect dated annual leave, approved unavailability, and section eligibility.
+11. The rota must not invent sickness or make up unavailable time; only the provided leave/unavailability data should be used.
+12. Exactly one eligible junior chef is assigned to MIO each week.
+13. MIO pattern is Monday–Wednesday at MIO and exactly two non-overlapping GT days in the same week; if annual leave makes that impossible, the week is infeasible.
+14. If a chef is unavailable on a normal MIO day, the MIO assignment may move only to Thursday or Friday, per the AI prompt.
+15. The rota must preserve the workbook's layout, formulas, and rules when updated.
+16. At least one Sous Chef or higher must work in the kitchen each day.
+17. Chefs marked as "MIO not eligible" must never be assigned to MIO.
 
 ## Soft preferences
 
@@ -48,6 +46,7 @@ These are scoring and quality objectives rather than hard blocking rules.
 11. Friday–Sunday should preferably include at least two senior chefs.
 12. The rota should avoid unnecessary overstaffing, but must use Float whenever extra GT days are required to satisfy exact weekly chef targets.
 13. Thursday to Sunday, Pass should be assigned to an available senior chef where this can be achieved without breaking hard constraints.
+14. Preferred Days Off may contain any Monday-to-Sunday combination. They should be honoured where feasible, but may be overridden for coverage, senior cover, section strength, exact weekly targets, or overall feasibility.
 
 ## Important notes from the workbook
 

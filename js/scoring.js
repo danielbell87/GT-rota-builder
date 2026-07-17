@@ -53,9 +53,17 @@ export function scoreSoftPreferences({ state, rota, hardValidation }) {
   let score = 100;
   const explanations = [];
   const seniorOnPassWeight = getSoftRuleWeight(state, 'prefer-senior-on-pass', 12);
+  const preferredDayOffWeight = getSoftRuleWeight(state, 'S002', 8);
 
   const breakfastCounts = {};
   rota.forEach((day) => {
+    day.chefs.forEach((chefName) => {
+      const chef = state.staff.find((candidate) => candidate.name === chefName);
+      if (!chef?.preferredDaysOff?.includes(day.dayName)) return;
+      score -= preferredDayOffWeight;
+      explanations.push(`${chefName} worked ${day.dayName} despite a Preferred Day Off because operational requirements took priority.`);
+    });
+
     day.assignments.forEach((assignment) => {
       const chef = state.staff.find((s) => s.name === assignment.chef);
       if (!chef) return;

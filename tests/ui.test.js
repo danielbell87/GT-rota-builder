@@ -189,7 +189,7 @@ export async function runUiTests(assert) {
   const canonicalMarkup = await fetch('../index.html').then((response) => response.text());
   const canonicalDoc = new DOMParser().parseFromString(canonicalMarkup, 'text/html');
   assert(!!canonicalDoc.querySelector('#numWeeks'), 'UI: canonical page contains #numWeeks');
-  assert(!canonicalDoc.querySelector('#chefWeekendRuleInput') && !canonicalMarkup.includes('Weekend rule'), 'UI: obsolete weekend control and label are absent from the chef editor');
+  assert(!canonicalDoc.querySelector('#chefWeekendRuleInput') && !canonicalDoc.querySelector('#chefFixedDayOffInput') && !canonicalMarkup.includes('Weekend rule') && !canonicalMarkup.includes('Fixed unavailable day'), 'UI: obsolete weekend and Fixed Days Off controls and labels are absent from the chef editor');
   const stylesText = await fetch('../styles.css').then((response) => response.text());
   assert(stylesText.includes('.technical-details') && stylesText.includes('@media print'), 'UI: stylesheet includes technical-details and print rules for validation cleanup');
   assert(stylesText.includes('.week-panels .week-panel.hidden') && stylesText.includes('display: grid;'), 'UI: print stylesheet restores hidden week panels for printing');
@@ -564,6 +564,10 @@ export async function runUiTests(assert) {
   legacyStaffState.staff = legacyStaffState.staff.map((chef) => ({
     ...chef,
     weekendRule: chef.name === 'Aled' ? 'Does not work weekends' : '',
+    weekend_rule: chef.name === 'Aled',
+    fixedDayOff: chef.name === 'Charlie' ? 'Tuesday' : '',
+    fixedDaysOff: chef.name === 'Connor' ? ['Monday'] : [],
+    fixed_days_off: chef.name === 'Connor' ? ['Tuesday'] : [],
     hierarchy: 4,
     servicePace: 'steady',
     preferredSections: Object.entries(chef.skills || {}).filter(([, level]) => level === 3).map(([section]) => section)
@@ -581,13 +585,13 @@ export async function runUiTests(assert) {
     const ids = migratedState.staff.map((chef) => chef.id).filter(Boolean);
     assert(ids.length === migratedState.staff.length && new Set(ids).size === ids.length, 'UI: existing staff records migrate to stable chef IDs');
     assert(migratedState.staff.find((chef) => chef.name === 'Dan')?.skills?.Pass === legacyStaffState.staff.find((chef) => chef.name === 'Dan')?.skills?.Pass, 'UI: staff migration preserves existing skill values');
-    assert(migratedState.staff.every((chef) => !Object.prototype.hasOwnProperty.call(chef, 'weekendRule') && !Object.prototype.hasOwnProperty.call(chef, 'hierarchy') && !Object.prototype.hasOwnProperty.call(chef, 'servicePace') && !Object.prototype.hasOwnProperty.call(chef, 'preferredSections')), 'UI: schema migration removes obsolete chef profile fields');
+    assert(migratedState.staff.every((chef) => !['weekendRule', 'weekend_rule', 'fixedDayOff', 'fixedDaysOff', 'fixed_days_off', 'hierarchy', 'servicePace', 'preferredSections'].some((field) => Object.prototype.hasOwnProperty.call(chef, field))), 'UI: schema migration removes obsolete chef profile and day-off fields');
     assert(migratedState.staff.find((chef) => chef.name === 'Aled')?.preferredDaysOff?.length === legacyStaffState.staff.find((chef) => chef.name === 'Aled')?.preferredDaysOff?.length, 'UI: legacy weekend values do not alter Preferred Days Off during migration');
     assert(migratedState.staff.find((chef) => chef.name === 'Dan')?.id === legacyStaffState.staff.find((chef) => chef.name === 'Dan')?.id, 'UI: schema migration preserves stable chef IDs');
     assert(migratedState.staff.find((chef) => chef.name === 'Charlie')?.role === legacyStaffState.staff.find((chef) => chef.name === 'Charlie')?.role && migratedState.staff.find((chef) => chef.name === 'Charlie')?.seniorStatus === legacyStaffState.staff.find((chef) => chef.name === 'Charlie')?.seniorStatus, 'UI: schema migration preserves roles and senior status');
     assert(migratedState.staff.find((chef) => chef.name === 'Camilla')?.mioEligible === legacyStaffState.staff.find((chef) => chef.name === 'Camilla')?.mioEligible, 'UI: schema migration preserves MIO eligibility');
     assert(JSON.stringify(migratedState.weeklyInputs.availability) === JSON.stringify(legacyStaffState.weeklyInputs.availability), 'UI: schema migration preserves annual leave and unavailable entries');
-    assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '7', 'UI: storage schema version increments to 7');
+    assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '8', 'UI: storage schema version increments to 8');
   } finally {
     destroyFrame(migrationFrame);
   }

@@ -17,10 +17,10 @@ These tests are designed to prove that each hard rule is enforced.
 - when the solver ranks otherwise equivalent assignments,
 - then it should prefer another valid chef while retaining the selected chef as a fallback when required.
 
-## 4. Charlie Tuesday availability
-- Given a rota that places Charlie on Tuesday,
-- when the validation runs,
-- then the rota must fail with a fixed-rule breach for the Charlie Tuesday restriction.
+## 4. No name-specific day-off restriction
+- Given equivalent chef records with different names, including Aled, Charlie, and Connor,
+- when the solver evaluates any weekday or weekend,
+- then their names must not create availability restrictions or day-off penalties.
 
 ## 5. Minimum daily GT staffing
 - Given a Monday-to-Wednesday rota with fewer than 4 GT chefs assigned,
