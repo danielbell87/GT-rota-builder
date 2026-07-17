@@ -30,7 +30,17 @@ function createSummary(state, annualLeaveHoursByChef = {}) {
 }
 
 function findRule(validation, ruleId, chefName) {
-  return validation.find((item) => item.ruleId === ruleId && (!chefName || item.message.startsWith(`${chefName}:`)));
+  return validation.find((item) => item.ruleId === ruleId && (typeof chefName === 'undefined' || item.message.startsWith(`${chefName}:`)));
+}
+
+function parseGtDayRule(rule) {
+  const match = rule?.message?.match(/at most (\d+) GT days \(actual (\d+)\)/);
+  return match ? { target: Number(match[1]), actual: Number(match[2]) } : null;
+}
+
+function parseExactShiftRule(rule, shiftLabel) {
+  const match = rule?.message?.match(new RegExp(`exactly (\\d+) ${shiftLabel} \\(actual (\\d+)\\)`));
+  return match ? { expected: Number(match[1]), actual: Number(match[2]) } : null;
 }
 
 function setupState() {
@@ -108,8 +118,9 @@ export async function runValidationTests(assert) {
     fullWeekDates
   });
   const sundayLeaveH016 = findRule(sundayLeaveValidation, 'H016', 'Fred');
+  const sundayLeaveTarget = parseGtDayRule(sundayLeaveH016);
   assert(sundayLeaveH016 && !sundayLeaveH016.passed, 'Partial rota uses the full requested week for later Sunday annual leave');
-  assert(sundayLeaveH016?.message.includes('expected at most 3 GT days (actual 4)'), 'H016 reports adjusted target 3 when leave falls after partial-rota failure');
+  assert(sundayLeaveTarget?.target === 3 && sundayLeaveTarget?.actual === 4, 'H016 reports adjusted target 3 when leave falls after partial-rota failure');
 
   const fridayLeaveState = setupState();
   fridayLeaveState.weeklyInputs.availability = [{ chef: 'Fred', type: 'Annual Leave', startDate: '2026-07-17', finishDate: '2026-07-17', notes: '' }];
@@ -131,8 +142,9 @@ export async function runValidationTests(assert) {
     fullWeekDates
   });
   const fridayLeaveH016 = findRule(fridayLeaveValidation, 'H016', 'Fred');
+  const fridayLeaveTarget = parseGtDayRule(fridayLeaveH016);
   assert(fridayLeaveH016?.passed, 'Partial rota stopping on Wednesday still credits Friday annual leave');
-  assert(fridayLeaveH016?.message.includes('expected at most 3 GT days (actual 3)'), 'Later Friday leave still reduces the expected GT target');
+  assert(fridayLeaveTarget?.target === 3 && fridayLeaveTarget?.actual === 3, 'Later Friday leave still reduces the expected GT target');
 
   const weekendLeaveState = setupState();
   weekendLeaveState.weeklyInputs.availability = [{ chef: 'Fred', type: 'Annual Leave', startDate: '2026-07-18', finishDate: '2026-07-19', notes: '' }];
@@ -154,8 +166,9 @@ export async function runValidationTests(assert) {
     fullWeekDates
   });
   const weekendLeaveH016 = findRule(weekendLeaveValidation, 'H016', 'Fred');
+  const weekendLeaveTarget = parseGtDayRule(weekendLeaveH016);
   assert(weekendLeaveH016 && !weekendLeaveH016.passed, 'Multiple leave dates after failure still reduce the adjusted GT target');
-  assert(weekendLeaveH016?.message.includes('expected at most 2 GT days (actual 4)'), 'Adjusted GT target reflects multiple leave dates after failure');
+  assert(weekendLeaveTarget?.target === 2 && weekendLeaveTarget?.actual === 4, 'Adjusted GT target reflects multiple leave dates after failure');
 
   const noLeaveState = setupState();
   const noLeaveValidation = validateRotaHardRules({
@@ -166,8 +179,9 @@ export async function runValidationTests(assert) {
     fullWeekDates
   });
   const noLeaveH016 = findRule(noLeaveValidation, 'H016', 'Fred');
+  const noLeaveTarget = parseGtDayRule(noLeaveH016);
   assert(noLeaveH016?.passed, 'Partial rota without annual leave keeps the normal weekly GT target');
-  assert(noLeaveH016?.message.includes('expected at most 4 GT days (actual 4)'), 'No-annual-leave partial rota still expects the normal target of 4');
+  assert(noLeaveTarget?.target === 4 && noLeaveTarget?.actual === 4, 'No-annual-leave partial rota still expects the normal target of 4');
 
   const emptyLeaveState = setupState();
   emptyLeaveState.weeklyInputs.availability = [{ chef: 'Adam', type: 'Annual Leave', startDate: '2026-07-19', finishDate: '2026-07-19', notes: '' }];
@@ -182,7 +196,8 @@ export async function runValidationTests(assert) {
   });
   const emptyH016 = findRule(emptyValidation, 'H016', 'Adam');
   const emptyH018 = findRule(emptyValidation, 'H018', 'Adam');
-  assert(emptyH016?.passed && emptyH016.message.includes('expected at most 3 GT days (actual 0)'), 'Empty rota still validates GT target against the supplied full requested week');
+  const emptyTarget = parseGtDayRule(emptyH016);
+  assert(emptyH016?.passed && emptyTarget?.target === 3 && emptyTarget?.actual === 0, 'Empty rota still validates GT target against the supplied full requested week');
   assert(emptyH018?.passed, 'Empty rota still validates annual leave credit using the supplied full requested week');
 
   const fullWeekValidation = validateRotaHardRules({
@@ -193,7 +208,8 @@ export async function runValidationTests(assert) {
     fullWeekDates
   });
   const fullWeekH016 = findRule(fullWeekValidation, 'H016', 'Fred');
-  assert(fullWeekH016?.passed && fullWeekH016.message.includes('expected at most 4 GT days (actual 4)'), 'Full rota behaviour remains unchanged with the complete week horizon');
+  const fullWeekTarget = parseGtDayRule(fullWeekH016);
+  assert(fullWeekH016?.passed && fullWeekTarget?.target === 4 && fullWeekTarget?.actual === 4, 'Full rota behaviour remains unchanged with the complete week horizon');
 
   const mioLeaveState = setupState();
   mioLeaveState.weeklyInputs.availability = [{ chef: 'Dan', type: 'Annual Leave', startDate: '2026-07-19', finishDate: '2026-07-19', notes: '' }];
@@ -207,8 +223,9 @@ export async function runValidationTests(assert) {
   });
   const mioH015 = findRule(mioLeaveValidation, 'H015', 'Dan');
   const mioH022 = findRule(mioLeaveValidation, 'H022', 'Dan');
+  const mioGtTarget = parseExactShiftRule(mioH022, 'GT shifts');
   assert(mioH015?.passed, 'Selected MIO chef still expects exactly 3 MIO shifts on the actual partial rota');
-  assert(mioH022 && !mioH022.passed && mioH022.message.includes('expected exactly 2 GT shifts (actual 1)'), 'Selected MIO chef keeps the existing 2 GT-shift rule');
+  assert(mioH022 && !mioH022.passed && mioGtTarget?.expected === 2 && mioGtTarget?.actual === 1, 'Selected MIO chef keeps the existing 2 GT-shift rule');
 
   const finalBaselineState = setupState();
   const softCorrupted = JSON.parse(JSON.stringify(result.rota));

@@ -2,6 +2,8 @@ import { CORE_SECTIONS, ROLE_WEIGHT } from './constants.js';
 import { normalizeWeekStart, parseLocalDate, toDateString } from './utils.js';
 import { isSenior } from './scoring.js';
 
+const MAX_CREDITABLE_LEAVE_DAYS = 4;
+
 export function isUnavailable(staff, date, dayName, ruleOverrides) {
   const availability = ruleOverrides._availability || [];
   const weekendBlocked = staff.weekendRule === 'Does not work weekends' && ['Saturday', 'Sunday'].includes(dayName);
@@ -107,7 +109,7 @@ function resolveRequestedWeekDates({ fullWeekDates, inputs, rota, results }) {
     const normalizedProvidedDates = normalizeFullWeekDates(fullWeekDates);
     if (normalizedProvidedDates) {
       if (expectedFromInputs && JSON.stringify(normalizedProvidedDates) !== JSON.stringify(expectedFromInputs)) {
-        results.push(createResult('H024', false, `Validation horizon does not match requested week ${expectedFromInputs[0]}`));
+        results.push(createResult('H024', false, `Validation horizon ${normalizedProvidedDates[0]}..${normalizedProvidedDates[6]} does not match requested week ${expectedFromInputs[0]}..${expectedFromInputs[6]}`));
         return expectedFromInputs;
       }
       return normalizedProvidedDates;
@@ -232,7 +234,7 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
   });
   Object.entries(gtDaysByChef).forEach(([name, count]) => {
     if (!requestedWeekDates) return;
-    const annualLeaveDays = Math.min(annualLeaveDatesByChef[name]?.size || 0, 4);
+    const annualLeaveDays = Math.min(annualLeaveDatesByChef[name]?.size || 0, MAX_CREDITABLE_LEAVE_DAYS);
     const adjustedGtTarget = getAdjustedGtTargetForChef(name, inputs.mioChef, annualLeaveDays);
     results.push(createResult('H016', count <= adjustedGtTarget, `${name}: expected at most ${adjustedGtTarget} GT days (actual ${count})`));
   });
@@ -260,7 +262,7 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
 
   const summaryByChef = Object.fromEntries((summary || []).map((item) => [item.name, item]));
   Object.entries(annualLeaveDatesByChef).forEach(([chef, dateSet]) => {
-    const leaveDays = Math.min(dateSet.size, 4);
+    const leaveDays = Math.min(dateSet.size, MAX_CREDITABLE_LEAVE_DAYS);
     const expectedCredit = leaveDays * 12;
     const actualCredit = summaryByChef[chef]?.annualLeaveHours || 0;
     results.push(createResult('H018', actualCredit === expectedCredit, `${chef}: annual leave credit ${actualCredit}h (expected ${expectedCredit}h)`));
