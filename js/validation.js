@@ -131,8 +131,8 @@ function getAnnualLeaveDatesByChef(availability, weekDateSet) {
     const start = parseLocalDate(entry.startDate || entry.date);
     const finish = parseLocalDate(entry.finishDate || entry.date);
     if (!leaveDatesByChef[entry.chef]) leaveDatesByChef[entry.chef] = new Set();
-    for (let date = new Date(start); date <= finish; date.setDate(date.getDate() + 1)) {
-      const dateStr = toDateString(date);
+    for (let cursor = new Date(start); cursor <= finish; cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1)) {
+      const dateStr = toDateString(cursor);
       if (weekDateSet.has(dateStr)) leaveDatesByChef[entry.chef].add(dateStr);
     }
   });
@@ -159,8 +159,8 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
     if (entry.type !== 'Annual Leave') return;
     const start = parseLocalDate(entry.startDate || entry.date);
     const finish = parseLocalDate(entry.finishDate || entry.date);
-    for (let d = new Date(start); d <= finish; d.setDate(d.getDate() + 1)) {
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    for (let cursor = new Date(start); cursor <= finish; cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1)) {
+      const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
       leavesByDate[key] = (leavesByDate[key] || 0) + 1;
     }
   });

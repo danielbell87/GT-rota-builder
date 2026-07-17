@@ -2,16 +2,6 @@ import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/st
 import { buildRota } from '../js/solver.js';
 import { validateRotaHardRules, validateRotaSoftRules, isRotaValid } from '../js/validation.js?v=20260717a';
 
-function buildFullWeekDates(weekStart) {
-  const [year, month, day] = weekStart.split('-').map(Number);
-  const start = new Date(year, month - 1, day);
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(start);
-    date.setDate(start.getDate() + index);
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  });
-}
-
 function createSummary(state, annualLeaveHoursByChef = {}) {
   return state.staff.map((chef) => {
     const annualLeaveHours = annualLeaveHoursByChef[chef.name] || 0;
@@ -96,7 +86,7 @@ export async function runValidationTests(assert) {
   const mioOverlapValidation = validateRotaHardRules({ rota: mioOverlapCorrupted, state, inputs: state.weeklyInputs, summary: result.summary, fullWeekDates: result.fullWeekDates });
   assert(mioOverlapValidation.some((v) => v.ruleId === 'H023' && !v.passed), 'Hard validation rejects same-day GT and MIO for selected MIO chef');
 
-  const fullWeekDates = result.fullWeekDates || buildFullWeekDates(state.weeklyInputs.weekStart);
+  const fullWeekDates = result.fullWeekDates;
 
   const sundayLeaveState = setupState();
   sundayLeaveState.weeklyInputs.availability = [{ chef: 'Fred', type: 'Annual Leave', startDate: '2026-07-19', finishDate: '2026-07-19', notes: '' }];
@@ -240,8 +230,7 @@ export async function runValidationTests(assert) {
     'Soft validation flags non-senior Pass assignment when a senior is available'
   );
 
-  const unavailableChef = 'Dan';
-  finalBaselineState.weeklyInputs.availability = [{ chef: unavailableChef, type: 'Unavailable', startDate: '2026-07-14', finishDate: '2026-07-14', notes: '' }];
+  finalBaselineState.weeklyInputs.availability = [{ chef: 'Dan', type: 'Unavailable', startDate: '2026-07-14', finishDate: '2026-07-14', notes: '' }];
   syncCompatibilityViews();
   const rerun = buildRota({
     weekStart: finalBaselineState.weeklyInputs.weekStart,
@@ -249,6 +238,6 @@ export async function runValidationTests(assert) {
     additionalChefRequirements: [],
     availability: finalBaselineState.weeklyInputs.availability
   });
-  const unavailableWorked = rerun.rota.some((day) => day.date === '2026-07-14' && day.chefs.includes(unavailableChef));
+  const unavailableWorked = rerun.rota.some((day) => day.date === '2026-07-14' && day.chefs.includes('Dan'));
   assert(!unavailableWorked, 'Unavailable request counts as normal day off for scheduling');
 }
