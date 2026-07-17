@@ -1,6 +1,9 @@
 import { CORE_SECTIONS, ROLE_WEIGHT } from './constants.js';
-import { parseLocalDate } from './utils.js';
+import { normalizeWeekStart, parseLocalDate, toDateString } from './utils.js';
 import { isSenior } from './scoring.js';
+
+// Weekly leave credit is capped at four days because a standard GT week targets four credited workdays.
+const MAX_CREDITABLE_LEAVE_DAYS = 4;
 
 export function isUnavailable(staff, date, dayName, ruleOverrides) {
   const availability = ruleOverrides._availability || [];
@@ -74,20 +77,99 @@ function getGtTargetForChef(chefName, mioChefName) {
   return chefName === mioChefName ? 2 : 4;
 }
 
-export function validateRotaHardRules({ rota, state, inputs, summary }) {
+function isValidDateString(dateStr) {
+  if (typeof dateStr !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+  return toDateString(parseLocalDate(dateStr)) === dateStr;
+}
+
+function forEachDateInRange(start, finish, callback) {
+  for (let cursor = new Date(start); cursor <= finish; cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1)) {
+    callback(cursor);
+  }
+}
+
+function buildFullWeekDates(weekStart) {
+  const start = parseLocalDate(normalizeWeekStart(weekStart));
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+    return toDateString(date);
+  });
+}
+
+function normalizeFullWeekDates(fullWeekDates) {
+  if (!Array.isArray(fullWeekDates) || fullWeekDates.length !== 7) return null;
+  if (!fullWeekDates.every(isValidDateString)) return null;
+  const uniqueSortedDates = [...new Set(fullWeekDates)].sort();
+  if (uniqueSortedDates.length !== 7) return null;
+  const expectedDates = buildFullWeekDates(uniqueSortedDates[0]);
+  return JSON.stringify(uniqueSortedDates) === JSON.stringify(expectedDates) ? expectedDates : null;
+}
+
+function getSafeLegacyWeekDates(rota) {
+  return normalizeFullWeekDates((rota || []).map((day) => day.date));
+}
+
+function resolveRequestedWeekDates({ fullWeekDates, inputs, rota, results }) {
+  const expectedFromInputs = inputs?.weekStart ? buildFullWeekDates(inputs.weekStart) : null;
+  if (typeof fullWeekDates !== 'undefined') {
+    const normalizedProvidedDates = normalizeFullWeekDates(fullWeekDates);
+    if (normalizedProvidedDates) {
+      if (expectedFromInputs && JSON.stringify(normalizedProvidedDates) !== JSON.stringify(expectedFromInputs)) {
+        results.push(createResult('H024', false, `Validation horizon ${normalizedProvidedDates[0]}..${normalizedProvidedDates[6]} does not match requested week ${expectedFromInputs[0]}..${expectedFromInputs[6]}`));
+        return expectedFromInputs;
+      }
+      return normalizedProvidedDates;
+    }
+    results.push(createResult('H024', false, 'Week-based validation requires seven unique Monday-to-Sunday fullWeekDates.'));
+    return expectedFromInputs || null;
+  }
+  if (expectedFromInputs) return expectedFromInputs;
+  const legacyWeekDates = getSafeLegacyWeekDates(rota);
+  if (legacyWeekDates) return legacyWeekDates;
+  results.push(createResult('H024', false, 'Week-based validation requires fullWeekDates or inputs.weekStart when rota is partial or empty.'));
+  return null;
+}
+
+function getAnnualLeaveDatesByChef(availability, weekDateSet) {
+  const leaveDatesByChef = {};
+  (availability || []).forEach((entry) => {
+    if (entry.type !== 'Annual Leave') return;
+    const start = parseLocalDate(entry.startDate || entry.date);
+    const finish = parseLocalDate(entry.finishDate || entry.date);
+    if (!leaveDatesByChef[entry.chef]) leaveDatesByChef[entry.chef] = new Set();
+    forEachDateInRange(start, finish, (cursor) => {
+      const dateStr = toDateString(cursor);
+      if (weekDateSet.has(dateStr)) leaveDatesByChef[entry.chef].add(dateStr);
+    });
+  });
+  return leaveDatesByChef;
+}
+
+function getAdjustedGtTargetForChef(chefName, mioChefName, annualLeaveDays) {
+  const baseTarget = getGtTargetForChef(chefName, mioChefName);
+  if (chefName === mioChefName) return baseTarget;
+  return Math.max(0, baseTarget - annualLeaveDays);
+}
+
+// fullWeekDates is the requested Monday-to-Sunday scheduling horizon.
+// It must remain independent of how many rota days were successfully generated.
+export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDates }) {
   const results = [];
   const leavesByDate = {};
-  const weeklyDates = new Set(rota.map((day) => day.date));
   const availability = inputs?.availability || state.weeklyInputs.availability || [];
+  const requestedWeekDates = resolveRequestedWeekDates({ fullWeekDates, inputs, rota, results });
+  const requestedWeekDateSet = new Set(requestedWeekDates || []);
+  const annualLeaveDatesByChef = getAnnualLeaveDatesByChef(availability, requestedWeekDateSet);
 
   availability.forEach((entry) => {
     if (entry.type !== 'Annual Leave') return;
     const start = parseLocalDate(entry.startDate || entry.date);
     const finish = parseLocalDate(entry.finishDate || entry.date);
-    for (let d = new Date(start); d <= finish; d.setDate(d.getDate() + 1)) {
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    forEachDateInRange(start, finish, (cursor) => {
+      const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
       leavesByDate[key] = (leavesByDate[key] || 0) + 1;
-    }
+    });
   });
 
   rota.forEach((day) => {
@@ -158,8 +240,10 @@ export function validateRotaHardRules({ rota, state, inputs, summary }) {
     });
   });
   Object.entries(gtDaysByChef).forEach(([name, count]) => {
-    const gtTarget = getGtTargetForChef(name, inputs.mioChef);
-    results.push(createResult('H016', count <= gtTarget, `${name}: GT days ${count} exceeds max ${gtTarget}`));
+    if (!requestedWeekDates) return;
+    const annualLeaveDays = Math.min(annualLeaveDatesByChef[name]?.size || 0, MAX_CREDITABLE_LEAVE_DAYS);
+    const adjustedGtTarget = getAdjustedGtTargetForChef(name, inputs.mioChef, annualLeaveDays);
+    results.push(createResult('H016', count <= adjustedGtTarget, `${name}: expected at most ${adjustedGtTarget} GT days (actual ${count})`));
   });
 
   const mioChef = inputs.mioChef;
@@ -184,21 +268,8 @@ export function validateRotaHardRules({ rota, state, inputs, summary }) {
   }
 
   const summaryByChef = Object.fromEntries((summary || []).map((item) => [item.name, item]));
-  const leaveDatesByChef = {};
-  availability.forEach((entry) => {
-    if (entry.type !== 'Annual Leave') return;
-    const start = parseLocalDate(entry.startDate || entry.date);
-    const finish = parseLocalDate(entry.finishDate || entry.date);
-    for (let d = new Date(start); d <= finish; d.setDate(d.getDate() + 1)) {
-      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      if (!weeklyDates.has(dateStr)) continue;
-      if (!leaveDatesByChef[entry.chef]) leaveDatesByChef[entry.chef] = new Set();
-      leaveDatesByChef[entry.chef].add(dateStr);
-    }
-  });
-
-  Object.entries(leaveDatesByChef).forEach(([chef, dateSet]) => {
-    const leaveDays = Math.min(dateSet.size, 4);
+  Object.entries(annualLeaveDatesByChef).forEach(([chef, dateSet]) => {
+    const leaveDays = Math.min(dateSet.size, MAX_CREDITABLE_LEAVE_DAYS);
     const expectedCredit = leaveDays * 12;
     const actualCredit = summaryByChef[chef]?.annualLeaveHours || 0;
     results.push(createResult('H018', actualCredit === expectedCredit, `${chef}: annual leave credit ${actualCredit}h (expected ${expectedCredit}h)`));

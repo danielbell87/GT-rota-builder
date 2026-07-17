@@ -88,7 +88,7 @@ export function getWeekValidationView(week, state) {
   const hasRota = Array.isArray(week.rota) && week.rota.length > 0;
   const hardValidation = Array.isArray(week.hardValidation)
     ? week.hardValidation
-    : (hasRota ? validateRotaHardRules({ rota: week.rota, state, inputs, summary: week.summary || [] }) : []);
+    : (hasRota ? validateRotaHardRules({ rota: week.rota, state, inputs, summary: week.summary || [], fullWeekDates: week.fullWeekDates }) : []);
   const softValidation = Array.isArray(week.softValidation)
     ? week.softValidation
     : (hasRota ? validateRotaSoftRules({ rota: week.rota, state, inputs }) : []);

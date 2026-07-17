@@ -25,7 +25,7 @@ function runScenario(state, override = {}) {
 }
 
 function getHardFailures(state, result) {
-  const hard = validateRotaHardRules({ rota: result.rota, state, inputs: state.weeklyInputs, summary: result.summary });
+  const hard = validateRotaHardRules({ rota: result.rota, state, inputs: state.weeklyInputs, summary: result.summary, fullWeekDates: result.fullWeekDates });
   return hard.filter((item) => !item.passed);
 }
 
@@ -197,7 +197,8 @@ export async function runSolverTests(assert) {
       rota: weekResult.rota,
       state: multiWeekState,
       inputs: weekResult.inputs,
-      summary: weekResult.summary
+      summary: weekResult.summary,
+      fullWeekDates: weekResult.fullWeekDates
     }).filter((r) => !r.passed);
     assert(hardFails.length === 0, `Multi-week: week ${wi + 1} has no hard-rule failures`);
   });

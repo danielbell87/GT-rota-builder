@@ -447,6 +447,8 @@ function createDayPlan({
 export function buildRota(inputs, options = {}) {
   const state = getState();
   const dates = buildWeekDates(inputs.weekStart);
+  // Preserve the requested Monday-to-Sunday horizon even if generation stops early.
+  const fullWeekDates = dates.map((item) => item.date);
   const weekDateSet = new Set(dates.map((item) => item.date));
   const availability = getAvailabilityEntries(inputs, state);
   const ruleOverrides = { _availability: availability };
@@ -460,7 +462,8 @@ export function buildRota(inputs, options = {}) {
       status: 'infeasible',
       rota: [],
       validation: [{ day: 'Overall', message: `${mioChefName}: cannot place exactly 3 MIO shifts due to availability/unavailability constraints.`, severity: 'bad' }],
-      summary: []
+      summary: [],
+      fullWeekDates
     };
   }
 
@@ -470,7 +473,8 @@ export function buildRota(inputs, options = {}) {
       status: 'infeasible',
       rota: [],
       validation: [{ day: 'Overall', message: `${mioChefName}: cannot place exactly 2 GT shifts on non-MIO days due to availability/unavailability constraints.`, severity: 'bad' }],
-      summary: []
+      summary: [],
+      fullWeekDates
     };
   }
 
@@ -557,7 +561,7 @@ export function buildRota(inputs, options = {}) {
     });
 
     const validationInputs = { ...inputs, availability };
-    const hardValidation = validateRotaHardRules({ rota, state, inputs: validationInputs, summary });
+    const hardValidation = validateRotaHardRules({ rota, state, inputs: validationInputs, summary, fullWeekDates });
     const hardFailures = hardValidation.filter((result) => !result.passed);
     const isFeasible = rota.length > 0 && !validation.some((item) => item.severity === 'bad') && hardFailures.length === 0;
 
@@ -566,7 +570,8 @@ export function buildRota(inputs, options = {}) {
         status: 'ok',
         rota,
         validation,
-        summary
+        summary,
+        fullWeekDates
       };
     }
 
@@ -575,7 +580,8 @@ export function buildRota(inputs, options = {}) {
         status: 'infeasible',
         rota,
         validation: validation.concat(hardFailures.map((result) => ({ day: 'Overall', message: `${result.ruleId}: ${result.message}`, severity: 'bad' }))),
-        summary
+        summary,
+        fullWeekDates
       };
     }
   }
@@ -584,7 +590,8 @@ export function buildRota(inputs, options = {}) {
     status: 'infeasible',
     rota: [],
     validation: [{ day: 'Overall', message: 'Could not build a valid week plan with current hard constraints.', severity: 'bad' }],
-    summary: []
+    summary: [],
+    fullWeekDates
   };
 }
 
