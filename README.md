@@ -6,6 +6,7 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 
 - **Live rota generation** with real-time updates as inputs change
 - **Chef scheduling** with skill-based section assignments
+- **Compact chefs list** with click-to-edit popup profiles
 - **Availability management** for annual leave and unavailable dates
 - **Additional chef requests** via compact date-based list and modal dialog
 - **Breakfast shift scheduling** with max 1 breakfast per chef per week
@@ -18,10 +19,19 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 
 1. Open `index.html` in a web browser (or use the legacy `GT Rota builder.html` bookmark, which redirects to `index.html`)
 2. Enter the week commencing date
-3. Configure staff availability and skills
+3. Use the **Chefs** list to add staff or open a chef popup for profile, skills, and preference edits
 4. Select a MIO (Management Improvement Officer) chef if needed
 5. Add any additional chef requests (e.g., private events) using the **Add additional chef** button
 6. Review the generated rota, chef-hours summary, and any failed checks
+
+## Chefs UI
+
+- The **Chefs** section now shows a compact staff list with chef name, role, and at most one small status badge.
+- Click **Add chef** to open the staff editor in creation mode.
+- Click any chef row to open the full editable popup profile.
+- The popup keeps profile fields, section skills, availability preferences, and advanced settings in one place.
+- **Remove chef** is only available inside the popup and requires confirmation.
+- Saving a chef updates browser storage and refreshes rota generation without changing solver rules or defaults.
 
 ## Results UI
 
@@ -171,6 +181,8 @@ Saved browser data is persisted with migration-safe localStorage keys.
 - Legacy compatibility keys preserved:
   - `gtRota.mioEligibilityByChef`
   - `gtRota.staffProfilesByChef`
+
+Schema version `5` adds stable chef IDs to stored staff records while preserving existing chef names, skills, preferences, weekly inputs, and published history snapshots.
 
 No external API keys or secrets are required.
 

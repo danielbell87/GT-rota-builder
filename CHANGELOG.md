@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.0 - 2026-07-17
+- Replaced the permanently expanded staff table with a compact **Chefs** list that shows only chef name, role, and one small status badge where useful.
+- Added a reusable chef editor popup for add, edit, and remove flows, with grouped sections for profile, section skills, availability/preferences, and advanced settings.
+- Moved destructive chef removal into the popup and added explicit confirmation before deleting a chef.
+- Added stable chef IDs plus schema v5 storage migration so existing saved staff profiles keep their skills, preferences, weekly inputs, and history references.
+- Updated rename and removal handling so active MIO selections and persistent availability entries stay safe when staff records change.
+- Expanded browser UI coverage for compact list rendering, popup editing, persistence, rename/remove safety, empty-state behaviour, keyboard focus, and mobile overflow.
+- Underlying rota-generation rules, solver behaviour, validation logic, scoring, fairness rules, MIO rules, and default staff behaviour were not changed.
+
 ## 2.1.1 - 2026-07-16
 - Modernised the results UI with compact status cards, lighter section spacing, and simplified validation presentation.
 - Removed successful hard-rule and soft-preference checks from the normal results interface.

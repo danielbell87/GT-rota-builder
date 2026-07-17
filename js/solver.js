@@ -14,7 +14,7 @@ import {
   getRequiredChefCount,
   getCoreSections,
   validateRotaHardRules
-} from './validation.js?v=20260716c';
+} from './validation.js?v=20260717a';
 import { filterAvailabilityForWeek, filterAdditionalChefRequirementsForWeek } from './weekly-inputs.js';
 
 const PASS_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];

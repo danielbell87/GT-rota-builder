@@ -455,8 +455,201 @@ th {
   border: 1px solid #2a3e58;
   border-radius: 16px;
   width: min(720px, 100%);
+  max-height: min(88vh, 920px);
   padding: 20px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.chef-modal-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chef-modal-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.chef-modal-body {
+  display: grid;
+  gap: 14px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.chef-modal-footer {
+  border-top: 1px solid #243547;
+  padding-top: 14px;
+}
+
+.chef-form-section {
+  background: #0b1422;
+  border: 1px solid #243547;
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.chef-advanced-section summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: #dae3ee;
+}
+
+.checkbox-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.checkbox-label {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.checkbox-label input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.input-heading {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.choice-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #304560;
+  border-radius: 999px;
+  background: #101b2c;
+  color: var(--text);
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.choice-chip input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
+.choice-chip.selected {
+  border-color: rgba(77, 200, 255, 0.8);
+  background: rgba(77, 200, 255, 0.12);
+}
+
+.chef-form-error {
+  min-height: 1.4em;
+  font-size: 13px;
+  color: var(--bad);
+}
+
+.chef-danger-zone {
+  border-color: rgba(255, 107, 107, 0.24);
+}
+
+.remove-confirmation {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(255, 107, 107, 0.3);
+  border-radius: 12px;
+  background: rgba(255, 107, 107, 0.08);
+}
+
+.chef-count {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.chef-list {
+  display: grid;
+  gap: 10px;
+}
+
+.chef-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid #243547;
+  border-radius: 14px;
+  background: #0b1422;
+  color: var(--text);
+  text-align: left;
+}
+
+.chef-list-row:hover,
+.chef-list-row:focus-visible {
+  border-color: rgba(77, 200, 255, 0.8);
+  box-shadow: 0 0 0 2px rgba(77, 200, 255, 0.18);
+}
+
+.chef-list-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.chef-list-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: #f5f8fc;
+}
+
+.chef-list-role {
+  color: var(--muted);
+  white-space: normal;
+}
+
+.chef-list-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.chef-list-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: #17263a;
+  color: #dbe9f7;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.chef-list-action {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.chef-empty-state {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  padding: 16px;
+  border: 1px dashed #304560;
+  border-radius: 14px;
+  background: #0b1422;
 }
 
 .small-btn {
@@ -473,30 +666,6 @@ th {
 .inline-input input,
 .inline-input select {
   flex: 1;
-}
-
-.strength-row {
-  font-size: 12px;
-  color: var(--muted);
-  padding-top: 6px;
-}
-
-.strength-pill {
-  display: inline-block;
-  padding: 3px 7px;
-  border-radius: 999px;
-  background: #17263a;
-  color: #e7eef7;
-  margin: 2px 4px 2px 0;
-}
-
-.strength-value-select {
-  margin-left: 4px;
-  padding: 2px 4px;
-  border-radius: 6px;
-  background: #0b1422;
-  color: #fff;
-  border: 1px solid #304560;
 }
 
 .rule-summary {
@@ -747,6 +916,31 @@ th {
     padding: 12px;
   }
 
+  .modal {
+    align-items: flex-end;
+    padding: 10px;
+  }
+
+  .modal-card {
+    width: 100%;
+    max-height: 92vh;
+    border-radius: 18px 18px 0 0;
+    padding: 16px;
+  }
+
+  .chef-modal-body {
+    padding-right: 0;
+  }
+
+  .chef-list-row {
+    align-items: flex-start;
+  }
+
+  .chef-list-meta {
+    flex-direction: column;
+    align-items: flex-end;
+  }
+
   .summary-table th,
   .summary-table td,
   .issue-list li {
@@ -757,5 +951,13 @@ th {
   .week-check-summary,
   .results-subtitle {
     overflow-wrap: anywhere;
+  }
+
+  .chip-group {
+    gap: 6px;
+  }
+
+  .choice-chip {
+    padding: 8px 10px;
   }
 }

@@ -1,4 +1,4 @@
-import { CHEF_ROLES, CORE_SECTIONS, DISPLAY_SECTIONS, MIO_ROTATION_ORDER, TARGET_HOURS } from './constants.js';
+import { CHEF_ROLES, CORE_SECTIONS, DISPLAY_SECTIONS, EDITABLE_SKILL_SECTIONS, MIO_ROTATION_ORDER, TARGET_HOURS } from './constants.js';
 import { getState } from './state.js';
 import {
   formatDate,
@@ -10,8 +10,9 @@ import {
   getWeekStartAtOffset
 } from './utils.js';
 import { scoreSoftPreferences } from './scoring.js';
+import { isSenior } from './scoring.js';
 import { buildRota, buildMultiWeekRota } from './solver.js';
-import { validateRotaHardRules, validateRotaSoftRules } from './validation.js?v=20260716c';
+import { validateRotaHardRules, validateRotaSoftRules } from './validation.js?v=20260717a';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
 
 function getRequiredElement(id) {
@@ -385,18 +386,139 @@ function renderPlanningHorizonSummary() {
   horizonLabel.textContent = `Planning horizon: ${formatPlanningHorizonLabel(state.weeklyInputs.weekStart, state.weeklyInputs.numWeeks)} (${state.weeklyInputs.numWeeks} week${state.weeklyInputs.numWeeks === 1 ? '' : 's'})`;
 }
 
-export function openAddChefModal() {
-  getRequiredElement('newChefName').value = '';
-  getRequiredElement('newChefRole').innerHTML = CHEF_ROLES.map((role) => `<option>${role}</option>`).join('');
-  getRequiredElement('newChefMio').value = 'true';
-  getRequiredElement('newChefWeekendRule').value = '';
-  getRequiredElement('newChefFixedDayOff').value = '';
-  document.querySelectorAll('.new-skill-select').forEach((select) => { select.value = '0'; });
-  getRequiredElement('chefModal').classList.add('open');
+function setCheckboxGroupValues(selector, values = []) {
+  const selected = new Set(values);
+  document.querySelectorAll(selector).forEach((input) => {
+    const optionValue = input.dataset.preferredDayOff || input.dataset.preferredSection || input.value;
+    input.checked = selected.has(optionValue);
+    input.closest('.choice-chip')?.classList.toggle('selected', input.checked);
+  });
 }
 
-export function closeAddChefModal() {
-  getRequiredElement('chefModal').classList.remove('open');
+function syncChoiceChipState(input) {
+  input.closest('.choice-chip')?.classList.toggle('selected', !!input.checked);
+}
+
+export function syncChefChoiceChipState(input) {
+  syncChoiceChipState(input);
+}
+
+function getStaffForDisplay() {
+  const state = getState();
+  return state.staff
+    .map((chef, index) => ({ chef, index }))
+    .sort((a, b) => {
+      const hierarchyA = Number.isFinite(a.chef.hierarchy) ? a.chef.hierarchy : Number.MAX_SAFE_INTEGER;
+      const hierarchyB = Number.isFinite(b.chef.hierarchy) ? b.chef.hierarchy : Number.MAX_SAFE_INTEGER;
+      if (hierarchyA !== hierarchyB) return hierarchyA - hierarchyB;
+      return a.index - b.index;
+    });
+}
+
+function formatChefSecondaryLabel(chef) {
+  if (isSenior(chef)) return 'Senior';
+  if (chef.mioEligible) return 'MIO eligible';
+  return '';
+}
+
+export function openChefModal() {
+  const modal = getRequiredElement('chefModal');
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+}
+
+export function closeChefModal() {
+  const modal = getRequiredElement('chefModal');
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+}
+
+export function clearChefModalError() {
+  const errorEl = getRequiredElement('chefFormError');
+  errorEl.textContent = '';
+  document.querySelectorAll('#chefForm [aria-invalid="true"]').forEach((field) => {
+    field.removeAttribute('aria-invalid');
+    field.removeAttribute('aria-describedby');
+  });
+}
+
+export function showChefModalError(message, fieldId = '') {
+  clearChefModalError();
+  const errorEl = getRequiredElement('chefFormError');
+  errorEl.textContent = message || '';
+  if (!fieldId) return;
+  const field = document.getElementById(fieldId);
+  if (!field) return;
+  field.setAttribute('aria-invalid', 'true');
+  field.setAttribute('aria-describedby', 'chefFormError');
+}
+
+export function setChefRemovalConfirmation(open, chefName = '') {
+  const confirmation = getRequiredElement('chefRemoveConfirmation');
+  const confirmText = getRequiredElement('chefRemoveConfirmationText');
+  const confirmButton = getRequiredElement('confirmRemoveChefBtn');
+  confirmText.textContent = `Remove ${chefName || 'this chef'} from the staff list? Existing rota and history references may be affected, but published history snapshots will be kept where possible.`;
+  confirmButton.textContent = chefName ? `Remove ${chefName}` : 'Remove chef';
+  confirmation.classList.toggle('hidden', !open);
+}
+
+export function populateChefModal({ chef, mode = 'create', showRemove = false }) {
+  const modalTitle = getRequiredElement('chefModalTitle');
+  const modalSubtitle = getRequiredElement('chefModalSubtitle');
+  const roleSelect = getRequiredElement('chefRoleInput');
+  const saveButton = getRequiredElement('saveChefBtn');
+  const removeSection = getRequiredElement('chefDangerZone');
+  const advancedSection = getRequiredElement('chefAdvancedSection');
+
+  roleSelect.innerHTML = ['<option value="">Select role</option>', ...CHEF_ROLES.map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`)].join('');
+  modalTitle.textContent = mode === 'create' ? 'Add chef' : 'Edit chef';
+  modalSubtitle.textContent = mode === 'create' ? 'Create a new staff profile' : `${chef.name} · ${chef.role || 'Role not set'}`;
+  saveButton.textContent = mode === 'create' ? 'Add chef' : 'Save changes';
+
+  getRequiredElement('chefNameInput').value = chef.name || '';
+  roleSelect.value = chef.role || '';
+  getRequiredElement('chefHierarchyInput').value = String(chef.hierarchy ?? '');
+  getRequiredElement('chefServicePaceInput').value = chef.servicePace || 'steady';
+  getRequiredElement('chefSeniorInput').checked = !!(chef.senior || chef.seniorStatus);
+  getRequiredElement('chefWeekendRuleInput').value = chef.weekendRule || '';
+  getRequiredElement('chefFixedDayOffInput').value = chef.fixedDayOff || '';
+  getRequiredElement('chefPreferredBreakfastInput').value = chef.preferredBreakfast || '';
+  getRequiredElement('chefMioEligibleInput').checked = !!chef.mioEligible;
+  getRequiredElement('chefBreakfastEligibleInput').checked = chef.breakfastEligible !== false;
+  getRequiredElement('chefNotesInput').value = chef.notes || '';
+  EDITABLE_SKILL_SECTIONS.forEach((section) => {
+    const field = document.getElementById(`chefSkill${section}Input`);
+    if (field) field.value = String(chef.skills?.[section] ?? 0);
+  });
+  setCheckboxGroupValues('input[data-preferred-day-off]', chef.preferredDaysOff || []);
+  setCheckboxGroupValues('input[data-preferred-section]', chef.preferredSections || []);
+  removeSection.classList.toggle('hidden', !showRemove);
+  advancedSection.open = false;
+  setChefRemovalConfirmation(false, chef.name || '');
+  clearChefModalError();
+}
+
+export function readChefDraftFromModal() {
+  return {
+    name: getRequiredElement('chefNameInput').value.trim(),
+    role: getRequiredElement('chefRoleInput').value,
+    hierarchy: Number.parseInt(getRequiredElement('chefHierarchyInput').value, 10),
+    servicePace: getRequiredElement('chefServicePaceInput').value,
+    senior: getRequiredElement('chefSeniorInput').checked,
+    seniorStatus: getRequiredElement('chefSeniorInput').checked,
+    weekendRule: getRequiredElement('chefWeekendRuleInput').value,
+    fixedDayOff: getRequiredElement('chefFixedDayOffInput').value,
+    preferredBreakfast: getRequiredElement('chefPreferredBreakfastInput').value,
+    mioEligible: getRequiredElement('chefMioEligibleInput').checked,
+    breakfastEligible: getRequiredElement('chefBreakfastEligibleInput').checked,
+    preferredDaysOff: [...document.querySelectorAll('input[data-preferred-day-off]:checked')].map((input) => input.dataset.preferredDayOff),
+    preferredSections: [...document.querySelectorAll('input[data-preferred-section]:checked')].map((input) => input.dataset.preferredSection),
+    notes: getRequiredElement('chefNotesInput').value,
+    skills: Object.fromEntries(EDITABLE_SKILL_SECTIONS.map((section) => [
+      section,
+      Number.parseInt(document.getElementById(`chefSkill${section}Input`)?.value || '0', 10)
+    ]))
+  };
 }
 
 export function renderAdditionalChefRequirements() {
@@ -458,27 +580,39 @@ export function renderMioControls() {
 
 export function renderStaffTable() {
   const state = getState();
-  const body = getRequiredElement('staffBody');
-  body.innerHTML = '';
-  state.staff.forEach((chef, index) => {
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td><input data-field="name" data-index="${index}" value="${escapeHtml(chef.name)}" /></td>
-      <td><select data-field="role" data-index="${index}">${CHEF_ROLES.map((role) => `<option value="${role}" ${chef.role === role ? 'selected' : ''}>${role}</option>`).join('')}</select></td>
-      <td><select data-field="mio" data-index="${index}"><option value="true" ${chef.mioEligible ? 'selected' : ''}>Yes</option><option value="false" ${!chef.mioEligible ? 'selected' : ''}>No</option></select></td>
-      <td><select data-field="weekend" data-index="${index}"><option value="" ${!chef.weekendRule ? 'selected' : ''}>None</option><option ${chef.weekendRule === 'Works weekends' ? 'selected' : ''}>Works weekends</option><option ${chef.weekendRule === 'Does not work weekends' ? 'selected' : ''}>Does not work weekends</option></select></td>
-      <td><select data-field="fixedDay" data-index="${index}"><option value="" ${!chef.fixedDayOff ? 'selected' : ''}>None</option><option value="Monday" ${chef.fixedDayOff === 'Monday' ? 'selected' : ''}>Monday</option><option value="Tuesday" ${chef.fixedDayOff === 'Tuesday' ? 'selected' : ''}>Tuesday</option><option value="Wednesday" ${chef.fixedDayOff === 'Wednesday' ? 'selected' : ''}>Wednesday</option><option value="Thursday" ${chef.fixedDayOff === 'Thursday' ? 'selected' : ''}>Thursday</option><option value="Friday" ${chef.fixedDayOff === 'Friday' ? 'selected' : ''}>Friday</option><option value="Saturday" ${chef.fixedDayOff === 'Saturday' ? 'selected' : ''}>Saturday</option><option value="Sunday" ${chef.fixedDayOff === 'Sunday' ? 'selected' : ''}>Sunday</option></select></td>
-      <td><button class="danger small-btn" data-remove-chef="${index}">Remove</button></td>`;
+  const container = getRequiredElement('staffList');
+  const countLabel = getRequiredElement('staffCountLabel');
+  countLabel.textContent = `· ${state.staff.length}`;
 
-    const strengthRow = document.createElement('tr');
-    strengthRow.innerHTML = `
-      <td colspan="7">
-        <div class="strength-row">Section strength: ${CORE_SECTIONS.map((section) => `<span class="strength-pill">${section}: <select data-skill="${section}" data-index="${index}" class="strength-select strength-value-select">${[0, 1, 2, 3].map((value) => `<option value="${value}" ${chef.skills?.[section] === value ? 'selected' : ''}>${value}</option>`).join('')}</select></span>`).join('')}</div>
-      </td>`;
+  if (!state.staff.length) {
+    container.innerHTML = `
+      <div class="chef-empty-state">
+        <p class="small">No chefs have been added.</p>
+        <button type="button" class="secondary" data-open-chef-create="true">Add chef</button>
+      </div>`;
+    renderMioControls();
+    return;
+  }
 
-    body.appendChild(row);
-    body.appendChild(strengthRow);
-  });
+  container.innerHTML = getStaffForDisplay().map(({ chef }) => {
+    const label = formatChefSecondaryLabel(chef);
+    return `
+      <button
+        type="button"
+        class="chef-list-row"
+        data-open-chef-id="${escapeHtml(chef.id)}"
+        aria-label="Edit ${escapeHtml(chef.name)}, ${escapeHtml(chef.role)}"
+      >
+        <span class="chef-list-copy">
+          <span class="chef-list-name">${escapeHtml(chef.name)}</span>
+          <span class="chef-list-role">${escapeHtml(chef.role)}</span>
+        </span>
+        <span class="chef-list-meta">
+          ${label ? `<span class="chef-list-badge">${escapeHtml(label)}</span>` : ''}
+          <span class="chef-list-action" aria-hidden="true">Edit ›</span>
+        </span>
+      </button>`;
+  }).join('');
   renderMioControls();
 }
 
@@ -486,11 +620,12 @@ export function renderAvailabilityTable() {
   const state = getState();
   const body = getRequiredElement('availabilityBody');
   const horizon = getPlanningHorizon(state.weeklyInputs.weekStart, state.weeklyInputs.numWeeks);
+  const staffOptions = getStaffForDisplay().map(({ chef }) => chef);
   body.innerHTML = '';
   state.weeklyInputs.availability.forEach((entry, index) => {
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td><select class="entry-chef" data-index="${index}">${state.staff.map((staff) => `<option value="${escapeHtml(staff.name)}" ${entry.chef === staff.name ? 'selected' : ''}>${escapeHtml(staff.name)}</option>`).join('')}</select></td>
+      <td><select class="entry-chef" data-index="${index}">${staffOptions.map((staff) => `<option value="${escapeHtml(staff.name)}" ${entry.chef === staff.name ? 'selected' : ''}>${escapeHtml(staff.name)}</option>`).join('')}</select></td>
       <td><select class="entry-type" data-index="${index}"><option ${entry.type === 'Annual Leave' ? 'selected' : ''}>Annual Leave</option><option ${entry.type === 'Unavailable' ? 'selected' : ''}>Unavailable</option></select></td>
       <td><input class="entry-start-date" type="date" min="${horizon.start}" max="${horizon.end}" data-index="${index}" value="${entry.startDate || ''}"></td>
       <td><input class="entry-finish-date" type="date" min="${horizon.start}" max="${horizon.end}" data-index="${index}" value="${entry.finishDate || ''}"></td>
