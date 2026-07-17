@@ -2,6 +2,7 @@ import { CORE_SECTIONS, ROLE_WEIGHT } from './constants.js';
 import { normalizeWeekStart, parseLocalDate, toDateString } from './utils.js';
 import { isSenior } from './scoring.js';
 
+// Weekly leave credit is capped at four days because a standard GT week targets four credited workdays.
 const MAX_CREDITABLE_LEAVE_DAYS = 4;
 
 export function isUnavailable(staff, date, dayName, ruleOverrides) {

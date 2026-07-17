@@ -133,7 +133,7 @@ export async function runValidationTests(assert) {
   });
   const fridayLeaveH016 = findRule(fridayLeaveValidation, 'H016', 'Fred');
   const fridayLeaveTarget = parseGtDayRule(fridayLeaveH016);
-  assert(fridayLeaveH016?.passed, 'Partial rota stopping on Wednesday still credits Friday annual leave');
+  assert(fridayLeaveH016?.passed, 'Partial rota stopping on Wednesday correctly adjusts the GT target for Friday leave');
   assert(fridayLeaveTarget?.target === 3 && fridayLeaveTarget?.actual === 3, 'Later Friday leave still reduces the expected GT target');
 
   const weekendLeaveState = setupState();
@@ -214,7 +214,7 @@ export async function runValidationTests(assert) {
   const mioH015 = findRule(mioLeaveValidation, 'H015', 'Dan');
   const mioH022 = findRule(mioLeaveValidation, 'H022', 'Dan');
   const mioGtTarget = parseExactShiftRule(mioH022, 'GT shifts');
-  assert(mioH015?.passed, 'Selected MIO chef still expects exactly 3 MIO shifts on the actual partial rota');
+  assert(mioH015?.passed, 'Selected MIO chef still validates exactly 3 MIO shifts against the generated rota days');
   assert(mioH022 && !mioH022.passed && mioGtTarget?.expected === 2 && mioGtTarget?.actual === 1, 'Selected MIO chef keeps the existing 2 GT-shift rule');
 
   const finalBaselineState = setupState();
