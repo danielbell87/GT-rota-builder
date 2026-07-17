@@ -17,10 +17,8 @@ export function getRoleBonus(staff, dayName) {
   return bonus;
 }
 
-export function getSoftRulePenalty(staffName, dayName) {
-  if (staffName === 'Aled' && ['Saturday', 'Sunday'].includes(dayName)) return 8;
-  if (staffName === 'Charlie' && dayName === 'Tuesday') return 8;
-  return 0;
+export function getPreferredDayOffPenalty(staff, dayName) {
+  return Array.isArray(staff?.preferredDaysOff) && staff.preferredDaysOff.includes(dayName) ? 8 : 0;
 }
 
 export function isSenior(staff) {

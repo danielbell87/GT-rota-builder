@@ -2,10 +2,9 @@ export const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday',
 export const CORE_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry'];
 export const DISPLAY_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry', 'Float', 'Breakfast', 'MIO'];
 export const EDITABLE_SKILL_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry', 'Breakfast'];
-export const WEEKEND_RULE_OPTIONS = ['', 'Works weekends', 'Does not work weekends'];
 
-export const APP_BUILD_VERSION = '2026.07.17.5';
-export const CACHE_BUST_VERSION = '20260717e';
+export const APP_BUILD_VERSION = '2026.07.17.6';
+export const CACHE_BUST_VERSION = '20260717f';
 export const MIO_ROTATION_ORDER = ['Dan', 'Fred', 'Joel', 'Camilla', 'Brooke'];
 export const DAY_FAIRNESS_WEIGHTS = {
   Monday: 0,

@@ -129,7 +129,6 @@ The workbook uses several dropdown-style fields in the weekly input section and 
 ## Important formulas and logic
 
 ### Settings
-- H001: Aled does not work Saturday or Sunday.
 - H002: Charlie is always off Tuesday.
 - H003: Exactly one breakfast chef is assigned each day.
 - H004: Monday to Wednesday require 4 GT chefs.
