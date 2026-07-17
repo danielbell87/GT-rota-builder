@@ -33,8 +33,7 @@
 - `gtRota.schemaVersion`: schema/migration marker (current: 6)
 - `gtRota.state.v2`: primary persisted application state snapshot
 - `gtRota.history.v1`: published history records
-- `gtRota.mioEligibilityByChef`: legacy compatibility map for MIO eligibility by chef name
-- `gtRota.staffProfilesByChef`: legacy compatibility map for staff role/skills by chef name
+- Legacy per-chef MIO and profile maps are imported once by schema migration 9 and then deleted.
 
 ## Current Staff UX Notes
 - The main chefs panel is intentionally compact and hides technical rule data until a chef popup is opened.

@@ -5,12 +5,12 @@ import { normalizeWeekStart } from './utils.js';
 export const STORAGE_KEYS = {
   schemaVersion: 'gtRota.schemaVersion',
   appState: 'gtRota.state.v2',
-  history: 'gtRota.history.v1',
-  mioEligibilityByChef: 'gtRota.mioEligibilityByChef',
-  staffProfilesByChef: 'gtRota.staffProfilesByChef'
+  history: 'gtRota.history.v1'
 };
 
-const CURRENT_SCHEMA_VERSION = 7;
+const LEGACY_MIO_ELIGIBILITY_KEY = 'gtRota.mioEligibilityByChef';
+const LEGACY_STAFF_PROFILES_KEY = 'gtRota.staffProfilesByChef';
+const CURRENT_SCHEMA_VERSION = 9;
 
 function safeParse(raw, fallback) {
   if (!raw) return fallback;
@@ -45,76 +45,26 @@ function normalizeWeeklyInputsShape(weeklyInputs = {}, fallbackWeekStart = '') {
   };
 }
 
-export function getPersistedMioEligibilityMap() {
-  const parsed = safeParse(localStorage.getItem(STORAGE_KEYS.mioEligibilityByChef), {});
-  return parsed && typeof parsed === 'object' ? parsed : {};
-}
-
-function savePersistedMioEligibilityMap(map) {
-  try {
-    localStorage.setItem(STORAGE_KEYS.mioEligibilityByChef, JSON.stringify(map));
-  } catch {
-    // Ignore storage failures; app should still function without persistence.
-  }
-}
-
-export function applyPersistedMioEligibility() {
-  const state = getState();
-  const persisted = getPersistedMioEligibilityMap();
-  state.staff.forEach((staff) => {
-    if (Object.prototype.hasOwnProperty.call(persisted, staff.name)) {
-      staff.mioEligible = !!persisted[staff.name];
+function migrateLegacyChefStores(staff = []) {
+  const mioEligibility = safeParse(localStorage.getItem(LEGACY_MIO_ELIGIBILITY_KEY), {});
+  const profiles = safeParse(localStorage.getItem(LEGACY_STAFF_PROFILES_KEY), {});
+  return normalizeStaffRecords(staff.map((chef) => {
+    const profile = profiles?.[chef.name];
+    const merged = profile && typeof profile === 'object'
+      ? {
+          ...chef,
+          role: profile.role || chef.role,
+          skills: profile.skills && typeof profile.skills === 'object'
+            ? { ...(chef.skills || {}), ...profile.skills }
+            : chef.skills,
+          mioEligible: typeof profile.mioEligible === 'boolean' ? profile.mioEligible : chef.mioEligible
+        }
+      : { ...chef };
+    if (mioEligibility && Object.prototype.hasOwnProperty.call(mioEligibility, chef.name)) {
+      merged.mioEligible = !!mioEligibility[chef.name];
     }
-  });
-}
-
-export function persistAllMioEligibility() {
-  const state = getState();
-  const persisted = Object.fromEntries(state.staff.map((staff) => [staff.name, !!staff.mioEligible]));
-  savePersistedMioEligibilityMap(persisted);
-}
-
-function getPersistedStaffProfilesMap() {
-  const parsed = safeParse(localStorage.getItem(STORAGE_KEYS.staffProfilesByChef), {});
-  return parsed && typeof parsed === 'object' ? parsed : {};
-}
-
-function savePersistedStaffProfilesMap(map) {
-  try {
-    localStorage.setItem(STORAGE_KEYS.staffProfilesByChef, JSON.stringify(map));
-  } catch {
-    // Ignore storage failures.
-  }
-}
-
-export function applyPersistedStaffProfiles() {
-  const state = getState();
-  const persisted = getPersistedStaffProfilesMap();
-  state.staff.forEach((staff) => {
-    const profile = persisted[staff.name];
-    if (!profile || typeof profile !== 'object') return;
-    if (profile.role) staff.role = profile.role;
-    if (typeof profile.mioEligible === 'boolean') staff.mioEligible = profile.mioEligible;
-    if (typeof profile.fixedDayOff === 'string') staff.fixedDayOff = profile.fixedDayOff;
-    if (profile.skills && typeof profile.skills === 'object') {
-      staff.skills = { ...(staff.skills || {}), ...profile.skills };
-    }
-  });
-  state.staff = normalizeStaffRecords(state.staff);
-}
-
-export function persistAllStaffProfiles() {
-  const state = getState();
-  const persisted = Object.fromEntries(state.staff.map((staff) => [
-    staff.name,
-    {
-      role: staff.role,
-      mioEligible: !!staff.mioEligible,
-      fixedDayOff: staff.fixedDayOff || '',
-      skills: { ...(staff.skills || {}) }
-    }
-  ]));
-  savePersistedStaffProfilesMap(persisted);
+    return merged;
+  }));
 }
 
 function migrateLegacyAdditionalChefRequests(saved) {
@@ -163,11 +113,6 @@ export function migrateStorageIfNeeded() {
   const current = Number(localStorage.getItem(STORAGE_KEYS.schemaVersion) || 0);
   if (current >= CURRENT_SCHEMA_VERSION) return;
 
-  if (current < 2) {
-    const appState = getState();
-    saveAppState(appState);
-  }
-
   let saved = safeParse(localStorage.getItem(STORAGE_KEYS.appState), null);
   if (saved && typeof saved === 'object') {
     if (current < 3) {
@@ -186,9 +131,19 @@ export function migrateStorageIfNeeded() {
     if (current < 7 && Array.isArray(saved.staff)) {
       saved.staff = normalizeStaffRecords(saved.staff);
     }
+    if (current < 8 && Array.isArray(saved.staff)) {
+      saved.staff = normalizeStaffRecords(saved.staff);
+    }
+    if (current < 9 && Array.isArray(saved.staff)) {
+      saved.staff = migrateLegacyChefStores(saved.staff);
+    }
     localStorage.setItem(STORAGE_KEYS.appState, JSON.stringify(saved));
   }
 
+  if (current < 9) {
+    localStorage.removeItem(LEGACY_MIO_ELIGIBILITY_KEY);
+    localStorage.removeItem(LEGACY_STAFF_PROFILES_KEY);
+  }
   localStorage.setItem(STORAGE_KEYS.schemaVersion, String(CURRENT_SCHEMA_VERSION));
 }
 
@@ -215,8 +170,6 @@ export function loadAppState() {
     }
   }
 
-  applyPersistedStaffProfiles();
-  applyPersistedMioEligibility();
   syncCompatibilityViews();
 }
 
@@ -230,8 +183,6 @@ export function saveAppState(state) {
       history: state.history,
       uiState: state.uiState
     }));
-    persistAllStaffProfiles();
-    persistAllMioEligibility();
   } catch {
     // Ignore write failures; persistence should be best-effort.
   }

@@ -1,6 +1,6 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota } from '../js/solver.js';
-import { validateRotaHardRules, validateRotaSoftRules, isRotaValid, getStaffConfigurationWarnings } from '../js/validation.js?v=20260717f';
+import { validateRotaHardRules, validateRotaSoftRules, isRotaValid, getStaffConfigurationWarnings } from '../js/validation.js?v=20260717h';
 
 function createSummary(state, annualLeaveHoursByChef = {}) {
   return state.staff.map((chef) => {
@@ -71,6 +71,28 @@ export async function runValidationTests(assert) {
   const passPreferenceChecks = softValidation.filter((v) => v.ruleId === 'prefer-senior-on-pass');
   assert(passPreferenceChecks.length === 4, 'Soft validation reports senior-on-Pass checks Thu-Sun');
   assert(passPreferenceChecks.every((v) => v.passed), 'Baseline rota satisfies senior-on-Pass soft preference');
+
+  const roleOnlySeniorState = JSON.parse(JSON.stringify(state));
+  roleOnlySeniorState.staff.forEach((chef) => { chef.senior = false; });
+  roleOnlySeniorState.staff[0].role = 'Executive Chef';
+  const roleOnlySeniorValidation = validateRotaHardRules({ rota: result.rota, state: roleOnlySeniorState, inputs: roleOnlySeniorState.weeklyInputs, summary: result.summary, fullWeekDates: result.fullWeekDates });
+  assert(roleOnlySeniorValidation.some((v) => v.ruleId === 'H008' && !v.passed), 'Role alone never satisfies senior-cover validation');
+
+  const explicitSeniorState = JSON.parse(JSON.stringify(roleOnlySeniorState));
+  const mondaySeniorName = result.rota[0].chefs[0];
+  const mondaySeniorChef = explicitSeniorState.staff.find((chef) => chef.name === mondaySeniorName);
+  mondaySeniorChef.role = 'Commis Chef';
+  mondaySeniorChef.senior = true;
+  const mondayOnlyRota = [result.rota[0]];
+  const explicitSeniorValidation = validateRotaHardRules({ rota: mondayOnlyRota, state: explicitSeniorState, inputs: explicitSeniorState.weeklyInputs, summary: result.summary, fullWeekDates: result.fullWeekDates });
+  assert(explicitSeniorValidation.some((v) => v.ruleId === 'H008' && v.passed), 'Only canonical senior true satisfies senior-cover validation regardless of role');
+
+  const breakfastEligibilityCorrupted = JSON.parse(JSON.stringify(result.rota));
+  const firstBreakfast = breakfastEligibilityCorrupted[0].assignments.find((assignment) => assignment.section === 'Breakfast');
+  const breakfastEligibilityState = JSON.parse(JSON.stringify(state));
+  breakfastEligibilityState.staff.find((chef) => chef.name === firstBreakfast.chef).breakfastEligible = false;
+  const breakfastEligibilityValidation = validateRotaHardRules({ rota: breakfastEligibilityCorrupted, state: breakfastEligibilityState, inputs: breakfastEligibilityState.weeklyInputs, summary: result.summary, fullWeekDates: result.fullWeekDates });
+  assert(breakfastEligibilityValidation.some((v) => v.ruleId === 'H028' && !v.passed), 'Validation rejects a Breakfast assignment for an ineligible chef');
 
   const corrupted = JSON.parse(JSON.stringify(result.rota));
   corrupted[0].assignments = corrupted[0].assignments.filter((a) => a.section !== 'Breakfast');

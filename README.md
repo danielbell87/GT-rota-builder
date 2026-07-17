@@ -35,7 +35,7 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 - The popup uses four section levels everywhere: **Should not cover**, **In training**, **Competent**, **Preferred**.
 - **Preferred** combines strongest suitability and generic section preference; there is no separate preferred-section field.
 - **Preferred Days Off** is the sole day-off preference mechanism and supports every day from Monday through Sunday.
-- Role and Senior status now replace the obsolete hierarchy number field.
+- Role is display-only. The **Senior chef** checkbox is the sole source of senior-cover eligibility.
 - Service pace has been removed because it is not used by rota generation.
 
 ## Results UI
@@ -148,7 +148,7 @@ Edit the natural-language rule field in the app to customize:
 - Breakfast eligibility
 - Any other scheduling overrides
 
-Example: `Aled prefers Pass; Charlie off Tuesday; Dan breakfast eligible`
+Example: `Increase senior cover for Friday event`
 
 ## Technology
 
@@ -197,11 +197,7 @@ Saved browser data is persisted with migration-safe localStorage keys.
 
 - Primary state: `gtRota.state.v2`
 - History: `gtRota.history.v1`
-- Legacy compatibility keys preserved:
-  - `gtRota.mioEligibilityByChef`
-  - `gtRota.staffProfilesByChef`
-
-Schema version `7` also removes the obsolete chef weekend setting. Legacy values are ignored rather than converted, while stable chef IDs, Preferred Days Off, section levels, weekly inputs, and published history snapshots are preserved.
+Schema version `9` consolidates legacy senior status, Fixed Day Off, MIO eligibility, and staff-profile data into canonical chef records. The obsolete per-chef localStorage maps are removed after migration. Existing notes, section levels, Preferred Days Off, dated availability, weekly inputs, generated rotas, and published history are preserved.
 
 No external API keys or secrets are required.
 
@@ -209,6 +205,7 @@ No external API keys or secrets are required.
 
 - ✅ Simplified chef profiles to section levels only
 - ✅ Removed obsolete hierarchy, service pace, and separate preferred-sections fields
+- ✅ Removed Preferred Breakfast, role-derived seniority, named-chef rules, and duplicate staff data
 - ✅ Added schema-safe migration for existing saved staff profiles
 - ✅ Preserved senior-on-Pass, MIO, fairness, leave, and specialist rota rules
 - ✅ Enforced exact weekly GT targets with explicit Float assignments and adjusted leave targets

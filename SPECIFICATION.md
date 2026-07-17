@@ -11,7 +11,7 @@ Generate a weekly GT kitchen rota from staff capabilities, availability, hard co
 - Soft preference: affects score and explanation but does not override hard rules
 
 ## Staff Model
-Each chef includes a stable `id`, name, role, structured senior flag, MIO eligibility, section levels, fixed day constraints, preferences, and notes. The obsolete hierarchy number, service pace field, and separate preferred-sections list are no longer part of the staff model.
+Each chef contains only `id`, `name`, display-only `role`, canonical `senior`, `breakfastEligible`, `mioEligible`, `preferredDaysOff`, `skills`, and `notes`. Only `senior === true` counts toward senior cover; role never affects generation or scoring. Preferred Days Off is the only recurring day-off mechanism and is soft and overridable.
 
 ## Staff Management UI
 - The normal **Chefs** panel is a compact clickable list that shows only identity-level information.
@@ -54,10 +54,6 @@ Weekly GT allocation is solved across the whole week rather than as seven isolat
 
 ## Hard Rules
 Implemented as structured hard validation checks in `js/validation.js` and rule metadata in `data/default-rules.js`, including:
-- Charlie no Tuesday
-- Myles Larder-only default
-- Fred Garnish-only default
-- Joel Sauce-only default
 - One breakfast chef daily
 - Breakfast chef also core-assigned
 - Senior daily cover
@@ -73,7 +69,7 @@ Implemented as structured hard validation checks in `js/validation.js` and rule 
 - Concurrent leave guardrail
 
 ## Soft Preferences
-Soft scoring in `js/scoring.js` evaluates section-level fit, breakfast fairness, weekend fairness, and additional preference penalties/bonuses without permitting hard-rule breaches.
+Soft scoring in `js/scoring.js` evaluates section-level fit, Preferred Days Off, breakfast fairness, weekend fairness, and additional preference penalties/bonuses without permitting hard-rule breaches. Scheduling on a Preferred Day Off remains possible and produces an explicit diagnostic explaining the operational override.
 
 Senior-on-Pass preference is implemented as a strong soft rule:
 - Thursday to Sunday, prefer assigning Pass to an available senior chef.
@@ -113,7 +109,7 @@ Browser localStorage stores:
 - history
 - legacy compatibility maps for staff profiles and MIO eligibility
 
-Schema version 6 migrates existing staff records idempotently by preserving section level values and stable IDs while removing obsolete `hierarchy`, `servicePace`, and `preferredSections` fields. Weekly inputs, leave/unavailability data, fairness history, and published rota history remain intact.
+Schema version 9 migrates existing staff records idempotently. It consolidates `seniorStatus` into `senior`, moves a legacy `fixedDayOff` into Preferred Days Off once, imports legacy MIO/profile maps into chef records, and removes obsolete stores and profile fields. Weekly inputs, dated availability, notes, generated rotas, fairness history, and published history remain intact.
 
 ## Known Limitations
 - No external optimization engine; candidate generation is heuristic

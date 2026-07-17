@@ -8,22 +8,12 @@ Represents each chef in the kitchen team.
 Fields:
 - id: unique identifier
 - name: full name
-- role: job role or title
-- senior: boolean
-- seniority_rank: numeric seniority value
-- contract_hours: target or contractual weekly hours
+- role: display-only job role or title
+- senior: boolean; the sole source of senior-cover eligibility
+- breakfast_eligible: boolean
 - mio_eligible: boolean
 - preferred_days_off: list of day names (Sunday through Saturday)
-- fixed_day_off: optional day name
-- can_lead_service: boolean
-- can_run_pass: boolean
-- pass_skill: numeric section level (0-3)
-- sauce_skill: numeric section level (0-3)
-- garnish_skill: numeric section level (0-3)
-- larder_skill: numeric section level (0-3)
-- pastry_skill: numeric section level (0-3)
-- breakfast_eligible: boolean
-- preferred_breakfast: optional day name
+- skills: section-level map using Should not cover, In training, Competent, and Preferred
 - notes: free-text notes
 
 ### WeeklyInput

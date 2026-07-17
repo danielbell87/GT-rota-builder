@@ -32,7 +32,7 @@
 
 ### Staff
 - Purpose: master staff database.
-- Holds staff names, roles, seniority, contract hours, section levels, eligibility, fixed day-off information, and notes.
+- Holds staff names, roles, seniority, contract hours, section levels, eligibility, editable Preferred Days Off, and notes.
 
 ### Settings
 - Purpose: rule catalog and configuration.
@@ -67,7 +67,7 @@
 - Unavailable entries
 
 ### Staff
-- Staff name, role, seniority rank, contract hours, eligibility flags, section levels, fixed day off, notes
+- Staff name, role, seniority rank, contract hours, eligibility flags, section levels, Preferred Days Off, notes
 
 ### Settings
 - Rule text and active flags
@@ -114,11 +114,13 @@ The workbook uses several dropdown-style fields in the weekly input section and 
 - Annual Leave
 - Unavailable
 
-### Staff section skill scale
-- 3.0 = Preferred / can lead section
-- 2.0 = Fully competent
-- 1.0 = Training / emergency only
-- 0.0 = Do not roster on this section
+### Staff section levels
+- Preferred
+- Competent
+- In training
+- Should not cover
+
+The application stores these labels internally as ordered numeric values for deterministic comparison, but numeric values are not user-facing profile controls.
 
 ### Rule priority / severity values
 - Hard
@@ -129,19 +131,18 @@ The workbook uses several dropdown-style fields in the weekly input section and 
 ## Important formulas and logic
 
 ### Settings
-- H002: Charlie is always off Tuesday.
 - H003: Exactly one breakfast chef is assigned each day.
 - H004: Monday to Wednesday require 4 GT chefs.
 - H005: Thursday to Sunday require 5 GT chefs.
 - H006: Exactly one eligible junior chef is assigned to MIO each week.
 - H007: MIO pattern is Monday–Wednesday at MIO and Saturday–Sunday at GT.
-- H008: At least one of Aled, Charlie, Adam, or Connor works each day.
+- H008: At least one chef whose canonical Senior chef field is true works each day.
 - H009: Required sections must be covered by an eligible chef.
 - H010: Annual leave credits are 12 hours per day; 4 days covers a full 7-day week away.
 
 ### Validation
 - Daily staffing checks use the rota table and day-level staffing requirements.
-- Fixed-rule checks reference the rota and staff rules such as Aled/Charlie availability and breakfast coverage.
+- Hard-rule checks reference dated availability, rota coverage, section eligibility, and breakfast coverage; chef names do not determine recurring days off.
 - Hours checks compare estimated credited hours to the 48-hour target and mark a variance when it exceeds the tolerance.
 
 ### Rota Score

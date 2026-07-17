@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-17 — Canonical chef profiles
+
+- Made role display-only and made `senior` the sole senior-cover field.
+- Removed Preferred Breakfast, named-chef scheduling rules, duplicate staff data, and role weights.
+- Retained Breakfast Eligible and MIO Eligible as canonical chef-record controls.
+- Added idempotent migration for legacy senior status, Fixed Day Off, and per-chef MIO/profile stores.
+- Removed example leave and structured-data notes from production defaults.
+
 ## 2026-07-17
 
 - Removed the obsolete chef weekend setting and its hard-coded validation/scoring behavior.

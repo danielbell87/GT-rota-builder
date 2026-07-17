@@ -17,10 +17,10 @@ These tests are designed to prove that each hard rule is enforced.
 - when the solver ranks otherwise equivalent assignments,
 - then it should prefer another valid chef while retaining the selected chef as a fallback when required.
 
-## 4. Charlie Tuesday availability
-- Given a rota that places Charlie on Tuesday,
-- when the validation runs,
-- then the rota must fail with a fixed-rule breach for the Charlie Tuesday restriction.
+## 4. No name-specific scheduling restriction
+- Given equivalent chef records with different names,
+- when the solver evaluates any weekday or weekend,
+- then their names must not create availability restrictions, preferences, eligibility, hierarchy, or scoring differences.
 
 ## 5. Minimum daily GT staffing
 - Given a Monday-to-Wednesday rota with fewer than 4 GT chefs assigned,
@@ -43,7 +43,7 @@ These tests are designed to prove that each hard rule is enforced.
 - then the extra working days must appear as explicit `Float` assignments in both `day.chefs` and `day.assignments`.
 
 ## 7. Daily senior coverage
-- Given a day with no senior chef assigned from the required senior pool,
+- Given a day with no assigned chef whose canonical `senior` field is true,
 - when the validation runs,
 - then the rota must fail the seniority check for that day.
 
@@ -92,10 +92,10 @@ These tests are designed to prove that each hard rule is enforced.
 - when the validation runs,
 - then the rota must fail the breakfast/core-section check.
 
-## 14. At least one of the senior core chefs each day
-- Given a day where none of Aled, Charlie, Adam, or Connor is assigned,
-- when the validation runs,
-- then the rota must fail the daily core-chef check.
+## 14. Role-independent senior cover
+- Given a high-title chef with `senior: false` and a lower-title chef with `senior: true`,
+- when validation runs,
+- then only the lower-title chef satisfies senior cover.
 
 ## 15. Hard-rule dominance over scoring
 - Given a rota that would score higher if a hard rule were broken,
