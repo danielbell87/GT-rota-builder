@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.1 - 2026-07-16
+- Modernised the results UI with compact status cards, lighter section spacing, and simplified validation presentation.
+- Removed successful hard-rule and soft-preference checks from the normal results interface.
+- Added separate failed hard-rule and soft-compromise sections, plus collapsed technical details with full validation data and rule IDs.
+- Added multi-week checks overview, compact chef-hours summary rows, and slimmer fairness presentation.
+- Updated print/mobile behavior so technical details and navigation stay hidden while failed checks remain printable.
+- Expanded UI tests to cover filtered validation rendering, technical details, multi-week issue summaries, and infeasible messaging.
+
 ## 2.1.0 - 2026-07-16
 - Replaced seven-row daily-staffing-overrides table with compact date-based additional-chef list.
 - Added "Add additional chef" modal dialog (accessible, keyboard-navigable, mobile-friendly).

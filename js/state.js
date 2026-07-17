@@ -30,6 +30,8 @@ function buildInitialState() {
     history: [],
     uiState: {
       validation: [],
+      softValidation: [],
+      validationByWeek: [],
       softScore: null,
       lastError: '',
       selectedResultWeekIndex: 0

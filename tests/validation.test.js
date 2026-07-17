@@ -1,6 +1,6 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota } from '../js/solver.js';
-import { validateRotaHardRules, validateRotaSoftRules, isRotaValid } from '../js/validation.js?v=20260716b';
+import { validateRotaHardRules, validateRotaSoftRules, isRotaValid } from '../js/validation.js?v=20260716c';
 
 function setupState() {
   resetStateToDefaults();

@@ -1,4 +1,4 @@
-import { CHEF_ROLES, CORE_SECTIONS, DISPLAY_SECTIONS, MIO_ROTATION_ORDER } from './constants.js';
+import { CHEF_ROLES, CORE_SECTIONS, DISPLAY_SECTIONS, MIO_ROTATION_ORDER, TARGET_HOURS } from './constants.js';
 import { getState } from './state.js';
 import {
   formatDate,
@@ -9,9 +9,9 @@ import {
   formatPlanningHorizonLabel,
   getWeekStartAtOffset
 } from './utils.js';
-import { getQualityScore, scoreSoftPreferences } from './scoring.js';
+import { scoreSoftPreferences } from './scoring.js';
 import { buildRota, buildMultiWeekRota } from './solver.js';
-import { validateRotaHardRules, validateRotaSoftRules, isRotaValid } from './validation.js?v=20260716b';
+import { validateRotaHardRules, validateRotaSoftRules } from './validation.js?v=20260716c';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
 
 function getRequiredElement(id) {
@@ -38,6 +38,301 @@ function hasFairnessActivity(entry) {
 
 function getEligibleMioChefs(state) {
   return state.staff.filter((staff) => staff.mioEligible);
+}
+
+function getGtTargetForChef(chefName, mioChefName) {
+  return chefName === mioChefName ? 2 : 4;
+}
+
+// Treat a full-shift-equivalent gap from the 48-hour target as a notable outlier for the compact summary.
+const HOURS_DEVIATION_THRESHOLD = 12;
+
+function stripRuleIdPrefix(message = '') {
+  return String(message).replace(/^[A-Z]\d{3}:\s*/, '');
+}
+
+function getWeekEnd(weekStart) {
+  const end = parseLocalDate(weekStart);
+  end.setDate(end.getDate() + 6);
+  return end.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function formatWeekIssueLabel(week) {
+  return `Week ${week.weekNumber} · ${formatCompactWeekRange(week.weekStart)}`;
+}
+
+function renderStatusBadge(tone, text) {
+  return `<span class="status-badge status-${tone}">${escapeHtml(text)}</span>`;
+}
+
+function getExpectedLeaveHoursForChef(chefName, inputs, weekStart) {
+  const weekStartDate = parseLocalDate(weekStart);
+  const weekEndDate = parseLocalDate(weekStart);
+  weekEndDate.setDate(weekEndDate.getDate() + 6);
+  const leaveDates = new Set();
+  (inputs.availability || []).forEach((entry) => {
+    if (entry.chef !== chefName || entry.type !== 'Annual Leave') return;
+    const startDate = parseLocalDate(entry.startDate || entry.date);
+    const finishDate = parseLocalDate(entry.finishDate || entry.date);
+    for (let current = new Date(startDate); current <= finishDate; current.setDate(current.getDate() + 1)) {
+      if (current < weekStartDate || current > weekEndDate) continue;
+      leaveDates.add(`${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`);
+    }
+  });
+  return Math.min(leaveDates.size, 4) * 12;
+}
+
+export function getWeekValidationView(week, state) {
+  const inputs = week.inputs || {};
+  const hasRota = Array.isArray(week.rota) && week.rota.length > 0;
+  const hardValidation = Array.isArray(week.hardValidation)
+    ? week.hardValidation
+    : (hasRota ? validateRotaHardRules({ rota: week.rota, state, inputs, summary: week.summary || [] }) : []);
+  const softValidation = Array.isArray(week.softValidation)
+    ? week.softValidation
+    : (hasRota ? validateRotaSoftRules({ rota: week.rota, state, inputs }) : []);
+  const softScore = week.softScore || (hasRota
+    ? scoreSoftPreferences({ state, rota: week.rota, hardValidation })
+    : { valid: false, score: 0, capped: false, explanation: [] });
+  const hardFailures = hardValidation.filter((result) => result.severity === 'hard' && result.passed === false);
+  const softFailures = softValidation.filter((result) => result.severity === 'soft' && result.passed === false);
+  const generationFailures = (week.validation || []).map((result, index) => ({
+    ruleId: result.ruleId || `GEN-${result.day || 'Overall'}-${index + 1}`,
+    passed: false,
+    severity: 'hard',
+    day: result.day || 'Overall',
+    message: result.message || 'Unknown validation failure.'
+  }));
+  const visibleHardFailures = week.status === 'infeasible' ? generationFailures : hardFailures;
+  return {
+    week,
+    inputs,
+    hardValidation,
+    softValidation,
+    hardFailures,
+    softFailures,
+    visibleHardFailures,
+    generationFailures,
+    softScore,
+    valid: week.status === 'ok' && hardFailures.length === 0
+  };
+}
+
+function renderResultsHeader(numberOfWeeks, weekStart) {
+  const heading = numberOfWeeks === 1 ? 'Results' : `${numberOfWeeks}-week rota`;
+  const range = numberOfWeeks === 1
+    ? `${formatWeekCommencing(weekStart)} – ${getWeekEnd(weekStart)}`
+    : formatPlanningHorizonLabel(weekStart, numberOfWeeks);
+  return `
+    <div class="results-header">
+      <div>
+        <h3 class="results-title">${escapeHtml(heading)}</h3>
+        <p class="results-subtitle">${escapeHtml(range)}</p>
+      </div>
+    </div>`;
+}
+
+function renderOverallStatusCard(overallResult, weekViews) {
+  if (overallResult.numberOfWeeks === 1) {
+    const [view] = weekViews;
+    if (view.valid) {
+      return `
+        <section class="status-card status-card-success" aria-label="Rota status">
+          <div class="status-card-head">${renderStatusBadge('success', 'Valid')}</div>
+          <h4>✓ Rota valid</h4>
+          <p>No hard-rule problems found.</p>
+        </section>`;
+    }
+    return `
+      <section class="status-card status-card-danger" aria-label="Rota status">
+        <div class="status-card-head">${renderStatusBadge('danger', 'Needs attention')}</div>
+        <h4>${view.week.status === 'infeasible' ? 'Rota could not be generated' : 'Rota needs attention'}</h4>
+        <p>${view.week.status === 'infeasible'
+          ? 'The current staffing inputs conflict with required rules.'
+          : `${view.visibleHardFailures.length} hard-rule failure${view.visibleHardFailures.length === 1 ? '' : 's'} found.`}</p>
+      </section>`;
+  }
+
+  const validWeeks = weekViews.filter((view) => view.valid).length;
+  const attentionWeeks = weekViews.length - validWeeks;
+  const allValid = attentionWeeks === 0 && overallResult.status === 'ok';
+  return `
+    <section class="status-card ${allValid ? 'status-card-success' : 'status-card-warning'}" aria-label="Multi-week rota status">
+      <div class="status-card-head">${renderStatusBadge(allValid ? 'success' : 'warning', allValid ? 'All weeks valid' : 'Week issues found')}</div>
+      <h4>${escapeHtml(`${overallResult.numberOfWeeks}-week rota`)}</h4>
+      <p>${allValid
+        ? 'All weeks passed hard-rule validation.'
+        : `${validWeeks} week${validWeeks === 1 ? '' : 's'} valid · ${attentionWeeks} week${attentionWeeks === 1 ? '' : 's'} require${attentionWeeks === 1 ? 's' : ''} attention.`}</p>
+    </section>`;
+}
+
+function renderWeekChecksOverview(weekViews) {
+  if (weekViews.length <= 1) return '';
+  return `
+    <section class="results-section">
+      <h4>Rota checks</h4>
+      <div class="week-checks">
+        ${weekViews.map((view) => `
+          <article class="week-check ${view.valid ? 'week-check-success' : 'week-check-warning'}">
+            <div class="week-check-title">${escapeHtml(formatWeekIssueLabel(view.week))}</div>
+            <div class="week-check-summary">${view.valid ? '✓ No problems found' : `${view.visibleHardFailures.length} issue${view.visibleHardFailures.length === 1 ? '' : 's'}`}</div>
+            ${view.valid ? '' : `<ul class="issue-list compact">${view.visibleHardFailures.map((failure) => `<li>${escapeHtml(stripRuleIdPrefix(failure.message))}</li>`).join('')}</ul>`}
+          </article>`).join('')}
+      </div>
+    </section>`;
+}
+
+function renderWeekStatusCard(view) {
+  if (view.valid) {
+    return `
+      <section class="status-card status-card-success" aria-label="Week status">
+        <div class="status-card-head">${renderStatusBadge('success', 'Valid')}</div>
+        <h4>✓ Rota valid</h4>
+        <p>No hard-rule problems found.</p>
+      </section>`;
+  }
+
+  if (view.week.status === 'infeasible') {
+    return `
+      <section class="status-card status-card-danger" aria-label="Week status">
+        <div class="status-card-head">${renderStatusBadge('danger', 'Infeasible')}</div>
+        <h4>Rota could not be generated</h4>
+        <p>The current staffing inputs conflict with required rules.</p>
+      </section>`;
+  }
+
+  return `
+    <section class="status-card status-card-danger" aria-label="Week status">
+      <div class="status-card-head">${renderStatusBadge('danger', 'Needs attention')}</div>
+      <h4>Rota needs attention</h4>
+      <p>${view.visibleHardFailures.length} hard-rule failure${view.visibleHardFailures.length === 1 ? '' : 's'} found.</p>
+    </section>`;
+}
+
+function getChefRowProblems(item, view) {
+  const totalHours = item.totalCreditedHours ?? item.hours ?? 0;
+  const expectedLeaveHours = getExpectedLeaveHoursForChef(item.name, view.inputs, view.week.weekStart);
+  const isSelectedMioChef = item.name === view.inputs.mioChef;
+  const hasHoursProblem = totalHours > (TARGET_HOURS.weekly + HOURS_DEVIATION_THRESHOLD)
+    || (totalHours > 0 && totalHours < (TARGET_HOURS.weekly - HOURS_DEVIATION_THRESHOLD));
+  return {
+    gt: item.gtDays > getGtTargetForChef(item.name, view.inputs.mioChef),
+    mio: isSelectedMioChef && (item.mioDays !== 3 || item.gtDays !== 2),
+    leave: expectedLeaveHours !== (item.annualLeaveHours || 0),
+    hours: hasHoursProblem
+  };
+}
+
+function renderChefHoursSummary(view) {
+  if (!view.week.summary?.length) return '';
+  const rows = view.week.summary.map((item) => {
+    const totalHours = item.totalCreditedHours ?? item.hours ?? 0;
+    const problems = getChefRowProblems(item, view);
+    const hasProblem = Object.values(problems).some(Boolean);
+    return `
+      <tr class="${hasProblem ? 'summary-row-problem' : ''}">
+        <th scope="row">${escapeHtml(item.name)}</th>
+        <td${problems.gt ? ' class="metric-problem"' : ''}>${item.gtDays}/${getGtTargetForChef(item.name, view.inputs.mioChef)}</td>
+        <td${problems.mio ? ' class="metric-problem"' : ''}>${item.mioDays}</td>
+        <td${problems.leave ? ' class="metric-problem"' : ''}>${item.annualLeaveHours.toFixed(1)}h</td>
+        <td${problems.hours ? ' class="metric-problem"' : ''}>${totalHours.toFixed(1)}h</td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <section class="results-section">
+      <h4>Chef-hours summary</h4>
+      <table class="summary-table chef-hours-table">
+        <thead>
+          <tr><th>Chef</th><th>GT days</th><th>MIO days</th><th>Leave credit</th><th>Total credited hours</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </section>`;
+}
+
+function renderHardFailureSection(view) {
+  if (!view.visibleHardFailures.length) return '';
+  return `
+    <section class="results-section">
+      <h4>${view.week.status === 'infeasible' ? 'Failure reasons' : 'Failed hard rules'}</h4>
+      <p class="section-note">${view.week.status === 'infeasible'
+        ? 'Specific issues found while generating this rota.'
+        : `${view.visibleHardFailures.length} hard-rule failure${view.visibleHardFailures.length === 1 ? '' : 's'} found.`}</p>
+      <ul class="issue-list hard-failure-list">
+        ${view.visibleHardFailures.map((failure) => `<li>${escapeHtml(stripRuleIdPrefix(failure.message))}</li>`).join('')}
+      </ul>
+    </section>`;
+}
+
+function renderSoftCompromiseSection(view) {
+  if (!view.softFailures.length) return '';
+  return `
+    <section class="results-section">
+      <h4>Scheduling compromises</h4>
+      <p class="section-note">${view.softFailures.length} preference${view.softFailures.length === 1 ? '' : 's'} could not be met.</p>
+      <ul class="issue-list soft-failure-list">
+        ${view.softFailures.map((failure) => `<li>${escapeHtml(stripRuleIdPrefix(failure.message))}</li>`).join('')}
+      </ul>
+    </section>`;
+}
+
+function renderTechnicalDetails(view) {
+  const hardRows = view.hardValidation.map((result) => `
+    <tr>
+      <td>${escapeHtml(result.ruleId)}</td>
+      <td>${escapeHtml(result.severity)}</td>
+      <td>${result.passed ? 'Passed' : 'Failed'}</td>
+      <td>${escapeHtml(result.message)}</td>
+    </tr>`).join('');
+  const softRows = view.softValidation.map((result) => `
+    <tr>
+      <td>${escapeHtml(result.ruleId)}</td>
+      <td>${escapeHtml(result.severity)}</td>
+      <td>${result.passed ? 'Passed' : 'Failed'}</td>
+      <td>${escapeHtml(result.message)}</td>
+    </tr>`).join('');
+  const generatorRows = view.week.validation?.length
+    ? view.week.validation.map((result, index) => `
+      <tr>
+        <td>${escapeHtml(result.ruleId || `GEN${String(index + 1).padStart(3, '0')}`)}</td>
+        <td>${escapeHtml(result.day || 'Overall')}</td>
+        <td>${escapeHtml(result.severity || 'bad')}</td>
+        <td>${escapeHtml(result.message || '')}</td>
+      </tr>`).join('')
+    : '';
+
+  return `
+    <details class="technical-details print-hidden">
+      <summary>View technical details</summary>
+      ${generatorRows ? `
+        <div class="technical-block">
+          <h5>Generation diagnostics</h5>
+          <table class="summary-table technical-table">
+            <thead><tr><th>Rule ID</th><th>Scope</th><th>Severity</th><th>Message</th></tr></thead>
+            <tbody>${generatorRows}</tbody>
+          </table>
+        </div>` : ''}
+      <div class="technical-block">
+        <h5>Full hard validation</h5>
+        <table class="summary-table technical-table">
+          <thead><tr><th>Rule ID</th><th>Severity</th><th>Status</th><th>Message</th></tr></thead>
+          <tbody>${hardRows || '<tr><td colspan="4">No hard validation data available.</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div class="technical-block">
+        <h5>Full soft validation</h5>
+        <table class="summary-table technical-table">
+          <thead><tr><th>Rule ID</th><th>Severity</th><th>Status</th><th>Message</th></tr></thead>
+          <tbody>${softRows || '<tr><td colspan="4">No soft validation data available.</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div class="technical-block">
+        <h5>Scoring diagnostics</h5>
+        <div class="small">Soft score: ${view.softScore.score.toFixed(1)}${view.softScore.capped ? ' (capped due to hard-rule failure)' : ''}</div>
+        <div class="small">${view.softScore.explanation?.length ? view.softScore.explanation.map((line) => `• ${escapeHtml(line)}`).join('<br>') : '• No soft-rule trade-offs detected.'}</div>
+      </div>
+    </details>`;
 }
 
 function getSuggestedMioRotation(eligibleChefs) {
@@ -205,52 +500,8 @@ export function renderAvailabilityTable() {
   });
 }
 
-function renderWeekHtml(solveResult, state, inputs) {
-  const hardValidation = validateRotaHardRules({ rota: solveResult.rota, state, inputs, summary: solveResult.summary });
-  const softValidation = validateRotaSoftRules({ rota: solveResult.rota, state, inputs });
-  const softScore = scoreSoftPreferences({ state, rota: solveResult.rota, hardValidation });
-  const valid = isRotaValid(hardValidation);
-
-  const summaryCards = solveResult.summary.map((item) => `<div class="card"><strong>${escapeHtml(item.name)}</strong><div class="small">${item.hours.toFixed(1)} hrs this week</div></div>`).join('');
-  const validationCards = hardValidation.map((item) => `<div class="pill ${item.passed ? 'good' : 'bad'}">${item.ruleId}: ${item.message}</div>`).join('');
-  const softValidationCards = softValidation.map((item) => `<div class="pill ${item.passed ? 'good' : 'warn'}">${item.ruleId}: ${item.message}</div>`).join('');
-
-  const ruleNotes = [];
-  if ((inputs.additionalChefRequirements || []).length > 0) {
-    const reqText = inputs.additionalChefRequirements
-      .slice()
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .map((req) => {
-        const date = parseLocalDate(req.date);
-        const label = date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-        return `${label}: +${req.count}`;
-      })
-      .join(', ');
-    ruleNotes.push(`Additional chefs: ${reqText}`);
-  }
-  if (inputs.mioChef) ruleNotes.push(`MIO selection: ${escapeHtml(inputs.mioChef)}`);
-
-  const qualityScores = {};
-  solveResult.rota.forEach((day) => {
-    day.assignments.forEach((assignment) => {
-      const chef = state.staff.find((staff) => staff.name === assignment.chef);
-      if (!chef || assignment.section === 'MIO' || assignment.section === 'Breakfast') return;
-      const quality = getQualityScore(chef, assignment.section);
-      if (!qualityScores[chef.name]) qualityScores[chef.name] = [];
-      qualityScores[chef.name].push({ section: assignment.section, quality });
-    });
-  });
-
-  const qualityNotes = Object.entries(qualityScores).map(([name, assignments]) => {
-    const byQuality = { 3: [], 2: [], 1: [], 0: [] };
-    assignments.forEach((assignment) => byQuality[assignment.quality].push(assignment.section));
-    const parts = [];
-    if (byQuality[3].length) parts.push(`preferred: ${byQuality[3].join(', ')}`);
-    if (byQuality[2].length) parts.push(`proficient: ${byQuality[2].join(', ')}`);
-    if (byQuality[1].length) parts.push(`training: ${byQuality[1].join(', ')}`);
-    return parts.length ? `<span class="small"><strong>${escapeHtml(name)}</strong>: ${parts.join('; ')}</span>` : '';
-  }).filter(Boolean);
-
+function renderRotaTable(solveResult) {
+  if (!solveResult.rota?.length) return '';
   const dayHeaders = solveResult.rota.map((day) => `<th>${day.dayName}<br><span class="small">${formatDate(day.date)}</span></th>`).join('');
   const sectionCells = DISPLAY_SECTIONS.map((section) => {
     const cells = solveResult.rota.map((day) => {
@@ -265,49 +516,52 @@ function renderWeekHtml(solveResult, state, inputs) {
     return `<tr><th>${section}</th>${cells}</tr>`;
   }).join('');
 
-  const scoreLine = `<div class="small">Soft score: ${softScore.score.toFixed(1)}${softScore.capped ? ' (capped due to hard-rule failure)' : ''}</div>`;
-  const scoreExplanations = softScore.explanation?.length
-    ? `<div class="small">${softScore.explanation.map((line) => `• ${line}`).join('<br>')}</div>`
-    : '<div class="small">• No soft-rule trade-offs detected.</div>';
-
   return `
-    <div class="summary-grid">
-      <div class="card"><h3 class="mb-6">Weekly context</h3><div class="small">Week commencing: ${formatWeekCommencing(inputs.weekStart)}<br>MIO chef: ${escapeHtml(inputs.mioChef || 'None')}<br>Status: ${escapeHtml(inputs.status)}</div></div>
-      <div class="card"><h3 class="mb-6">Hours rota</h3><div class="row">${summaryCards}</div>${scoreLine}<div class="small">Hard validation: ${valid ? 'PASS' : 'FAIL'}</div></div>
-    </div>
-    <h3 class="mt-16">Rules applied</h3>
-    <div>${ruleNotes.length ? ruleNotes.map((note) => `<div class="small">• ${note}</div>`).join('') : '<div class="small">• No extra rules were applied.</div>'}</div>
-    <h3 class="mt-16">Validation</h3>
-    <div>${validationCards || '<span class="pill good">No issues detected</span>'}</div>
-    <h3 class="mt-16">Soft preference checks</h3>
-    <div>${softValidationCards || '<span class="pill good">No soft preference checks to report</span>'}</div>
-    <h3 class="mt-16">Scoring explanations</h3>
-    <div>${scoreExplanations}</div>
-    <h3 class="mt-16">Section assignments quality</h3>
-    ${qualityNotes.length ? `<div class="quality-box">${qualityNotes.join('<br>')}</div>` : '<div class="small">No section assignments to analyze</div>'}
-    <h3 class="mt-16">Rota</h3>
-    <table class="rota-table"><thead><tr><th>Section</th>${dayHeaders}</tr></thead><tbody>${sectionCells}</tbody></table>`;
+    <section class="results-section">
+      <h4>Rota table</h4>
+      <table class="rota-table"><thead><tr><th>Section</th>${dayHeaders}</tr></thead><tbody>${sectionCells}</tbody></table>
+    </section>`;
 }
 
 function renderFairnessSummary(summary = []) {
   if (!summary.length) return '';
+  const activeRows = summary.filter(hasFairnessActivity);
+  if (!activeRows.length) return '';
+  const weightedBurdenValues = activeRows.map((entry) => entry.weightedBurden);
+  const spread = weightedBurdenValues.length > 1 ? Math.max(...weightedBurdenValues) - Math.min(...weightedBurdenValues) : 0;
   const rows = summary
     .filter(hasFairnessActivity)
-    .map((entry) => `<tr><td>${escapeHtml(entry.name)}</td><td>${entry.weightedBurden}</td><td>${entry.fridayCount}</td><td>${entry.saturdayCount}</td><td>${entry.sundayCount}</td><td>${entry.repeatedSaturdaySundayPairCount}</td><td>${entry.repeatedFullWeekendCount}</td><td>${entry.repeatedExactPatternCount}</td></tr>`)
+    .map((entry) => `<tr><th scope="row">${escapeHtml(entry.name)}</th><td>${entry.fridayCount}</td><td>${entry.saturdayCount}</td><td>${entry.sundayCount}</td><td>${entry.weightedBurden}</td></tr>`)
     .join('');
-  if (!rows) return '';
   return `
-    <h3 class="mt-16">Overall fairness summary</h3>
-    <table class="fairness-table">
-      <thead><tr><th>Chef</th><th>Weighted burden</th><th>Fri</th><th>Sat</th><th>Sun</th><th>Repeated Sat/Sun</th><th>Repeated Fri-Sun</th><th>Repeated pattern</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
+    <section class="results-section">
+      <h4>Fairness summary</h4>
+      <table class="summary-table fairness-table">
+        <thead><tr><th>Chef</th><th>Fridays</th><th>Saturdays</th><th>Sundays</th><th>Weighted burden</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      ${spread > 2 ? '<p class="section-note">Weekend coverage is meaningfully uneven across the selected weeks.</p>' : ''}
+    </section>`;
 }
 
-function getInfeasibleMessage(numWeeks) {
-  return numWeeks === 1
-    ? '<div class="pill bad">No feasible rota could be generated with current hard constraints.</div>'
-    : '<div class="pill bad">No feasible rota could be generated for this week with current hard constraints.</div>';
+export function renderWeekPanel(view, options = {}) {
+  const fairnessHtml = options.fairnessHtml || '';
+  const showHeader = options.showHeader !== false;
+  const showStatus = options.showStatus !== false;
+  return `
+    <section class="week-panel ${options.hidden ? 'hidden' : ''}" data-week-panel="${view.week.weekIndex}">
+      ${showHeader ? `<div class="week-panel-header">
+        <h4 class="multi-week-heading">${escapeHtml(`Week ${view.week.weekNumber}`)}</h4>
+        <p class="results-subtitle">${escapeHtml(`${formatWeekCommencing(view.week.weekStart)} – ${getWeekEnd(view.week.weekStart)}`)}</p>
+      </div>` : ''}
+      ${showStatus ? renderWeekStatusCard(view) : ''}
+      ${view.week.status === 'infeasible' ? '' : renderRotaTable(view.week)}
+      ${view.week.status === 'infeasible' ? '' : renderChefHoursSummary(view)}
+      ${fairnessHtml}
+      ${renderHardFailureSection(view)}
+      ${renderSoftCompromiseSection(view)}
+      ${renderTechnicalDetails(view)}
+    </section>`;
 }
 
 export function renderResultsPanel() {
@@ -333,41 +587,52 @@ export function renderResultsPanel() {
   }
 
   const weeks = overallResult.weeks || [];
-  const firstOk = weeks.find((week) => week.status === 'ok');
-  state.generatedRotas.current = firstOk || null;
-
-  if (firstOk) {
-    const firstHardValidation = validateRotaHardRules({ rota: firstOk.rota, state, inputs: firstOk.inputs, summary: firstOk.summary });
-    state.uiState.validation = firstHardValidation;
-    state.uiState.softScore = scoreSoftPreferences({ state, rota: firstOk.rota, hardValidation: firstHardValidation });
-  } else {
-    state.uiState.validation = [];
-    state.uiState.softScore = null;
-  }
-
   const activeWeekIndex = Math.max(0, Math.min(state.uiState.selectedResultWeekIndex || 0, Math.max(weeks.length - 1, 0)));
   state.uiState.selectedResultWeekIndex = activeWeekIndex;
+  const weekViews = weeks.map((week) => getWeekValidationView(week, state));
+  const activeView = weekViews[activeWeekIndex] || null;
+  const firstOk = weeks.find((week) => week.status === 'ok');
+  state.generatedRotas.current = activeView?.week?.status === 'ok' ? activeView.week : (firstOk || null);
+  state.uiState.validation = activeView?.hardValidation || [];
+  state.uiState.softValidation = activeView?.softValidation || [];
+  state.uiState.validationByWeek = weekViews.map((view) => ({
+    weekIndex: view.week.weekIndex,
+    weekNumber: view.week.weekNumber,
+    weekStart: view.week.weekStart,
+    status: view.week.status,
+    hardValidation: view.hardValidation,
+    softValidation: view.softValidation,
+    generationValidation: view.week.validation || [],
+    hardFailures: view.hardFailures,
+    softFailures: view.softFailures
+  }));
+  state.uiState.softScore = activeView?.softScore || null;
 
   if (overallResult.numberOfWeeks === 1) {
-    const week = weeks[0];
-    container.innerHTML = week.status === 'infeasible' ? getInfeasibleMessage(1) : renderWeekHtml(week, state, week.inputs);
+    container.innerHTML = `
+      <div class="results-layout">
+        ${renderResultsHeader(1, inputs.weekStart)}
+        ${renderOverallStatusCard(overallResult, weekViews)}
+        ${activeView ? renderWeekPanel(activeView, { showHeader: false, showStatus: false }) : ''}
+      </div>`;
   } else {
     const tabs = weeks.map((week, index) => `<button class="week-tab ${index === activeWeekIndex ? 'active' : ''}" data-results-week-index="${index}">Week ${index + 1}</button>`).join('');
     const dropdownOptions = weeks.map((week, index) => `<option value="${index}" ${index === activeWeekIndex ? 'selected' : ''}>Week ${index + 1} · ${formatCompactWeekRange(week.weekStart)}</option>`).join('');
-    const panels = weeks.map((week, index) => {
-      const content = week.status === 'infeasible' ? getInfeasibleMessage(overallResult.numberOfWeeks) : renderWeekHtml(week, state, week.inputs);
-      return `<section class="week-panel ${index === activeWeekIndex ? '' : 'hidden'}" data-week-panel="${index}"><h3 class="multi-week-heading">Week ${index + 1} — ${formatWeekCommencing(week.weekStart)}</h3>${content}</section>`;
-    }).join('');
-    const overallBanner = overallResult.status === 'infeasible'
-      ? `<div class="pill bad">Overall result infeasible: Week ${overallResult.failedWeek} (${formatWeekCommencing(overallResult.failedWeekStart)}) failed, so later weeks were not generated.</div>`
-      : '<div class="pill good">All selected weeks generated successfully.</div>';
+    const fairnessHtml = renderFairnessSummary(overallResult.fairnessSummary);
+    const panels = weekViews.map((view, index) => renderWeekPanel(view, {
+      hidden: index !== activeWeekIndex,
+      fairnessHtml: index === activeWeekIndex ? fairnessHtml : ''
+    })).join('');
 
     container.innerHTML = `
-      ${overallBanner}
-      ${renderFairnessSummary(overallResult.fairnessSummary)}
-      <div class="desktop-only week-tabs" role="tablist">${tabs}</div>
-      <label class="mobile-only">Week<select id="resultsWeekSelect">${dropdownOptions}</select></label>
-      <div class="week-panels">${panels}</div>`;
+      <div class="results-layout">
+        ${renderResultsHeader(overallResult.numberOfWeeks, inputs.weekStart)}
+        ${renderOverallStatusCard(overallResult, weekViews)}
+        ${renderWeekChecksOverview(weekViews)}
+        <div class="desktop-only week-tabs print-hidden" role="tablist">${tabs}</div>
+        <label class="mobile-only print-hidden">Week<select id="resultsWeekSelect">${dropdownOptions}</select></label>
+        <div class="week-panels">${panels}</div>
+      </div>`;
   }
 
   if (typeof window !== 'undefined') {
@@ -380,7 +645,18 @@ export function renderResultsPanel() {
         fairnessApplied: !!overallResult.fairnessApplied,
         visibleWeekCount: weeks.length,
         weekStarts: weeks.map((week) => week.weekStart),
-        weekMioChefs: weeks.map((week) => week.mioChef)
+        weekMioChefs: weeks.map((week) => week.mioChef),
+        activeWeekIndex,
+        activeWeekHardFailureCount: activeView?.visibleHardFailures?.length || 0,
+        validationByWeek: state.uiState.validationByWeek,
+        weekValidationSummary: weekViews.map((view) => ({
+          weekIndex: view.week.weekIndex,
+          status: view.week.status,
+          hardFailures: view.visibleHardFailures.length,
+          softFailures: view.softFailures.length,
+          hardValidationCount: view.hardValidation.length,
+          softValidationCount: view.softValidation.length
+        }))
       }
     };
   }

@@ -12,7 +12,7 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 - **4-day working week enforcement** for staff members
 - **Hours tracking** with adjusted calculations for breakfast shifts
 - **Rule-based configuration** for customizing shift preferences
-- **Validation alerts** for scheduling conflicts and constraint violations
+- **Validation alerts** that show only failed hard rules and unmet soft preferences in the main UI, with full diagnostics kept in technical details
 
 ## How to Use
 
@@ -21,7 +21,14 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 3. Configure staff availability and skills
 4. Select a MIO (Management Improvement Officer) chef if needed
 5. Add any additional chef requests (e.g., private events) using the **Add additional chef** button
-6. Review the generated rota and hours summary
+6. Review the generated rota, chef-hours summary, and any failed checks
+
+## Results UI
+
+- Valid rotas show a single compact success status.
+- Failed hard rules are shown only when something needs attention.
+- Soft scheduling compromises are listed separately from hard-rule failures.
+- Full validation data, successful checks, and rule IDs remain available under **View technical details**.
 
 ### Adding Additional Chefs
 
