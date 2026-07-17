@@ -82,6 +82,12 @@ function isValidDateString(dateStr) {
   return toDateString(parseLocalDate(dateStr)) === dateStr;
 }
 
+function forEachDateInRange(start, finish, callback) {
+  for (let cursor = new Date(start); cursor <= finish; cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1)) {
+    callback(cursor);
+  }
+}
+
 function buildFullWeekDates(weekStart) {
   const start = parseLocalDate(normalizeWeekStart(weekStart));
   return Array.from({ length: 7 }, (_, index) => {
@@ -132,10 +138,10 @@ function getAnnualLeaveDatesByChef(availability, weekDateSet) {
     const start = parseLocalDate(entry.startDate || entry.date);
     const finish = parseLocalDate(entry.finishDate || entry.date);
     if (!leaveDatesByChef[entry.chef]) leaveDatesByChef[entry.chef] = new Set();
-    for (let cursor = new Date(start); cursor <= finish; cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1)) {
+    forEachDateInRange(start, finish, (cursor) => {
       const dateStr = toDateString(cursor);
       if (weekDateSet.has(dateStr)) leaveDatesByChef[entry.chef].add(dateStr);
-    }
+    });
   });
   return leaveDatesByChef;
 }
@@ -160,10 +166,10 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
     if (entry.type !== 'Annual Leave') return;
     const start = parseLocalDate(entry.startDate || entry.date);
     const finish = parseLocalDate(entry.finishDate || entry.date);
-    for (let cursor = new Date(start); cursor <= finish; cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1)) {
+    forEachDateInRange(start, finish, (cursor) => {
       const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
       leavesByDate[key] = (leavesByDate[key] || 0) + 1;
-    }
+    });
   });
 
   rota.forEach((day) => {

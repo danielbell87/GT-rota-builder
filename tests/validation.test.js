@@ -135,11 +135,22 @@ export async function runValidationTests(assert) {
   const fridayLeaveTarget = parseGtDayRule(fridayLeaveH016);
   assert(fridayLeaveH016?.passed, 'Partial rota stopping on Wednesday correctly adjusts the GT target for Friday leave');
   assert(fridayLeaveTarget?.target === 3 && fridayLeaveTarget?.actual === 3, 'Later Friday leave still reduces the expected GT target');
+  const fridayFailurePartial = result.rota.filter((day) => ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].includes(day.dayName));
+  const fridayLeaveFailureValidation = validateRotaHardRules({
+    rota: fridayFailurePartial,
+    state: fridayLeaveState,
+    inputs: fridayLeaveState.weeklyInputs,
+    summary: fridayLeaveSummary,
+    fullWeekDates
+  });
+  const fridayLeaveFailureH016 = findRule(fridayLeaveFailureValidation, 'H016', 'Fred');
+  const fridayLeaveFailureTarget = parseGtDayRule(fridayLeaveFailureH016);
+  assert(fridayLeaveFailureH016 && !fridayLeaveFailureH016.passed && fridayLeaveFailureTarget?.target === 3 && fridayLeaveFailureTarget?.actual === 4, 'Friday leave still fails H016 when actual GT days exceed the adjusted target');
 
   const weekendLeaveState = setupState();
   weekendLeaveState.weeklyInputs.availability = [{ chef: 'Fred', type: 'Annual Leave', startDate: '2026-07-18', finishDate: '2026-07-19', notes: '' }];
   syncCompatibilityViews();
-  const fridayPartial = result.rota.filter((day) => ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].includes(day.dayName));
+  const fridayPartial = fridayFailurePartial;
   const weekendLeaveSummary = result.summary.map((item) => item.name === 'Fred'
     ? {
       ...item,
