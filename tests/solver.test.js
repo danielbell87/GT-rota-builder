@@ -179,7 +179,7 @@ export async function runSolverTests(assert) {
   assert(sauceCandidates[0].name === 'Chef A', 'Scenario B: Competent candidate outranks otherwise equivalent In training candidate');
 
   const fairnessConflictCandidates = [createTestChef('Preferred Sauce', 'Chef de Partie', { Sauce: 3, Breakfast: 2 }), createTestChef('Training Sauce', 'Chef de Partie', { Sauce: 1, Breakfast: 2 })];
-  const fairnessContext = {
+  const fairnessConflictContext = {
     stats: {
       'Preferred Sauce': { weightedBurden: 8, fridayCount: 1, saturdayCount: 1, sundayCount: 1, repeatedSaturdaySundayPairCount: 0, repeatedFullWeekendCount: 0, repeatedExactPatternCount: 0 },
       'Training Sauce': { weightedBurden: 0, fridayCount: 0, saturdayCount: 0, sundayCount: 0, repeatedSaturdaySundayPairCount: 0, repeatedFullWeekendCount: 0, repeatedExactPatternCount: 0 }
@@ -190,7 +190,7 @@ export async function runSolverTests(assert) {
     const scoreDiff = getSectionCandidateBaseScore({ staff: b, section: 'Sauce', dayName: 'Saturday', ruleOverrides: {}, gtDaysByChef: {}, mioChefName: '' })
       - getSectionCandidateBaseScore({ staff: a, section: 'Sauce', dayName: 'Saturday', ruleOverrides: {}, gtDaysByChef: {}, mioChefName: '' });
     if (scoreDiff !== 0) return scoreDiff;
-    return compareFairnessTieBreak(a, b, 'Saturday', fairnessContext, {});
+    return compareFairnessTieBreak(a, b, 'Saturday', fairnessConflictContext, {});
   });
   assert(rankedWithFairness[0].name === 'Preferred Sauce', 'Scenario D: section suitability stays ahead of weekend fairness when levels differ meaningfully');
 

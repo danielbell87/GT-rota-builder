@@ -284,6 +284,22 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
   return results;
 }
 
+export function getStaffConfigurationWarnings(staff = []) {
+  const requiredSections = [...CORE_SECTIONS, 'Breakfast'];
+  const missingSections = requiredSections.filter((section) => {
+    if (section === 'Breakfast') {
+      return !staff.some((chef) => chef.breakfastEligible !== false && canCoverSection(chef, 'Breakfast'));
+    }
+    return !staff.some((chef) => canCoverSection(chef, section));
+  });
+
+  if (!missingSections.length) return [];
+  return [{
+    code: 'staff-section-coverage',
+    message: `Staff configuration warning: no chef can currently cover ${missingSections.join(', ')}. Rota generation may be infeasible until coverage is restored.`
+  }];
+}
+
 export function validateRotaSoftRules({ rota, state, inputs }) {
   const results = [];
   const ruleOverrides = {
@@ -302,22 +318,6 @@ export function validateRotaSoftRules({ rota, state, inputs }) {
           message: `${day.dayName}: Pass is missing so senior-on-Pass preference cannot be met`
         });
         return;
-      }
-
-      export function getStaffConfigurationWarnings(staff = []) {
-        const requiredSections = [...CORE_SECTIONS, 'Breakfast'];
-        const missingSections = requiredSections.filter((section) => {
-          if (section === 'Breakfast') {
-            return !staff.some((chef) => chef.breakfastEligible !== false && canCoverSection(chef, 'Breakfast'));
-          }
-          return !staff.some((chef) => canCoverSection(chef, section));
-        });
-
-        if (!missingSections.length) return [];
-        return [{
-          code: 'staff-section-coverage',
-          message: `Staff configuration warning: no chef can currently cover ${missingSections.join(', ')}. Rota generation may be infeasible until coverage is restored.`
-        }];
       }
 
       const passChef = getChef(state.staff, passAssignments[0].chef);
