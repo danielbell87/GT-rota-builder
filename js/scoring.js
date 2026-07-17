@@ -1,20 +1,8 @@
-import { ROLE_WEIGHT, SCORING_WEIGHTS, SHIFT_LENGTHS } from './constants.js';
+import { SCORING_WEIGHTS, SHIFT_LENGTHS } from './constants.js';
 import { getSectionLevel, getSectionLevelLabel, SECTION_LEVELS } from './section-levels.js';
 
 export function getSectionScore(staff, section, ruleOverrides) {
   return getSectionLevel(staff, section);
-}
-
-export function getRoleWeight(staff) {
-  return ROLE_WEIGHT[staff?.role] || 0;
-}
-
-export function getRoleBonus(staff, dayName) {
-  const rank = getRoleWeight(staff);
-  let bonus = rank * 0.4;
-  if (['Friday', 'Saturday', 'Sunday'].includes(dayName) && rank >= ROLE_WEIGHT['Sous Chef']) bonus += 1;
-  if (rank >= ROLE_WEIGHT['Head Chef']) bonus += 1;
-  return bonus;
 }
 
 export function getPreferredDayOffPenalty(staff, dayName) {
@@ -22,9 +10,7 @@ export function getPreferredDayOffPenalty(staff, dayName) {
 }
 
 export function isSenior(staff) {
-  if (staff?.senior === true) return true;
-  if (staff?.seniorStatus === true) return true;
-  return getRoleWeight(staff) >= ROLE_WEIGHT['Sous Chef'];
+  return staff?.senior === true;
 }
 
 function getSoftRuleWeight(state, ruleId, fallbackWeight) {

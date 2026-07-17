@@ -1,4 +1,4 @@
-import { CORE_SECTIONS, ROLE_WEIGHT, SHIFT_LENGTHS } from './constants.js';
+import { CORE_SECTIONS, SHIFT_LENGTHS } from './constants.js';
 import { normalizeWeekStart, parseLocalDate, toDateString } from './utils.js';
 import { isSenior } from './scoring.js';
 import { canCoverSection } from './section-levels.js';
@@ -196,8 +196,10 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
 
     if (breakfast.length === 1) {
       const breakfastChef = breakfast[0].chef;
+      const breakfastStaff = getChef(state.staff, breakfastChef);
       const coreChefSet = new Set(day.assignments.filter((a) => CORE_SECTIONS.includes(a.section)).map((a) => a.chef));
       results.push(createResult('H007', coreChefSet.has(breakfastChef), `${day.dayName}: breakfast chef must also be on a core section`));
+      results.push(createResult('H028', breakfastStaff?.breakfastEligible === true, `${day.dayName}: breakfast chef must be marked Breakfast eligible`));
     }
 
     const primaryAssignments = day.assignments.filter((assignment) => PRIMARY_GT_SECTIONS.includes(assignment.section));
@@ -209,11 +211,8 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
       results.push(createResult('H027', day.chefs.includes(assignment.chef), `${day.dayName}: ${assignment.chef} has a primary GT assignment but is missing from day.chefs`));
     });
 
-    const hasSenior = day.chefs.some((name) => {
-      const chef = getChef(state.staff, name);
-      return (ROLE_WEIGHT[chef?.role] || 0) >= ROLE_WEIGHT['Sous Chef'];
-    });
-    results.push(createResult('H008', hasSenior, `${day.dayName}: at least one Sous Chef or higher required`));
+    const hasSenior = day.chefs.some((name) => getChef(state.staff, name)?.senior === true);
+    results.push(createResult('H008', hasSenior, `${day.dayName}: at least one chef marked Senior chef is required`));
 
     if (['Monday', 'Tuesday', 'Wednesday'].includes(day.dayName)) {
       const requiredCount = getRequiredChefCount(day.dayName, inputs, day.date);
@@ -234,22 +233,6 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
     mioAssignments.forEach((assignment) => {
       const chef = getChef(state.staff, assignment.chef);
       results.push(createResult('H014', !!chef?.mioEligible, `${day.dayName}: MIO chef must be eligible`));
-    });
-
-    day.assignments.forEach((assignment) => {
-      if (assignment.chef === 'Myles' && assignment.section !== 'Larder' && assignment.section !== 'Float' && assignment.section !== 'Breakfast' && assignment.section !== 'MIO') {
-        results.push(createResult('H003', false, `${day.dayName}: Myles assigned outside Larder`));
-      }
-      if (assignment.chef === 'Fred' && assignment.section !== 'Garnish' && assignment.section !== 'Float' && assignment.section !== 'Breakfast' && assignment.section !== 'MIO') {
-        const chef = getChef(state.staff, 'Fred');
-        const overridden = canCoverSection(chef, assignment.section);
-        results.push(createResult('H004', overridden, `${day.dayName}: Fred assigned outside Garnish without skill override`));
-      }
-      if (assignment.chef === 'Joel' && assignment.section !== 'Sauce' && assignment.section !== 'Float' && assignment.section !== 'Breakfast' && assignment.section !== 'MIO') {
-        const chef = getChef(state.staff, 'Joel');
-        const overridden = canCoverSection(chef, assignment.section);
-        results.push(createResult('H005', overridden, `${day.dayName}: Joel assigned outside Sauce without skill override`));
-      }
     });
 
     if (leavesByDate[day.date] > 1) {

@@ -1,8 +1,8 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota } from '../js/solver.js';
-import { validateRotaHardRules } from '../js/validation.js?v=20260717g';
+import { validateRotaHardRules } from '../js/validation.js?v=20260717h';
 import { scoreSoftPreferences } from '../js/scoring.js';
-import { saveAppState, loadAppState } from '../js/storage.js?v=20260717g';
+import { saveAppState, loadAppState } from '../js/storage.js?v=20260717h';
 import { upsertPublishedHistory } from '../js/history.js';
 
 function baseState() {
@@ -91,7 +91,7 @@ export async function runScoringTests(assert) {
   const subsequentlySaved = JSON.parse(localStorage.getItem('gtRota.state.v2')).staff[0];
   assert(!Object.prototype.hasOwnProperty.call(legacyReloadedChef, 'weekendRule'), 'Legacy chef data containing the obsolete field still loads safely');
   assert(!['weekend_rule', 'fixedDayOff', 'fixedDaysOff', 'fixed_days_off'].some((field) => Object.prototype.hasOwnProperty.call(legacyReloadedChef, field)), 'Legacy Fixed Days Off and Weekend Rule variants are stripped when data loads');
-  assert(legacyReloadedChef.preferredDaysOff.length === 0, 'Legacy values are not converted into Preferred Days Off');
+  assert(JSON.stringify(legacyReloadedChef.preferredDaysOff) === JSON.stringify(['Saturday']), 'Legacy Fixed Day Off migrates once while weekend values are not converted');
   assert(!Object.prototype.hasOwnProperty.call(subsequentlySaved, 'weekendRule'), 'The obsolete field is omitted when legacy data is subsequently saved');
   assert(!['weekend_rule', 'fixedDayOff', 'fixedDaysOff', 'fixed_days_off'].some((field) => Object.prototype.hasOwnProperty.call(subsequentlySaved, field)), 'Obsolete day-off fields are omitted when legacy data is saved again');
 }

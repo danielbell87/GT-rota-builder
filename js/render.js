@@ -1,4 +1,4 @@
-import { CHEF_ROLES, CORE_SECTIONS, DISPLAY_SECTIONS, EDITABLE_SKILL_SECTIONS, MIO_ROTATION_ORDER, TARGET_HOURS } from './constants.js';
+import { CHEF_ROLES, CORE_SECTIONS, DISPLAY_SECTIONS, EDITABLE_SKILL_SECTIONS, TARGET_HOURS } from './constants.js';
 import { getState } from './state.js';
 import {
   formatDate,
@@ -12,7 +12,7 @@ import {
 import { scoreSoftPreferences } from './scoring.js';
 import { isSenior } from './scoring.js';
 import { buildRota, buildMultiWeekRota } from './solver.js';
-import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260717g';
+import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260717h';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
 
 function getRequiredElement(id) {
@@ -335,9 +335,7 @@ function renderTechnicalDetails(view) {
 }
 
 function getSuggestedMioRotation(eligibleChefs) {
-  const ordered = MIO_ROTATION_ORDER.filter((name) => eligibleChefs.some((chef) => chef.name === name));
-  const remaining = eligibleChefs.map((chef) => chef.name).filter((name) => !ordered.includes(name));
-  return [...ordered, ...remaining];
+  return eligibleChefs.map((chef) => chef.name);
 }
 
 function ensureWeeklyMioSelections() {
@@ -403,17 +401,7 @@ export function syncChefChoiceChipState(input) {
 
 function getStaffForDisplay() {
   const state = getState();
-  return state.staff
-    .map((chef, index) => ({ chef, index }))
-    .sort((a, b) => {
-      const seniorA = isSenior(a.chef) ? 1 : 0;
-      const seniorB = isSenior(b.chef) ? 1 : 0;
-      if (seniorA !== seniorB) return seniorB - seniorA;
-      const roleA = CHEF_ROLES.indexOf(a.chef.role);
-      const roleB = CHEF_ROLES.indexOf(b.chef.role);
-      if (roleA !== roleB) return roleA - roleB;
-      return a.index - b.index;
-    });
+  return state.staff.map((chef, index) => ({ chef, index }));
 }
 
 function formatChefSecondaryLabel(chef) {
@@ -478,8 +466,7 @@ export function populateChefModal({ chef, mode = 'create', showRemove = false })
 
   getRequiredElement('chefNameInput').value = chef.name || '';
   roleSelect.value = chef.role || '';
-  getRequiredElement('chefSeniorInput').checked = !!(chef.senior || chef.seniorStatus);
-  getRequiredElement('chefPreferredBreakfastInput').value = chef.preferredBreakfast || '';
+  getRequiredElement('chefSeniorInput').checked = chef.senior === true;
   getRequiredElement('chefMioEligibleInput').checked = !!chef.mioEligible;
   getRequiredElement('chefBreakfastEligibleInput').checked = chef.breakfastEligible !== false;
   getRequiredElement('chefNotesInput').value = chef.notes || '';
@@ -499,8 +486,6 @@ export function readChefDraftFromModal() {
     name: getRequiredElement('chefNameInput').value.trim(),
     role: getRequiredElement('chefRoleInput').value,
     senior: getRequiredElement('chefSeniorInput').checked,
-    seniorStatus: getRequiredElement('chefSeniorInput').checked,
-    preferredBreakfast: getRequiredElement('chefPreferredBreakfastInput').value,
     mioEligible: getRequiredElement('chefMioEligibleInput').checked,
     breakfastEligible: getRequiredElement('chefBreakfastEligibleInput').checked,
     preferredDaysOff: [...document.querySelectorAll('input[data-preferred-day-off]:checked')].map((input) => input.dataset.preferredDayOff),

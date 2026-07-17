@@ -27,17 +27,19 @@ export function normalizeChefRecord(chef = {}, index = 0, usedIds = new Set()) {
   const skills = normalizeSectionSkills(chef.skills);
   const role = CHEF_ROLES.includes(chef.role) ? chef.role : '';
   const normalizedName = String(chef.name || '').trim();
+  const preferredDaysOff = Array.isArray(chef.preferredDaysOff)
+    ? chef.preferredDaysOff.filter((day) => WEEKDAYS.includes(day))
+    : [];
+  if (WEEKDAYS.includes(chef.fixedDayOff)) preferredDaysOff.push(chef.fixedDayOff);
   const normalized = {
     id: typeof chef.id === 'string' && chef.id.trim() ? chef.id.trim() : createChefId(normalizedName || `chef-${index + 1}`, index, usedIds),
     name: normalizedName,
     role,
-    senior: !!chef.senior,
-    seniorStatus: !!chef.seniorStatus,
+    senior: chef.senior === true || chef.seniorStatus === true,
     breakfastEligible: chef.breakfastEligible !== false,
     mioEligible: !!chef.mioEligible,
-    preferredDaysOff: Array.isArray(chef.preferredDaysOff) ? [...new Set(chef.preferredDaysOff.filter((day) => WEEKDAYS.includes(day)))] : [],
+    preferredDaysOff: [...new Set(preferredDaysOff)],
     skills,
-    preferredBreakfast: WEEKDAYS.includes(chef.preferredBreakfast) ? chef.preferredBreakfast : '',
     notes: String(chef.notes || '')
   };
 
@@ -60,12 +62,10 @@ export function createBlankChefDraft() {
     name: '',
     role: '',
     senior: false,
-    seniorStatus: false,
     breakfastEligible: true,
     mioEligible: false,
     preferredDaysOff: [],
     skills: Object.fromEntries(EDITABLE_SKILL_SECTIONS.map((section) => [section, 0])),
-    preferredBreakfast: '',
     notes: ''
   });
 }

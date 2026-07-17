@@ -3,9 +3,8 @@ export const CORE_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry'];
 export const DISPLAY_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry', 'Float', 'Breakfast', 'MIO'];
 export const EDITABLE_SKILL_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry', 'Breakfast'];
 
-export const APP_BUILD_VERSION = '2026.07.17.6';
-export const CACHE_BUST_VERSION = '20260717g';
-export const MIO_ROTATION_ORDER = ['Dan', 'Fred', 'Joel', 'Camilla', 'Brooke'];
+export const APP_BUILD_VERSION = '2026.07.17.7';
+export const CACHE_BUST_VERSION = '20260717h';
 export const DAY_FAIRNESS_WEIGHTS = {
   Monday: 0,
   Tuesday: 0,
@@ -17,15 +16,6 @@ export const DAY_FAIRNESS_WEIGHTS = {
 };
 
 export const CHEF_ROLES = ['Executive Chef', 'Head Chef', 'Sous Chef', 'Chef de Partie', 'Demi Chef de Partie', 'Commis Chef'];
-
-export const ROLE_WEIGHT = {
-  'Commis Chef': 1,
-  'Demi Chef de Partie': 2,
-  'Chef de Partie': 3,
-  'Sous Chef': 4,
-  'Head Chef': 5,
-  'Executive Chef': 6
-};
 
 export const MIO_SEQUENCE = {
   primary: ['Monday', 'Tuesday', 'Wednesday'],

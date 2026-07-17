@@ -114,11 +114,13 @@ The workbook uses several dropdown-style fields in the weekly input section and 
 - Annual Leave
 - Unavailable
 
-### Staff section skill scale
-- 3.0 = Preferred / can lead section
-- 2.0 = Fully competent
-- 1.0 = Training / emergency only
-- 0.0 = Do not roster on this section
+### Staff section levels
+- Preferred
+- Competent
+- In training
+- Should not cover
+
+The application stores these labels internally as ordered numeric values for deterministic comparison, but numeric values are not user-facing profile controls.
 
 ### Rule priority / severity values
 - Hard
@@ -134,7 +136,7 @@ The workbook uses several dropdown-style fields in the weekly input section and 
 - H005: Thursday to Sunday require 5 GT chefs.
 - H006: Exactly one eligible junior chef is assigned to MIO each week.
 - H007: MIO pattern is Monday–Wednesday at MIO and Saturday–Sunday at GT.
-- H008: At least one of Aled, Charlie, Adam, or Connor works each day.
+- H008: At least one chef whose canonical Senior chef field is true works each day.
 - H009: Required sections must be covered by an eligible chef.
 - H010: Annual leave credits are 12 hours per day; 4 days covers a full 7-day week away.
 

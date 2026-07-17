@@ -3,7 +3,6 @@ import { getState } from './state.js';
 import { parseLocalDate, toDateString, getWeekStartAtOffset, normalizeWeekStart } from './utils.js';
 import {
   getSectionScore,
-  getRoleBonus,
   getPreferredDayOffPenalty,
   isSenior,
   getHoursForDay,
@@ -17,7 +16,7 @@ import {
   validateRotaHardRules,
   getAdjustedGtTargetsByChef,
   getAnnualLeaveDatesByChef
-} from './validation.js?v=20260717g';
+} from './validation.js?v=20260717h';
 import { filterAvailabilityForWeek, filterAdditionalChefRequirementsForWeek } from './weekly-inputs.js';
 
 const PASS_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -235,7 +234,7 @@ export function compareFairnessTieBreak(a, b, dayName, fairnessContext, currentW
     if (comparison !== 0) return comparison;
   }
 
-  return (a.name || a).localeCompare(b.name || b);
+  return String(a.id || a.name || a).localeCompare(String(b.id || b.name || b));
 }
 
 function updateFairnessContext(fairnessContext, rota) {
@@ -301,7 +300,6 @@ export function getSectionCandidateBaseScore({
   const mioWeekendBoost = staff.name === mioChefName && ['Saturday', 'Sunday'].includes(dayName) ? 10 : 0;
   const passSenior = section === 'Pass' && PASS_DAYS.includes(dayName) && isSenior(staff) ? 120 : 0;
   return sectionScore
-    + getRoleBonus(staff, dayName)
     + urgency
     + scarcityBoost
     + mustUseBoost
@@ -321,7 +319,7 @@ function getExtraCandidateBaseScore({ staff, dayName, gtDaysByChef, mioChefName,
     : 0;
   const mustUseBoost = urgency > 0 && Number.isFinite(remainingAvailability) && remainingAvailability <= urgency ? 200 : 0;
   const seniorPenalty = isSenior(staff) ? 4 : 0;
-  return (urgency * 20) + scarcityBoost + mustUseBoost + getRoleBonus(staff, dayName) - seniorPenalty - getPreferredDayOffPenalty(staff, dayName);
+  return (urgency * 20) + scarcityBoost + mustUseBoost - seniorPenalty - getPreferredDayOffPenalty(staff, dayName);
 }
 
 function pickBestForSection({
@@ -374,7 +372,7 @@ function ensureSeniorCoverage({ assignments, dayName, candidates, selectedNames,
   const replacementSeniors = candidates
     .filter((staff) => isSenior(staff))
     .filter((staff) => !selectedNames.has(staff.name))
-    .sort((a, b) => getRoleBonus(b, dayName) - getRoleBonus(a, dayName));
+    .sort((a, b) => String(a.id || a.name).localeCompare(String(b.id || b.name)));
   if (!replacementSeniors.length) return;
 
   let weakest = null;

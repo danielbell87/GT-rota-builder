@@ -189,7 +189,7 @@ export async function runUiTests(assert) {
   const canonicalMarkup = await fetch('../index.html').then((response) => response.text());
   const canonicalDoc = new DOMParser().parseFromString(canonicalMarkup, 'text/html');
   assert(!!canonicalDoc.querySelector('#numWeeks'), 'UI: canonical page contains #numWeeks');
-  assert(!canonicalDoc.querySelector('#chefWeekendRuleInput') && !canonicalDoc.querySelector('#chefFixedDayOffInput') && !canonicalMarkup.includes('Weekend rule') && !canonicalMarkup.includes('Fixed unavailable day'), 'UI: obsolete weekend and Fixed Days Off controls and labels are absent from the chef editor');
+  assert(!canonicalDoc.querySelector('#chefWeekendRuleInput') && !canonicalDoc.querySelector('#chefFixedDayOffInput') && !canonicalDoc.querySelector('#chefPreferredBreakfastInput') && !canonicalMarkup.includes('Weekend rule') && !canonicalMarkup.includes('Fixed unavailable day') && !canonicalMarkup.includes('Preferred breakfast'), 'UI: obsolete weekend, Fixed Days Off, and Preferred Breakfast controls are absent');
   const stylesText = await fetch('../styles.css').then((response) => response.text());
   assert(stylesText.includes('.technical-details') && stylesText.includes('@media print'), 'UI: stylesheet includes technical-details and print rules for validation cleanup');
   assert(stylesText.includes('.week-panels .week-panel.hidden') && stylesText.includes('display: grid;'), 'UI: print stylesheet restores hidden week panels for printing');
@@ -408,11 +408,18 @@ export async function runUiTests(assert) {
     assert(!staffPanelText.includes('Pass 0') && !staffPanelText.includes('Section skills'), 'UI: chef rows do not permanently show skill scores');
     assert(doc.querySelectorAll('#staffList .danger').length === 0, 'UI: remove buttons are hidden from the main chef list');
 
+    for (const chef of getPersistedAppState(frameWindow).staff) {
+      await openChefEditorByName(doc, chef.name);
+      assert(doc.getElementById('chefNameInput').value === chef.name, `UI: ${chef.name} profile opens with canonical chef data`);
+      await clickElement(doc.getElementById('cancelChefBtn'));
+      await waitFor(() => !getModal(doc).classList.contains('open'));
+    }
+
     const danRow = await openChefEditorByName(doc, 'Dan');
     assert(doc.getElementById('chefModalTitle').textContent === 'Edit chef', 'UI: clicking a chef opens the edit popup');
     assert(normalizeText(doc.getElementById('chefModalSubtitle').textContent) === 'Dan · Chef de Partie', 'UI: the chef popup identifies the selected chef');
     assert(getModalText(doc).includes('Profile') && getModalText(doc).includes('Section suitability') && getModalText(doc).includes('Availability and preferences') && getModalText(doc).includes('Advanced settings'), 'UI: chef popup is organised into clear sections');
-    assert(!getModalText(doc).includes('Hierarchy') && !getModalText(doc).includes('Service pace') && !getModalText(doc).includes('Preferred sections'), 'UI: chef popup hides obsolete hierarchy, service pace, and preferred sections fields');
+    assert(!getModalText(doc).includes('Hierarchy') && !getModalText(doc).includes('Service pace') && !getModalText(doc).includes('Preferred sections') && !getModalText(doc).includes('Preferred breakfast'), 'UI: chef popup hides obsolete hierarchy, service pace, preferred section, and breakfast preference fields');
     assert(doc.getElementById('chefNameInput').value === 'Dan', 'UI: chef popup loads the selected chef name');
     assert(doc.getElementById('chefRoleInput').value === 'Chef de Partie', 'UI: chef popup loads the selected chef role');
     assert(doc.getElementById('chefSkillPassInput').value === '2' && doc.getElementById('chefSkillGarnishInput').value === '3', 'UI: chef popup loads the selected chef skill values');
@@ -492,7 +499,7 @@ export async function runUiTests(assert) {
       const persisted = getPersistedAppState(testChefReloadFrame.contentWindow);
       const testChef = persisted.staff.find((chef) => chef.name === 'Test Chef');
       assert(['Friday', 'Saturday', 'Sunday'].every((dayName) => testChef?.preferredDaysOff?.includes(dayName)) && testChef?.skills?.Sauce === 3, 'UI: Friday, Saturday, and Sunday Preferred Days Off persist after reload');
-      assert(!Object.prototype.hasOwnProperty.call(testChef || {}, 'weekendRule') && !Object.prototype.hasOwnProperty.call(testChef || {}, 'preferredSections') && !Object.prototype.hasOwnProperty.call(testChef || {}, 'hierarchy') && !Object.prototype.hasOwnProperty.call(testChef || {}, 'servicePace'), 'UI: saved chefs do not persist obsolete profile fields');
+      assert(!['seniorStatus', 'seniorityRank', 'preferredBreakfast', 'weekendRule', 'preferredSections', 'hierarchy', 'servicePace'].some((field) => Object.prototype.hasOwnProperty.call(testChef || {}, field)), 'UI: saved chefs contain only canonical profile fields');
     } finally {
       destroyFrame(testChefReloadFrame);
     }
@@ -558,25 +565,33 @@ export async function runUiTests(assert) {
   }
 
   localStorage.clear();
-  localStorage.setItem('gtRota.schemaVersion', '5');
+  localStorage.setItem('gtRota.schemaVersion', '0');
   const legacyStaffState = cloneData(migrationSeedState);
   let migratedSnapshot = null;
   legacyStaffState.staff = legacyStaffState.staff.map((chef) => ({
     ...chef,
+    seniorStatus: chef.name === 'Aled' ? true : undefined,
     weekendRule: chef.name === 'Aled' ? 'Does not work weekends' : '',
     weekend_rule: chef.name === 'Aled',
-    fixedDayOff: chef.name === 'Charlie' ? 'Tuesday' : '',
+    fixedDayOff: chef.name === 'Charlie' ? 'Thursday' : '',
     fixedDaysOff: chef.name === 'Connor' ? ['Monday'] : [],
     fixed_days_off: chef.name === 'Connor' ? ['Tuesday'] : [],
+    preferredBreakfast: chef.name === 'Charlie' ? 'Sunday' : '',
+    seniorityRank: 99,
     hierarchy: 4,
     servicePace: 'steady',
-    preferredSections: Object.entries(chef.skills || {}).filter(([, level]) => level === 3).map(([section]) => section)
+    preferredSections: Object.entries(chef.skills || {}).filter(([, level]) => level === 3).map(([section]) => section),
+    notes: chef.name === 'Charlie' ? 'User-entered migration note' : chef.notes
   }));
   legacyStaffState.weeklyInputs.availability = [
     { chef: 'Dan', type: 'Annual Leave', startDate: '2026-07-13', finishDate: '2026-07-16', notes: 'Migrated leave' },
     { chef: 'Connor', type: 'Unavailable', startDate: '2026-07-17', finishDate: '2026-07-17', notes: 'Migrated unavailable' }
   ];
   localStorage.setItem('gtRota.state.v2', JSON.stringify(legacyStaffState));
+  localStorage.setItem('gtRota.mioEligibilityByChef', JSON.stringify({ Myles: true, Dan: false }));
+  localStorage.setItem('gtRota.staffProfilesByChef', JSON.stringify({
+    Charlie: { role: 'Head Chef', skills: { Sauce: 3 }, mioEligible: false }
+  }));
   let migrationFrame = null;
   try {
     migrationFrame = await loadFrame('../index.html');
@@ -585,13 +600,17 @@ export async function runUiTests(assert) {
     const ids = migratedState.staff.map((chef) => chef.id).filter(Boolean);
     assert(ids.length === migratedState.staff.length && new Set(ids).size === ids.length, 'UI: existing staff records migrate to stable chef IDs');
     assert(migratedState.staff.find((chef) => chef.name === 'Dan')?.skills?.Pass === legacyStaffState.staff.find((chef) => chef.name === 'Dan')?.skills?.Pass, 'UI: staff migration preserves existing skill values');
-    assert(migratedState.staff.every((chef) => !['weekendRule', 'weekend_rule', 'fixedDayOff', 'fixedDaysOff', 'fixed_days_off', 'hierarchy', 'servicePace', 'preferredSections'].some((field) => Object.prototype.hasOwnProperty.call(chef, field))), 'UI: schema migration removes obsolete chef profile and day-off fields');
+    assert(migratedState.staff.every((chef) => !['seniorStatus', 'seniorityRank', 'preferredBreakfast', 'weekendRule', 'weekend_rule', 'fixedDayOff', 'fixedDaysOff', 'fixed_days_off', 'hierarchy', 'servicePace', 'preferredSections'].some((field) => Object.prototype.hasOwnProperty.call(chef, field))), 'UI: schema migration removes obsolete chef profile and day-off fields');
     assert(migratedState.staff.find((chef) => chef.name === 'Aled')?.preferredDaysOff?.length === legacyStaffState.staff.find((chef) => chef.name === 'Aled')?.preferredDaysOff?.length, 'UI: legacy weekend values do not alter Preferred Days Off during migration');
+    assert(migratedState.staff.find((chef) => chef.name === 'Charlie')?.preferredDaysOff?.includes('Thursday'), 'UI: legacy Fixed Day Off migrates once into Preferred Days Off');
+    assert(migratedState.staff.find((chef) => chef.name === 'Aled')?.senior === true, 'UI: legacy seniorStatus true migrates to canonical senior true');
     assert(migratedState.staff.find((chef) => chef.name === 'Dan')?.id === legacyStaffState.staff.find((chef) => chef.name === 'Dan')?.id, 'UI: schema migration preserves stable chef IDs');
-    assert(migratedState.staff.find((chef) => chef.name === 'Charlie')?.role === legacyStaffState.staff.find((chef) => chef.name === 'Charlie')?.role && migratedState.staff.find((chef) => chef.name === 'Charlie')?.seniorStatus === legacyStaffState.staff.find((chef) => chef.name === 'Charlie')?.seniorStatus, 'UI: schema migration preserves roles and senior status');
-    assert(migratedState.staff.find((chef) => chef.name === 'Camilla')?.mioEligible === legacyStaffState.staff.find((chef) => chef.name === 'Camilla')?.mioEligible, 'UI: schema migration preserves MIO eligibility');
+    assert(migratedState.staff.find((chef) => chef.name === 'Charlie')?.role === legacyStaffState.staff.find((chef) => chef.name === 'Charlie')?.role, 'UI: schema migration preserves display roles');
+    assert(migratedState.staff.find((chef) => chef.name === 'Myles')?.mioEligible === true && migratedState.staff.find((chef) => chef.name === 'Dan')?.mioEligible === false, 'UI: legacy MIO eligibility map migrates into canonical chef records');
+    assert(migratedState.staff.find((chef) => chef.name === 'Charlie')?.notes === 'User-entered migration note' && migratedState.staff.find((chef) => chef.name === 'Charlie')?.skills?.Sauce === 3, 'UI: schema migration preserves user notes and merges legacy structured profile data');
     assert(JSON.stringify(migratedState.weeklyInputs.availability) === JSON.stringify(legacyStaffState.weeklyInputs.availability), 'UI: schema migration preserves annual leave and unavailable entries');
-    assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '8', 'UI: storage schema version increments to 8');
+    assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '9', 'UI: storage schema version increments to 9');
+    assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.mioEligibilityByChef') === null && migrationFrame.contentWindow.localStorage.getItem('gtRota.staffProfilesByChef') === null, 'UI: legacy per-chef storage maps are removed after migration');
   } finally {
     destroyFrame(migrationFrame);
   }

@@ -1,7 +1,4 @@
 export const DEFAULT_RULES = [
-  { id: 'H003', title: 'Myles larder only', description: 'Myles only works Larder unless edited in staff skills.', type: 'hard', enabled: true },
-  { id: 'H004', title: 'Fred garnish only', description: 'Fred only works Garnish unless edited in staff skills.', type: 'hard', enabled: true },
-  { id: 'H005', title: 'Joel sauce only', description: 'Joel only works Sauce unless edited in staff skills.', type: 'hard', enabled: true },
   { id: 'H006', title: 'Breakfast count', description: 'Exactly one breakfast chef per day.', type: 'hard', enabled: true },
   { id: 'H007', title: 'Breakfast core coupling', description: 'Breakfast chef must also be assigned to a core section.', type: 'hard', enabled: true },
   { id: 'H008', title: 'Senior daily coverage', description: 'At least one senior chef each day.', type: 'hard', enabled: true },
@@ -25,10 +22,6 @@ export const DEFAULT_RULES = [
   { id: 'S006', title: 'Senior distribution', description: 'Prefer balanced senior distribution.', type: 'soft', enabled: true, weight: 1 },
   { id: 'S007', title: 'Training opportunities', description: 'Use safe training allocations.', type: 'soft', enabled: true, weight: 1 },
   { id: 'S008', title: 'Tournant cover', description: 'Prefer useful float coverage.', type: 'soft', enabled: true, weight: 1 },
-  { id: 'S009', title: 'Brooke pastry/larder', description: 'Prefer Brooke 3x Pastry, 1x Larder.', type: 'soft', enabled: true, weight: 2 },
-  { id: 'S010', title: 'Aled Monday breakfast', description: 'Prefer Aled for Monday breakfast.', type: 'soft', enabled: true, weight: 1 },
-  { id: 'S011', title: 'Charlie Sunday breakfast', description: 'Prefer Charlie for Sunday breakfast.', type: 'soft', enabled: true, weight: 1 },
-  { id: 'S012', title: 'Dan/Fred Fri/Sat alternation', description: 'Prefer alternating Friday and Saturday off where feasible.', type: 'soft', enabled: true, weight: 1 },
   {
     id: 'prefer-senior-on-pass',
     title: 'Prioritise senior chef on Pass',

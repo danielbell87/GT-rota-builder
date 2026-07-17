@@ -1,7 +1,7 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota, buildMultiWeekRota, compareFairnessTieBreak, getSectionCandidateBaseScore } from '../js/solver.js';
 import { isSenior, getHoursForDay, getHoursForAssignment } from '../js/scoring.js';
-import { isUnavailable, validateRotaHardRules } from '../js/validation.js?v=20260717g';
+import { isUnavailable, validateRotaHardRules } from '../js/validation.js?v=20260717h';
 import { canCoverSection, sectionCandidateScore } from '../js/section-levels.js';
 import { normalizeChefRecord } from '../js/staff.js';
 
@@ -47,11 +47,9 @@ function createTestChef(name, role, skills = {}, extra = {}) {
     name,
     role,
     senior: false,
-    seniorStatus: false,
     breakfastEligible: true,
     mioEligible: false,
     preferredDaysOff: [],
-    preferredBreakfast: '',
     notes: '',
     skills: {
       Pass: 0,
@@ -72,6 +70,7 @@ export async function runSolverTests(assert) {
   const baseline = runScenario(state);
   const baselineFailures = getHardFailures(state, baseline);
 
+  assert(state.weeklyInputs.availability.length === 0, 'Fresh and reset state contains no example annual leave or unavailability');
   assert(baseline.status === 'ok', 'Baseline week with Dan on MIO is feasible');
   assert(baselineFailures.length === 0, 'Baseline week has no hard-rule failures');
   const danBaseline = baseline.summary.find((item) => item.name === 'Dan');
@@ -107,6 +106,14 @@ export async function runSolverTests(assert) {
     .filter((item) => item.name !== 'Dan')
     .every((item) => item.gtDays === item.adjustedGtTarget && item.adjustedGtTarget === 4);
   assert(baselineNonMioExactTargets, 'Baseline week gives every non-MIO chef exactly 4 GT days');
+
+  const breakfastIneligibleState = setupBaseState();
+  breakfastIneligibleState.staff.find((chef) => chef.name === 'Aled').breakfastEligible = false;
+  const breakfastIneligibleResult = runScenario(breakfastIneligibleState);
+  assert(
+    breakfastIneligibleResult.rota.every((day) => !day.assignments.some((assignment) => assignment.section === 'Breakfast' && assignment.chef === 'Aled')),
+    'Breakfast-ineligible chefs are never assigned Breakfast'
+  );
 
   const baselineFloatAssignments = baseline.rota.flatMap((day) => day.assignments
     .filter((assignment) => assignment.section === 'Float')
@@ -211,7 +218,7 @@ export async function runSolverTests(assert) {
   assert(state.staff.find((chef) => chef.name === 'Myles')?.skills?.Larder === 3 && Object.entries(state.staff.find((chef) => chef.name === 'Myles')?.skills || {}).every(([section, level]) => section === 'Larder' || section === 'Breakfast' || level === 0), 'Defaults: Myles remains Larder-only');
   assert(state.staff.find((chef) => chef.name === 'Fred')?.skills?.Garnish === 3 && Object.entries(state.staff.find((chef) => chef.name === 'Fred')?.skills || {}).every(([section, level]) => section === 'Garnish' || section === 'Breakfast' || level === 0), 'Defaults: Fred remains Garnish-only');
   assert(state.staff.find((chef) => chef.name === 'Joel')?.skills?.Sauce === 3 && Object.entries(state.staff.find((chef) => chef.name === 'Joel')?.skills || {}).every(([section, level]) => section === 'Sauce' || section === 'Breakfast' || level === 0), 'Defaults: Joel remains Sauce-only');
-  assert((state.staff.find((chef) => chef.name === 'Brooke')?.notes || '').includes('3 pastry and 1 larder'), 'Defaults: Brooke soft Pastry/Larder rule remains present');
+  assert(state.staff.every((chef) => chef.notes === ''), 'Defaults: notes do not duplicate structured section levels');
 
   const mylesMioAttempt = runScenario(state, { mioChef: 'Myles' });
   const mylesMioAssigned = mylesMioAttempt.rota.some((day) => day.assignments.some((assignment) => assignment.section === 'MIO' && assignment.chef === 'Myles'));
@@ -257,6 +264,15 @@ export async function runSolverTests(assert) {
   });
   assert(rankedWithFairness[0].name === 'Preferred Sauce', 'Scenario D: section suitability stays ahead of weekend fairness when levels differ meaningfully');
 
+  const executiveRoleChef = createTestChef('Role A', 'Executive Chef', { Sauce: 2 }, { senior: false });
+  const commisRoleChef = createTestChef('Role B', 'Commis Chef', { Sauce: 2 }, { senior: false });
+  const executiveRoleScore = getSectionCandidateBaseScore({ staff: executiveRoleChef, section: 'Sauce', dayName: 'Thursday', ruleOverrides: {}, gtDaysByChef: {}, mioChefName: '' });
+  const commisRoleScore = getSectionCandidateBaseScore({ staff: commisRoleChef, section: 'Sauce', dayName: 'Thursday', ruleOverrides: {}, gtDaysByChef: {}, mioChefName: '' });
+  assert(executiveRoleScore === commisRoleScore, 'Role display values do not affect solver candidate scoring');
+  assert(!isSenior(executiveRoleChef), 'Executive Chef with senior false does not count as senior cover');
+  const seniorCommis = createTestChef('Senior Commis', 'Commis Chef', { Sauce: 2 }, { senior: true });
+  assert(isSenior(seniorCommis), 'Lower-role chef with senior true counts as senior cover');
+
   const preferredDaysChef = createTestChef('Preferred Days', 'Chef de Partie', { Sauce: 2 }, { preferredDaysOff: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] });
   const noPreferenceChef = createTestChef('No Preference', 'Chef de Partie', { Sauce: 2 });
   ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].forEach((dayName) => {
@@ -275,7 +291,7 @@ export async function runSolverTests(assert) {
   const normalizedLegacyChef = normalizeChefRecord(legacyChef);
   assert(!Object.prototype.hasOwnProperty.call(normalizedLegacyChef, 'weekendRule'), 'Legacy chef data loads safely and drops the obsolete property during normalization');
   assert(!['weekend_rule', 'fixedDayOff', 'fixedDaysOff', 'fixed_days_off'].some((field) => Object.prototype.hasOwnProperty.call(normalizedLegacyChef, field)), 'All legacy fixed-day and weekend field variants are dropped during normalization');
-  assert(normalizedLegacyChef.preferredDaysOff.length === 0, 'Legacy weekend values are not converted into Preferred Days Off');
+  assert(JSON.stringify(normalizedLegacyChef.preferredDaysOff) === JSON.stringify(['Saturday']), 'Legacy Fixed Day Off migrates into Preferred Days Off without converting weekend-rule values');
   assert(!isUnavailable(legacyChef, '2026-07-18', 'Saturday', { _availability: [] }), 'Legacy weekend values no longer create a solver constraint');
   assert(
     getSectionCandidateBaseScore({ staff: legacyChef, section: 'Sauce', dayName: 'Saturday', ruleOverrides: {}, gtDaysByChef: {}, mioChefName: '' })
@@ -283,7 +299,7 @@ export async function runSolverTests(assert) {
     'Legacy weekend values no longer affect solver scoring'
   );
 
-  const seniorCompetentPass = createTestChef('Senior Pass', 'Sous Chef', { Pass: 2, Breakfast: 2 }, { senior: true, seniorStatus: true });
+  const seniorCompetentPass = createTestChef('Senior Pass', 'Sous Chef', { Pass: 2, Breakfast: 2 }, { senior: true });
   const nonSeniorPreferredPass = createTestChef('Non-senior Pass', 'Chef de Partie', { Pass: 3, Breakfast: 2 });
   const passCandidates = [seniorCompetentPass, nonSeniorPreferredPass].sort((a, b) => (
     getSectionCandidateBaseScore({ staff: b, section: 'Pass', dayName: 'Friday', ruleOverrides: {}, gtDaysByChef: {}, mioChefName: '' })

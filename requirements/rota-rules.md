@@ -5,7 +5,7 @@
 These are treated as hard requirements and should be enforced before any soft preferences are considered.
 
 1. Exactly one breakfast chef is assigned each day.
-2. At least one of Aled, Charlie, Adam, or Connor works each day.
+2. At least one chef with **Senior chef** selected works each day.
 3. **Weekly GT targets are exact, not maximum-only**:
    - Normal chef: exactly 4 GT days.
    - Normal chef with annual leave: exactly `max(0, 4 - annual-leave days credited that week)` GT days.
@@ -39,14 +39,11 @@ These are scoring and quality objectives rather than hard blocking rules.
 4. Use fair Friday/Saturday/Sunday rotation where possible.
 5. Provide useful training opportunities without weakening service.
 6. Avoid more than one breakfast assignment per chef in a week unless required.
-7. Brooke should ideally work 3 pastry shifts and 1 larder shift in a normal GT week.
-8. Aled prefers Monday breakfast.
-9. Charlie prefers Sunday breakfast.
-10. Friday, Saturday, and Sunday duties should rotate fairly among interchangeable chefs.
-11. Friday–Sunday should preferably include at least two senior chefs.
-12. The rota should avoid unnecessary overstaffing, but must use Float whenever extra GT days are required to satisfy exact weekly chef targets.
-13. Thursday to Sunday, Pass should be assigned to an available senior chef where this can be achieved without breaking hard constraints.
-14. Preferred Days Off may contain any Monday-to-Sunday combination. They should be honoured where feasible, but may be overridden for coverage, senior cover, section strength, exact weekly targets, or overall feasibility.
+7. Friday, Saturday, and Sunday duties should rotate fairly among interchangeable chefs.
+8. Friday–Sunday should preferably include at least two senior chefs.
+9. The rota should avoid unnecessary overstaffing, but must use Float whenever extra GT days are required to satisfy exact weekly chef targets.
+10. Thursday to Sunday, Pass should be assigned to an available chef marked Senior chef where this can be achieved without breaking hard constraints.
+11. Preferred Days Off may contain any Monday-to-Sunday combination. They should be honoured where feasible, but may be overridden for coverage, senior cover, section strength, exact weekly targets, or overall feasibility.
 
 ## Important notes from the workbook
 
