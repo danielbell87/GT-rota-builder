@@ -157,10 +157,11 @@ export async function runValidationTests(assert) {
   assert(weekendLeaveH016 && !weekendLeaveH016.passed, 'Multiple leave dates after failure still reduce the adjusted GT target');
   assert(weekendLeaveH016?.message.includes('expected at most 2 GT days (actual 4)'), 'Adjusted GT target reflects multiple leave dates after failure');
 
+  const noLeaveState = setupState();
   const noLeaveValidation = validateRotaHardRules({
     rota: saturdayPartial,
-    state,
-    inputs: state.weeklyInputs,
+    state: noLeaveState,
+    inputs: noLeaveState.weeklyInputs,
     summary: result.summary,
     fullWeekDates
   });
@@ -186,8 +187,8 @@ export async function runValidationTests(assert) {
 
   const fullWeekValidation = validateRotaHardRules({
     rota: result.rota,
-    state,
-    inputs: state.weeklyInputs,
+    state: noLeaveState,
+    inputs: noLeaveState.weeklyInputs,
     summary: result.summary,
     fullWeekDates
   });
@@ -209,26 +210,27 @@ export async function runValidationTests(assert) {
   assert(mioH015?.passed, 'Selected MIO chef still expects exactly 3 MIO shifts on the actual partial rota');
   assert(mioH022 && !mioH022.passed && mioH022.message.includes('expected exactly 2 GT shifts (actual 1)'), 'Selected MIO chef keeps the existing 2 GT-shift rule');
 
+  const finalBaselineState = setupState();
   const softCorrupted = JSON.parse(JSON.stringify(result.rota));
   const thursday = softCorrupted.find((day) => day.dayName === 'Thursday');
   if (thursday) {
     const pass = thursday.assignments.find((a) => a.section === 'Pass');
     if (pass) pass.chef = 'Dan';
   }
-  const softCorruptedValidation = validateRotaSoftRules({ rota: softCorrupted, state, inputs: state.weeklyInputs });
+  const softCorruptedValidation = validateRotaSoftRules({ rota: softCorrupted, state: finalBaselineState, inputs: finalBaselineState.weeklyInputs });
   assert(
     softCorruptedValidation.some((v) => v.ruleId === 'prefer-senior-on-pass' && !v.passed),
     'Soft validation flags non-senior Pass assignment when a senior is available'
   );
 
   const unavailableChef = 'Dan';
-  state.weeklyInputs.availability = [{ chef: unavailableChef, type: 'Unavailable', startDate: '2026-07-14', finishDate: '2026-07-14', notes: '' }];
+  finalBaselineState.weeklyInputs.availability = [{ chef: unavailableChef, type: 'Unavailable', startDate: '2026-07-14', finishDate: '2026-07-14', notes: '' }];
   syncCompatibilityViews();
   const rerun = buildRota({
-    weekStart: state.weeklyInputs.weekStart,
-    mioChef: state.weeklyInputs.mioChef,
+    weekStart: finalBaselineState.weeklyInputs.weekStart,
+    mioChef: finalBaselineState.weeklyInputs.mioChef,
     additionalChefRequirements: [],
-    availability: state.weeklyInputs.availability
+    availability: finalBaselineState.weeklyInputs.availability
   });
   const unavailableWorked = rerun.rota.some((day) => day.date === '2026-07-14' && day.chefs.includes(unavailableChef));
   assert(!unavailableWorked, 'Unavailable request counts as normal day off for scheduling');
