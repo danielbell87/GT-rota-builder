@@ -15,6 +15,7 @@ import { getChefSoftPreferenceDetails } from './staff.js';
 import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260718h';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
 import { cellKey, ensureManualEditState, getChefConcerns, MANUALLY_EDITABLE_SECTIONS } from './manual-edit.js';
+import { buildRotaDiagnostics, checkRotaFeasibility, summarizeDiagnostics } from './diagnostics.js';
 
 function getRequiredElement(id) {
   const element = document.getElementById(id);
@@ -143,6 +144,8 @@ export function getWeekValidationView(week, state) {
   const softScore = week.softScore || (hasRota
     ? scoreSoftPreferences({ state, rota: week.rota, hardValidation })
     : { valid: false, score: 0, capped: false, explanation: [] });
+  const diagnostics = hasRota ? buildRotaDiagnostics({ state, week, hardValidation, softScore }) : [];
+  week.diagnostics = diagnostics;
   const hardFailures = hardValidation.filter((result) => result.severity === 'hard' && result.passed === false);
   const softFailures = softValidation.filter((result) => result.severity === 'soft' && result.passed === false);
   const generationFailures = (week.validation || []).map((result, index) => ({
@@ -163,8 +166,49 @@ export function getWeekValidationView(week, state) {
     visibleHardFailures,
     generationFailures,
     softScore,
+    diagnostics,
     valid: week.status === 'ok' && hardFailures.length === 0
   };
+}
+
+function renderDecisionPanel(view) {
+  if (!view.diagnostics.length) return '';
+  const summary = summarizeDiagnostics(view.diagnostics, 5);
+  const renderItem = (item) => `<li class="decision-item decision-${escapeHtml(item.type)}">
+    <span class="decision-label">${escapeHtml(item.type === 'warning' ? 'Hard-constraint warning' : item.type === 'satisfied' ? 'Satisfied preference' : item.type === 'fairness' ? 'Fairness decision' : 'Compromise')}</span>
+    <span>${escapeHtml(item.message)}</span>${item.affectsScore ? '<span class="decision-score-note">Affects score</span>' : ''}
+  </li>`;
+  return `<section class="results-section decisions-panel">
+    <div class="decisions-heading"><div><h4>Why this rota?</h4><p class="section-note">The most important decisions and compromises, using the same evidence as validation and scoring.</p></div><span class="rota-score">Score ${Number(view.softScore.score || 0).toFixed(1)}</span></div>
+    <ul class="decision-list">${summary.visible.map(renderItem).join('')}</ul>
+    ${summary.remaining.length ? `<details class="decisions-more"><summary>Show all decisions (${summary.all.length})</summary><ul class="decision-list">${summary.remaining.map(renderItem).join('')}</ul></details>` : ''}
+  </section>`;
+}
+
+export function renderReadinessPanel() {
+  const container = document.getElementById('readiness');
+  if (!container) return null;
+  const state = getState();
+  const inputs = collectWeeklyInputsFromDom();
+  const readiness = checkRotaFeasibility({ state, inputs: { ...inputs, weeklyMioSelections: state.weeklyInputs.weeklyMioSelections || {} } });
+  state.uiState.readiness = readiness;
+  const tone = readiness.status === 'blocked' ? 'danger' : readiness.status === 'warnings' ? 'warning' : 'success';
+  const title = readiness.status === 'blocked' ? 'Cannot generate' : readiness.status === 'warnings' ? 'Warnings' : 'Ready';
+  const issues = readiness.issues.slice(0, 6);
+  container.innerHTML = `<section class="readiness-card readiness-${tone}" aria-label="Rota readiness">
+    <div class="readiness-title">${renderStatusBadge(tone, title)}<strong>Rota readiness</strong></div>
+    <p>${readiness.status === 'ready'
+      ? 'No obvious hard impossibilities were found.'
+      : readiness.status === 'blocked'
+        ? `${readiness.errors.length} proven problem${readiness.errors.length === 1 ? '' : 's'} must be fixed before generation.`
+        : `${readiness.warnings.length} tight constraint${readiness.warnings.length === 1 ? '' : 's'} found; generation is still allowed.`}</p>
+    ${issues.length ? `<ul class="issue-list compact">${issues.map((issue) => `<li>${escapeHtml(issue.message)}</li>`).join('')}</ul>` : ''}
+    ${readiness.issues.length > issues.length ? `<details><summary>Show all readiness details (${readiness.issues.length})</summary><ul class="issue-list compact">${readiness.issues.slice(issues.length).map((issue) => `<li>${escapeHtml(issue.message)}</li>`).join('')}</ul></details>` : ''}
+    <p class="small">Passing this check does not guarantee that the full multi-week optimisation will find a solution.</p>
+  </section>`;
+  const button = document.getElementById('generateRotaBtn');
+  if (button) button.disabled = readiness.status === 'blocked';
+  return readiness;
 }
 
 function renderResultsHeader(numberOfWeeks, weekStart) {
@@ -851,6 +895,7 @@ export function renderWeekPanel(view, options = {}) {
       <p class="week-mio-summary"><strong>MIO chef:</strong> ${escapeHtml(view.inputs.mioChef || 'None')}</p>
       ${showStatus ? renderWeekStatusCard(view) : ''}
       ${view.week.status === 'infeasible' ? '' : renderRotaTable(view.week, view)}
+      ${view.week.status === 'infeasible' ? '' : renderDecisionPanel(view)}
       ${view.week.status === 'infeasible' ? '' : renderChefHoursSummary(view)}
       ${fairnessHtml}
       ${renderHardFailureSection(view)}
@@ -865,6 +910,18 @@ export function renderResultsPanel(options = {}) {
   const container = getRequiredElement('results');
 
   let overallResult = options.overallResult || null;
+  const readiness = renderReadinessPanel();
+  if (!overallResult && readiness?.status === 'blocked') {
+    const issuesByWeek = Array.from({ length: inputs.numWeeks || 1 }, (_, weekIndex) => readiness.errors.filter((issue) => issue.weekIndex === weekIndex));
+    overallResult = {
+      status: 'infeasible', numberOfWeeks: inputs.numWeeks || 1, preflight: readiness,
+      weeks: issuesByWeek.map((issues, weekIndex) => ({
+        weekIndex, weekNumber: weekIndex + 1, weekStart: getWeekStartAtOffset(inputs.weekStart, weekIndex), inputs,
+        status: 'infeasible', rota: [], summary: [], hardValidation: [],
+        validation: issues.map((issue) => ({ ruleId: issue.code, day: issue.dayName || 'Overall', severity: 'bad', message: issue.message }))
+      })), fairnessApplied: false, fairnessSummary: []
+    };
+  }
   if (!overallResult && (inputs.numWeeks || 1) === 1) {
     const solveResult = buildRota(inputs);
     overallResult = {
@@ -1004,6 +1061,7 @@ export function renderAll() {
   renderAdditionalChefRequirements();
   renderStaffTable();
   renderAvailabilityTable();
+  renderReadinessPanel();
   const state = getState();
   const saved = state.generatedRotas.latestResult;
   const savedStartsHere = saved?.weeks?.[0]?.weekStart === state.weeklyInputs.weekStart;

@@ -20,7 +20,7 @@
       <div class="brand-intro">
         <p>Build a balanced kitchen rota across one to eight weeks, accounting for availability, leave, breakfast cover, section levels and the four-day working cap.</p>
         <div class="controls space-between brand-meta">
-          <span class="small live-indicator">Changes update the rota live</span>
+          <span class="small live-indicator">Readiness checks update as inputs change</span>
           <span class="small">Build <span id="buildVersion">2026.07.18.7</span></span>
         </div>
       </div>
@@ -81,6 +81,17 @@
       </div>
       <p id="backupMessage" class="backup-message" role="status" aria-live="polite" aria-atomic="true"></p>
     </section>
+
+    <div class="panel generation-panel">
+      <div class="generation-heading">
+        <div>
+          <h2>Generate rota</h2>
+          <p class="small my-8">Check the current inputs, then build the selected one-to-eight-week rota.</p>
+        </div>
+        <button id="generateRotaBtn" type="button">Generate rota</button>
+      </div>
+      <div id="readiness" aria-live="polite" aria-atomic="true"></div>
+    </div>
 
     <div class="panel">
       <h2>Generated rota</h2>

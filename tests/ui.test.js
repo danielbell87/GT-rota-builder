@@ -422,16 +422,14 @@ export async function runUiTests(assert) {
     await setFieldValue(infeasibleRow.querySelector('.entry-type'), 'Annual Leave');
     await setFieldValue(infeasibleRow.querySelector('.entry-start-date'), '2026-07-20');
     await setFieldValue(infeasibleRow.querySelector('.entry-finish-date'), '2026-07-26');
-    await waitFor(() => doc.querySelectorAll('.week-check').length === 2 && getVisibleResultsText(doc).includes('1 week valid · 1 week requires attention.'));
-    assert(getVisibleResultsText(doc).includes('1 week valid · 1 week requires attention.'), 'UI: multi-week summary reports valid and affected weeks compactly');
-    const weekChecks = [...doc.querySelectorAll('.week-check')];
-    assert(weekChecks[0]?.textContent.includes('✓ No problems found'), 'UI: valid weeks show only a compact success line');
-    assert(weekChecks[1]?.textContent.includes('issue'), 'UI: failed weeks automatically list their issues in the weekly checks overview');
+    await waitFor(() => doc.getElementById('generateRotaBtn').disabled && doc.getElementById('readiness').textContent.includes('Cannot generate'));
+    assert(doc.getElementById('readiness').textContent.includes('Brooke cannot complete the required three MIO shifts and two GT shifts'), 'UI: multi-week preflight identifies the affected MIO week before solving');
+    assert(doc.getElementById('generateRotaBtn').disabled, 'UI: generation is blocked while a proven multi-week impossibility remains');
 
     doc.querySelector('button[data-results-week-index="1"]').click();
     await waitFor(() => !getWeekPanel(doc, 1)?.classList.contains('hidden'));
     const visibleWeekTwoText = getVisibleResultsText(doc);
-    assert(visibleWeekTwoText.includes('Rota could not be generated') && visibleWeekTwoText.includes('cannot place exactly 3 MIO shifts due to availability/unavailability constraints'), 'UI: infeasible weeks immediately show specific failure reasons');
+    assert(visibleWeekTwoText.includes('Rota could not be generated') && visibleWeekTwoText.includes('cannot complete the required three MIO shifts and two GT shifts'), 'UI: infeasible weeks immediately show specific preflight failure reasons');
     assert(!visibleWeekTwoText.includes('H015'), 'UI: normal multi-week failure messaging hides hard-rule IDs');
     assert(canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.activeWeekHardFailureCount >= 1, 'UI: switching weeks updates the visible issue summary for the selected week');
     assert(doc.getElementById('printRotaBtn').disabled, 'UI: print button is unavailable when the generated rota is not fully successful');

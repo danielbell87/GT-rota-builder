@@ -12,6 +12,7 @@ import {
   renderAdditionalChefRequirements,
   renderAvailabilityTable,
   renderStaffTable,
+  renderReadinessPanel,
   openChefModal,
   closeChefModal,
   populateChefModal,
@@ -385,6 +386,16 @@ function attachEvents() {
     if (!openPrintWindow(state.generatedRotas.latestResult)) {
       message.textContent = 'Your browser blocked the printable rota. Allow pop-ups for this page, then try again.';
     }
+  });
+  requireElement('generateRotaBtn').addEventListener('click', () => {
+    const readiness = renderReadinessPanel();
+    if (readiness?.status === 'blocked') {
+      announce('Rota generation is blocked by the readiness problems shown above.');
+      return;
+    }
+    renderResultsPanel();
+    persistState();
+    announce(readiness?.status === 'warnings' ? 'Rota generated with readiness warnings.' : 'Rota generated.');
   });
   requireElement('downloadBackupBtn').addEventListener('click', downloadBackup);
   requireElement('restoreBackupBtn').addEventListener('click', () => requireElement('restoreBackupInput').click());

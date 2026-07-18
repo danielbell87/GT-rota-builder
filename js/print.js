@@ -46,7 +46,11 @@ export function buildPrintModel(overallResult) {
       })),
       warnings: (week.hardValidation || [])
         .filter((result) => result.passed === false)
-        .map((result) => result.message)
+        .map((result) => result.message),
+      decisions: (week.diagnostics || [])
+        .filter((item) => item.type === 'warning' || item.type === 'compromise')
+        .slice(0, 5)
+        .map((item) => item.message)
     }));
 
   return {
@@ -70,6 +74,9 @@ function renderPrintWeek(week, sections, isLast) {
   const warnings = week.warnings.length
     ? `<aside class="warnings"><strong>Warnings</strong><ul>${week.warnings.map((warning) => `<li>${escapePrintHtml(warning)}</li>`).join('')}</ul></aside>`
     : '';
+  const decisions = week.decisions.length
+    ? `<aside class="decisions"><strong>Important rota decisions</strong><ul>${week.decisions.map((message) => `<li>${escapePrintHtml(message)}</li>`).join('')}</ul></aside>`
+    : '';
 
   return `
     <section class="print-week${isLast ? ' print-week-last' : ''}">
@@ -88,6 +95,7 @@ function renderPrintWeek(week, sections, isLast) {
         <tbody>${rows}</tbody>
       </table>
       ${warnings}
+      ${decisions}
     </section>`;
 }
 
@@ -123,6 +131,8 @@ export function renderPrintDocument(model) {
     .empty { color: #6b7280; font-weight: normal; }
     .warnings { margin-top: 4mm; padding: 3mm; border: 0.35mm solid #92400e; background: #fffbeb; font-size: 8pt; break-inside: avoid; page-break-inside: avoid; }
     .warnings ul { margin: 1.5mm 0 0; padding-left: 5mm; }
+    .decisions { margin-top: 4mm; padding: 3mm; border: 0.35mm solid #a68854; background: #faf7f0; font-size: 8pt; break-inside: avoid; page-break-inside: avoid; }
+    .decisions ul { margin: 1.5mm 0 0; padding-left: 5mm; }
     @media print {
       body { background: #fff; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
       .print-week { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }

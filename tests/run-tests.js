@@ -6,6 +6,7 @@ import { runUiTests } from './ui.test.js?v=20260718p';
 import { runPrintTests } from './print.test.js';
 import { runBackupTests } from './backup.test.js';
 import { runManualEditTests } from './manual-edit.test.js?v=20260718p';
+import { runDiagnosticsTests } from './diagnostics.test.js';
 import { SOLVER_ENGINE_VERSION } from '../js/solver.js';
 
 const summaryEl = document.getElementById('testSummary');
@@ -30,6 +31,7 @@ async function runAllTests() {
     await runBackupTests(assert);
     await runManualEditTests(assert);
     await runUiTests(assert);
+    await runDiagnosticsTests(assert);
   } catch (error) {
     results.push({
       passed: false,

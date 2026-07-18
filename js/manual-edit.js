@@ -1,6 +1,7 @@
 import { DISPLAY_SECTIONS, SHIFT_LENGTHS } from './constants.js';
 import { validateRotaHardRules, validateRotaSoftRules } from './validation.js';
 import { scoreSoftPreferences } from './scoring.js';
+import { buildRotaDiagnostics } from './diagnostics.js';
 
 export const MANUAL_HISTORY_LIMIT = 50;
 export const MANUALLY_EDITABLE_SECTIONS = DISPLAY_SECTIONS.filter((section) => section !== 'MIO');
@@ -166,6 +167,7 @@ export function recalculateEditedResult(state, overallResult) {
     week.hardValidation = validateRotaHardRules({ rota: week.rota, state, inputs: week.inputs || {}, summary: week.summary, fullWeekDates: week.fullWeekDates });
     week.softValidation = validateRotaSoftRules({ rota: week.rota, state, inputs: week.inputs || {} });
     week.softScore = scoreSoftPreferences({ state, rota: week.rota, hardValidation: week.hardValidation });
+    week.diagnostics = buildRotaDiagnostics({ state, week, hardValidation: week.hardValidation, softScore: week.softScore });
     week.status = 'ok';
   });
   overallResult.status = 'ok';
