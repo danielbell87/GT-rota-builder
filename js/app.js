@@ -20,7 +20,9 @@ import {
   showChefModalError,
   setChefRemovalConfirmation,
   syncChefChoiceChipState
-} from './render.js?v=20260718n';
+} from './render.js?v=20260718p';
+import { renderChefSelector } from './render.js?v=20260718p';
+import { applyManualAssignment, findDuplicateCoreAssignment, redoManualEdit, resetAllManualEdits, resetManualCell, undoManualEdit } from './manual-edit.js';
 import { upsertPublishedHistory } from './history.js';
 import { openPrintWindow } from './print.js';
 import { createBackup, createBackupFilename, restoreBackup, serializeBackup } from './backup.js';
@@ -31,6 +33,7 @@ let activeChefId = null;
 let activeChefMode = 'create';
 let activeChefTriggerSelector = '#addChefBtn';
 let removeChefConfirmationOpen = false;
+let activeAssignmentTrigger = null;
 
 function requireElement(id) {
   const element = document.getElementById(id);
@@ -47,6 +50,36 @@ function persistState() {
 
 function refreshAll() {
   renderAll();
+}
+
+function announce(message) {
+  const live = document.getElementById('manualEditLive');
+  if (live) live.textContent = message;
+}
+
+function closeChefSelector({ restoreFocus = true } = {}) {
+  document.querySelector('.chef-selector')?.remove();
+  document.querySelector('.chef-selector-backdrop')?.remove();
+  if (restoreFocus) activeAssignmentTrigger?.focus();
+  activeAssignmentTrigger = null;
+}
+
+function openAssignmentSelector(button) {
+  closeChefSelector({ restoreFocus: false });
+  activeAssignmentTrigger = button;
+  document.body.insertAdjacentHTML('beforeend', renderChefSelector({
+    weekIndex: Number(button.dataset.weekIndex),
+    date: button.dataset.date,
+    section: button.dataset.section
+  }));
+  document.querySelector('.chef-selector-option')?.focus();
+}
+
+function refreshEditedRota(message = '') {
+  renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
+  state.generatedRotas.current = state.generatedRotas.latestResult?.weeks?.[state.uiState.selectedResultWeekIndex || 0] || null;
+  persistState();
+  if (message) announce(message);
 }
 
 function showBackupMessage(message, tone = '') {
@@ -456,6 +489,49 @@ function attachEvents() {
     if (resultsTab) {
       state.uiState.selectedResultWeekIndex = Number.parseInt(resultsTab.getAttribute('data-results-week-index'), 10) || 0;
       renderResultsPanel();
+      return;
+    }
+
+    const editAssignment = event.target.closest('[data-edit-assignment]');
+    if (editAssignment) { openAssignmentSelector(editAssignment); return; }
+    if (event.target.closest('[data-close-chef-selector]')) { closeChefSelector(); return; }
+    const selectedChef = event.target.closest('[data-select-chef]');
+    if (selectedChef) {
+      const selector = selectedChef.closest('.chef-selector');
+      const weekIndex = Number(selector.dataset.weekIndex);
+      const { date, section } = selector.dataset;
+      const chef = selectedChef.getAttribute('data-select-chef');
+      const week = state.generatedRotas.latestResult.weeks[weekIndex];
+      const duplicate = findDuplicateCoreAssignment(week, date, section, chef);
+      let duplicateAction = '';
+      if (duplicate) {
+        const current = week.rota.find((day) => day.date === date)?.assignments.find((item) => item.section === section)?.chef || '';
+        const choice = window.prompt(current
+          ? `${chef} already covers ${duplicate.section}. Type SWAP, MOVE, or CANCEL.`
+          : `${chef} already covers ${duplicate.section}. Type MOVE or CANCEL.`, 'CANCEL');
+        const normalized = String(choice || 'cancel').trim().toLowerCase();
+        if (normalized === 'swap' && current) duplicateAction = 'swap';
+        else if (normalized === 'move') duplicateAction = 'move';
+        else duplicateAction = 'cancel';
+      }
+      const result = applyManualAssignment({ state, overallResult: state.generatedRotas.latestResult, weekIndex, date, section, chef, duplicateAction });
+      closeChefSelector({ restoreFocus: false });
+      if (result.applied) refreshEditedRota(`${section} on ${date} changed to ${chef || 'None'}. Validation and totals updated.`);
+      else announce(result.cancelled ? 'Assignment change cancelled.' : result.reason || 'No change made.');
+      return;
+    }
+    if (event.target.closest('[data-manual-undo]')) { if (undoManualEdit(state, state.generatedRotas.latestResult)) refreshEditedRota('Manual change undone.'); return; }
+    if (event.target.closest('[data-manual-redo]')) { if (redoManualEdit(state, state.generatedRotas.latestResult)) refreshEditedRota('Manual change redone.'); return; }
+    if (event.target.closest('[data-reset-manual-all]')) {
+      if (window.confirm('Reset all manual assignment changes?') && resetAllManualEdits(state, state.generatedRotas.latestResult)) refreshEditedRota('All manual changes reset.');
+      return;
+    }
+    if (event.target.closest('[data-reset-manual-cell]')) {
+      const selector = event.target.closest('.chef-selector');
+      const changed = resetManualCell(state, state.generatedRotas.latestResult, Number(selector.dataset.weekIndex), selector.dataset.date, selector.dataset.section);
+      closeChefSelector({ restoreFocus: false });
+      if (changed) refreshEditedRota('Cell restored to its originally generated assignment.');
+      return;
     }
   });
 
@@ -483,6 +559,7 @@ function attachEvents() {
     }
 
     if (event.key !== 'Escape') return;
+    if (document.querySelector('.chef-selector')) { closeChefSelector(); return; }
     if (document.getElementById('additionalChefModal')?.classList.contains('open')) {
       closeAdditionalChefModal();
       return;

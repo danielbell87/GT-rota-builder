@@ -29,6 +29,7 @@ function buildInitialState() {
       latestResult: null
     },
     history: [],
+    manualEditing: null,
     uiState: {
       validation: [],
       softValidation: [],

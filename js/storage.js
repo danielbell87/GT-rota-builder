@@ -11,7 +11,24 @@ export const STORAGE_KEYS = {
 
 const LEGACY_MIO_ELIGIBILITY_KEY = 'gtRota.mioEligibilityByChef';
 const LEGACY_STAFF_PROFILES_KEY = 'gtRota.staffProfilesByChef';
-const CURRENT_SCHEMA_VERSION = 12;
+const CURRENT_SCHEMA_VERSION = 14;
+
+function normalizeManualEditing(value) {
+  if (!value || typeof value !== 'object') return null;
+  const cleanSnapshot = (snapshot) => {
+    if (!snapshot || typeof snapshot !== 'object') return snapshot;
+    const { locks, ...clean } = snapshot;
+    return clean;
+  };
+  const { locks, ...clean } = value;
+  return {
+    ...clean,
+    originals: clean.originals && typeof clean.originals === 'object' ? clean.originals : {},
+    edits: clean.edits && typeof clean.edits === 'object' ? clean.edits : {},
+    undo: Array.isArray(clean.undo) ? clean.undo.map(cleanSnapshot) : [],
+    redo: Array.isArray(clean.redo) ? clean.redo.map(cleanSnapshot) : []
+  };
+}
 
 function safeParse(raw, fallback) {
   if (!raw) return fallback;
@@ -154,6 +171,7 @@ export function migrateStorageIfNeeded() {
     if (current < 12 && Array.isArray(saved.staff) && saved.staff.length === 0) {
       saved.staff = normalizeStaffRecords(JSON.parse(JSON.stringify(DEFAULT_STAFF)));
     }
+    if (current < 14) saved.manualEditing = normalizeManualEditing(saved.manualEditing);
     localStorage.setItem(STORAGE_KEYS.appState, JSON.stringify(saved));
   }
 
@@ -185,6 +203,7 @@ export function loadAppState() {
     if (persisted.uiState && typeof persisted.uiState === 'object') {
       state.uiState = { ...state.uiState, ...persisted.uiState };
     }
+    if (persisted.manualEditing && typeof persisted.manualEditing === 'object') state.manualEditing = normalizeManualEditing(persisted.manualEditing);
   }
 
   syncCompatibilityViews();
@@ -198,7 +217,8 @@ export function saveAppState(state) {
       weeklyInputs: normalizeWeeklyInputsShape(state.weeklyInputs, state.weeklyInputs.weekStart),
       generatedRotas: state.generatedRotas,
       history: state.history,
-      uiState: state.uiState
+      uiState: state.uiState,
+      manualEditing: normalizeManualEditing(state.manualEditing)
     }));
   } catch {
     // Ignore write failures; persistence should be best-effort.

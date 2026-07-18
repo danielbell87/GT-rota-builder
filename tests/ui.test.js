@@ -764,7 +764,7 @@ export async function runUiTests(assert) {
     assert(migratedState.staff.find((chef) => chef.name === 'Myles')?.mioEligible === true && migratedState.staff.find((chef) => chef.name === 'Dan')?.mioEligible === false, 'UI: legacy MIO eligibility map migrates into canonical chef records');
     assert(migratedState.staff.find((chef) => chef.name === 'Charlie')?.notes === 'User-entered migration note' && migratedState.staff.find((chef) => chef.name === 'Charlie')?.skills?.Sauce === 3, 'UI: schema migration preserves user notes and merges legacy structured profile data');
     assert(JSON.stringify(migratedState.weeklyInputs.availability) === JSON.stringify(legacyStaffState.weeklyInputs.availability), 'UI: schema migration preserves annual leave and unavailable entries');
-    assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '12', 'UI: storage schema version increments to 12');
+    assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '14', 'UI: storage schema version increments to 14');
     assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.mioEligibilityByChef') === null && migrationFrame.contentWindow.localStorage.getItem('gtRota.staffProfilesByChef') === null, 'UI: legacy per-chef storage maps are removed after migration');
   } finally {
     destroyFrame(migrationFrame);
@@ -790,7 +790,7 @@ export async function runUiTests(assert) {
     assert(restoredState.staff.length === 10, 'UI: schema 12 restores the canonical chef list when saved staff is empty');
     assert(restoredState.staff.find((chef) => chef.name === 'Aled')?.senior === true && restoredState.staff.find((chef) => chef.name === 'Aled')?.skills?.Pass === 3, 'UI: restored defaults include canonical seniority and section strengths');
     assert(JSON.stringify(restoredState.staff.find((chef) => chef.name === 'Aled')?.preferredDaysOff) === JSON.stringify(['Saturday', 'Sunday']), 'UI: restored defaults include canonical chef preferences');
-    assert(restoredDefaultsFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '12', 'UI: empty-staff restoration completes the schema 12 migration');
+    assert(restoredDefaultsFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '14', 'UI: empty-staff restoration completes the schema 14 migration');
   } finally {
     destroyFrame(restoredDefaultsFrame);
   }

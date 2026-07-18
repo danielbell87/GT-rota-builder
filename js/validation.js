@@ -364,7 +364,7 @@ export function validateRotaSoftRules({ rota, state, inputs }) {
         ruleId: 'S002',
         passed: false,
         severity: 'soft',
-        message: `${day.dayName}: ${chefName} was scheduled despite a Preferred Day Off because coverage, weekly targets, section strength, or overall feasibility took priority.`
+        message: `${day.dayName}: ${chefName} was scheduled despite a Preferred Day Off because satisfying hard constraints required the compromise.`
       });
     });
   });

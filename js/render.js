@@ -14,6 +14,7 @@ import { buildRota, buildMultiWeekRota } from './solver.js';
 import { getChefSoftPreferenceDetails } from './staff.js';
 import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260718h';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
+import { cellKey, ensureManualEditState, getChefConcerns, MANUALLY_EDITABLE_SECTIONS } from './manual-edit.js';
 
 function getRequiredElement(id) {
   const element = document.getElementById(id);
@@ -60,6 +61,57 @@ function formatWeekIssueLabel(week) {
 
 function renderStatusBadge(tone, text) {
   return `<span class="status-badge status-${tone}">${escapeHtml(text)}</span>`;
+}
+
+function getDayForFailure(week, failure) {
+  return (week.rota || []).find((day) => String(failure.message || '').startsWith(`${day.dayName}:`)) || null;
+}
+
+function getChefFromFailure(state, failure) {
+  return state.staff.find((chef) => String(failure.message || '').includes(chef.name)) || null;
+}
+
+export function explainHardRuleFailure(failure, week, state) {
+  const day = getDayForFailure(week, failure);
+  const dateLabel = day ? formatDate(day.date) : '';
+  const chef = getChefFromFailure(state, failure);
+  const message = stripRuleIdPrefix(failure.message || 'A hard scheduling rule is broken.');
+  if (failure.ruleId === 'H025' && day) {
+    const section = CORE_SECTIONS.find((name) => message.includes(name));
+    const assignment = day.assignments.find((item) => item.section === section);
+    return assignment
+      ? `${assignment.chef} cannot cover ${section} on ${dateLabel} because they are not qualified for that section.`
+      : `${section || 'A required section'} is uncovered on ${dateLabel}.`;
+  }
+  if (failure.ruleId === 'H019' && day && chef) return `${chef.name} cannot work on ${dateLabel} because they are unavailable or on annual leave.`;
+  if (failure.ruleId === 'H026' && day && chef) {
+    const count = day.assignments.filter((item) => item.chef === chef.name && item.section !== 'Breakfast' && item.section !== 'MIO').length;
+    return count > 1
+      ? `${chef.name} is assigned to ${count} overlapping core sections on ${dateLabel}.`
+      : `${chef.name} does not have exactly one core or Float assignment on ${dateLabel}.`;
+  }
+  if (failure.ruleId === 'H008' && day) return `There is no qualified senior chef working on ${dateLabel}.`;
+  if (failure.ruleId === 'H006' && day) return `Breakfast does not have exactly one chef assigned on ${dateLabel}.`;
+  if (failure.ruleId === 'H007' && day && chef) return `${chef.name} is assigned to Breakfast on ${dateLabel} but does not also cover one core or Float section.`;
+  if ((failure.ruleId === 'H009' || failure.ruleId === 'H010') && day) return `The kitchen has the wrong number of GT chefs working on ${dateLabel}: ${message.replace(/^.*?:\s*/, '')}.`;
+  if (failure.ruleId === 'H016' && chef) return `${chef.name}'s edited rota breaks their weekly GT-shift target: ${message.replace(`${chef.name}: `, '')}.`;
+  if (failure.ruleId === 'H023' && chef && day) return `${chef.name} has overlapping GT and MIO assignments on ${dateLabel}.`;
+  return day ? `${dateLabel}: ${message.replace(/^.*?:\s*/, '')}.` : message;
+}
+
+function getHardFailureMessages(view, state) {
+  return [...new Set(view.visibleHardFailures.map((failure) => explainHardRuleFailure(failure, view.week, state)))];
+}
+
+function isCellAffectedByFailure(failure, week, day, section, chefName, state) {
+  const failureDay = getDayForFailure(week, failure);
+  const failureChef = getChefFromFailure(state, failure)?.name || '';
+  if (failure.ruleId === 'H016') return !!failureChef && chefName === failureChef;
+  if (!failureDay || failureDay.date !== day.date) return false;
+  if (failure.ruleId === 'H025') return String(failure.message).includes(section);
+  if (failure.ruleId === 'H006' || failure.ruleId === 'H007' || failure.ruleId === 'H028') return section === 'Breakfast' || (!!failureChef && chefName === failureChef);
+  if (['H008', 'H009', 'H010', 'H011', 'H012'].includes(failure.ruleId)) return true;
+  return !!failureChef && chefName === failureChef;
 }
 
 function getExpectedLeaveHoursForChef(chefName, inputs, weekStart) {
@@ -143,10 +195,11 @@ function renderOverallStatusCard(overallResult, weekViews) {
     return `
       <section class="status-card status-card-danger" aria-label="Rota status">
         <div class="status-card-head">${renderStatusBadge('danger', 'Needs attention')}</div>
-        <h4>${view.week.status === 'infeasible' ? 'Rota could not be generated' : 'Rota needs attention'}</h4>
+        <h4>${view.week.status === 'infeasible' ? 'Rota could not be generated' : 'Hard scheduling rules are broken'}</h4>
         <p>${view.week.status === 'infeasible'
           ? 'The current staffing inputs conflict with required rules.'
-          : `${view.visibleHardFailures.length} hard-rule failure${view.visibleHardFailures.length === 1 ? '' : 's'} found.`}</p>
+          : 'Correct the following assignment problems:'}</p>
+        ${view.week.status === 'infeasible' ? '' : `<ul class="issue-list hard-failure-list">${getHardFailureMessages(view, getState()).map((message) => `<li>${escapeHtml(message)}</li>`).join('')}</ul>`}
       </section>`;
   }
 
@@ -201,8 +254,9 @@ function renderWeekStatusCard(view) {
   return `
     <section class="status-card status-card-danger" aria-label="Week status">
       <div class="status-card-head">${renderStatusBadge('danger', 'Needs attention')}</div>
-      <h4>Rota needs attention</h4>
-      <p>${view.visibleHardFailures.length} hard-rule failure${view.visibleHardFailures.length === 1 ? '' : 's'} found.</p>
+      <h4>Hard scheduling rules are broken</h4>
+      <p>Correct the following assignment problems:</p>
+      <ul class="issue-list hard-failure-list">${getHardFailureMessages(view, getState()).map((message) => `<li>${escapeHtml(message)}</li>`).join('')}</ul>
     </section>`;
 }
 
@@ -259,7 +313,7 @@ function renderHardFailureSection(view) {
         ? 'Specific issues found while generating this rota.'
         : `${view.visibleHardFailures.length} hard-rule failure${view.visibleHardFailures.length === 1 ? '' : 's'} found.`}</p>
       <ul class="issue-list hard-failure-list">
-        ${view.visibleHardFailures.map((failure) => `<li>${escapeHtml(stripRuleIdPrefix(failure.message))}</li>`).join('')}
+        ${getHardFailureMessages(view, getState()).map((message) => `<li>${escapeHtml(message)}</li>`).join('')}
       </ul>
     </section>`;
 }
@@ -707,17 +761,26 @@ export function renderAvailabilityTable() {
   });
 }
 
-function renderRotaTable(solveResult) {
+function renderRotaTable(solveResult, view) {
   if (!solveResult.rota?.length) return '';
+  const state = getState();
+  const manual = ensureManualEditState(state, state.generatedRotas.latestResult);
   const dayHeaders = solveResult.rota.map((day) => `<th scope="col">${day.dayName}<br><span class="small">${formatDate(day.date)}</span></th>`).join('');
   const sectionCells = DISPLAY_SECTIONS.map((section) => {
     const cells = solveResult.rota.map((day) => {
-      if (section === 'Float') {
-        const floatChefs = day.assignments.filter((assignment) => assignment.section === 'Float').map((assignment) => assignment.chef);
-        return `<td>${floatChefs.length ? escapeHtml(floatChefs.join(', ')) : '—'}</td>`;
-      }
       const matches = day.assignments.filter((assignment) => assignment.section === section);
-      return `<td>${matches.length ? escapeHtml(matches.map((assignment) => assignment.chef).join(', ')) : '—'}</td>`;
+      const chef = matches[0]?.chef || '';
+      if (!MANUALLY_EDITABLE_SECTIONS.includes(section)) return `<td>${matches.length ? escapeHtml(matches.map((assignment) => assignment.chef).join(', ')) : '—'}</td>`;
+      const key = cellKey(solveResult.weekStart, day.date, section);
+      const edited = Object.prototype.hasOwnProperty.call(manual.edits || {}, key);
+      const failures = (view?.visibleHardFailures || []).filter((failure) => isCellAffectedByFailure(failure, solveResult, day, section, chef, state));
+      const affected = failures.length > 0;
+      const failureText = affected ? [...new Set(failures.map((failure) => explainHardRuleFailure(failure, solveResult, state)))].join(' ') : '';
+      return `<td class="rota-assignment-cell${edited ? ' manually-edited' : ''}${affected ? ' hard-rule-affected' : ''}"${failureText ? ` title="${escapeHtml(failureText)}"` : ''}>
+        <button type="button" class="assignment-button" data-edit-assignment data-week-index="${solveResult.weekIndex || 0}" data-date="${day.date}" data-section="${section}" aria-label="Edit ${escapeHtml(section)} on ${escapeHtml(formatDate(day.date))}${edited ? ', Manually edited' : ''}">
+          <span>${chef ? escapeHtml(chef) : 'None'}</span>${edited ? '<span class="manual-dot" aria-hidden="true">•</span><span class="visually-hidden">Manually edited</span>' : ''}
+        </button>
+      </td>`;
     }).join('');
     return `<tr><th scope="row">${section}</th>${cells}</tr>`;
   }).join('');
@@ -787,7 +850,7 @@ export function renderWeekPanel(view, options = {}) {
       </div>` : ''}
       <p class="week-mio-summary"><strong>MIO chef:</strong> ${escapeHtml(view.inputs.mioChef || 'None')}</p>
       ${showStatus ? renderWeekStatusCard(view) : ''}
-      ${view.week.status === 'infeasible' ? '' : renderRotaTable(view.week)}
+      ${view.week.status === 'infeasible' ? '' : renderRotaTable(view.week, view)}
       ${view.week.status === 'infeasible' ? '' : renderChefHoursSummary(view)}
       ${fairnessHtml}
       ${renderHardFailureSection(view)}
@@ -796,13 +859,13 @@ export function renderWeekPanel(view, options = {}) {
     </section>`;
 }
 
-export function renderResultsPanel() {
+export function renderResultsPanel(options = {}) {
   const state = getState();
   const inputs = collectWeeklyInputsFromDom();
   const container = getRequiredElement('results');
 
-  let overallResult;
-  if ((inputs.numWeeks || 1) === 1) {
+  let overallResult = options.overallResult || null;
+  if (!overallResult && (inputs.numWeeks || 1) === 1) {
     const solveResult = buildRota(inputs);
     overallResult = {
       status: solveResult.status,
@@ -811,15 +874,17 @@ export function renderResultsPanel() {
       fairnessApplied: false,
       fairnessSummary: []
     };
-  } else {
+  } else if (!overallResult) {
     overallResult = buildMultiWeekRota({
       ...inputs,
       weeklyMioSelections: { ...(state.weeklyInputs.weeklyMioSelections || {}) }
     });
   }
 
+  state.uiState.lastError = '';
   const weeks = overallResult.weeks || [];
   state.generatedRotas.latestResult = overallResult;
+  ensureManualEditState(state, overallResult);
   const printButton = document.getElementById('printRotaBtn');
   if (printButton) {
     printButton.disabled = !weeks.length || weeks.some((week) => week.status !== 'ok' || !week.rota?.length);
@@ -849,6 +914,7 @@ export function renderResultsPanel() {
     container.innerHTML = `
       <div class="results-layout">
         ${renderResultsHeader(1, inputs.weekStart)}
+        ${renderManualToolbar(state)}
         ${renderOverallStatusCard(overallResult, weekViews)}
         ${activeView ? renderWeekPanel(activeView, { showHeader: false, showStatus: false }) : ''}
       </div>`;
@@ -864,6 +930,7 @@ export function renderResultsPanel() {
     container.innerHTML = `
       <div class="results-layout">
         ${renderResultsHeader(overallResult.numberOfWeeks, inputs.weekStart)}
+        ${renderManualToolbar(state)}
         ${renderOverallStatusCard(overallResult, weekViews)}
         ${renderWeekChecksOverview(weekViews)}
         <div class="desktop-only week-tabs print-hidden" role="tablist">${tabs}</div>
@@ -906,10 +973,40 @@ export function renderResultsPanel() {
   }
 }
 
+function renderManualToolbar(state) {
+  const manual = state.manualEditing || {};
+  const hasEdits = Object.keys(manual.edits || {}).length > 0;
+  return `<div class="manual-edit-toolbar print-hidden" aria-label="Manual rota editing controls">
+    <button type="button" class="secondary" data-manual-undo ${manual.undo?.length ? '' : 'disabled'}>Undo</button>
+    <button type="button" class="secondary" data-manual-redo ${manual.redo?.length ? '' : 'disabled'}>Redo</button>
+    <button type="button" class="secondary" data-reset-manual-all ${hasEdits ? '' : 'disabled'}>Reset all manual changes</button>
+    <span class="small">Select any assignment to change it. Validation updates immediately.</span>
+  </div>`;
+}
+
+export function renderChefSelector({ weekIndex, date, section }) {
+  const state = getState();
+  const week = state.generatedRotas.latestResult?.weeks?.[weekIndex];
+  const current = week?.rota?.find((day) => day.date === date)?.assignments?.find((item) => item.section === section)?.chef || '';
+  const option = (name, label) => {
+    const concerns = getChefConcerns({ state, week, date, section, chefName: name });
+    return `<button type="button" class="chef-selector-option${name === current ? ' current' : ''}" data-select-chef="${escapeHtml(name)}"><span>${escapeHtml(label)}</span>${concerns.length ? `<small>${escapeHtml(concerns.join(' · '))}</small>` : ''}</button>`;
+  };
+  return `<div class="chef-selector-backdrop" data-close-chef-selector></div><section class="chef-selector" role="dialog" aria-modal="true" aria-labelledby="chefSelectorTitle" data-week-index="${weekIndex}" data-date="${date}" data-section="${section}">
+    <div class="chef-selector-head"><div><h3 id="chefSelectorTitle">${escapeHtml(section)} · ${escapeHtml(formatDate(date))}</h3><p>Choose any configured chef. Warnings do not prevent selection.</p></div><button type="button" class="secondary" data-close-chef-selector aria-label="Close chef selector">×</button></div>
+    <div class="chef-selector-options">${option('', 'None')}${state.staff.map((chef) => option(chef.name, chef.name)).join('')}</div>
+    <div class="chef-selector-actions"><button type="button" class="secondary" data-reset-manual-cell>Reset cell</button><button type="button" class="secondary" data-close-chef-selector>Cancel</button></div>
+  </section>`;
+}
+
 export function renderAll() {
   renderPlanningHorizonSummary();
   renderAdditionalChefRequirements();
   renderStaffTable();
   renderAvailabilityTable();
-  renderResultsPanel();
+  const state = getState();
+  const saved = state.generatedRotas.latestResult;
+  const savedStartsHere = saved?.weeks?.[0]?.weekStart === state.weeklyInputs.weekStart;
+  const savedWeekCountMatches = saved?.numberOfWeeks === (state.weeklyInputs.numWeeks || 1);
+  renderResultsPanel(savedStartsHere && savedWeekCountMatches ? { overallResult: saved } : {});
 }
