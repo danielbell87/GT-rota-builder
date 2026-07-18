@@ -12,7 +12,7 @@ import {
 import { scoreSoftPreferences } from './scoring.js';
 import { buildRota, buildMultiWeekRota } from './solver.js';
 import { getChefSoftPreferenceDetails } from './staff.js';
-import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260718e';
+import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260718g';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
 
 function getRequiredElement(id) {
@@ -791,6 +791,11 @@ export function renderResultsPanel() {
   }
 
   const weeks = overallResult.weeks || [];
+  state.generatedRotas.latestResult = overallResult;
+  const printButton = document.getElementById('printRotaBtn');
+  if (printButton) {
+    printButton.disabled = !weeks.length || weeks.some((week) => week.status !== 'ok' || !week.rota?.length);
+  }
   const activeWeekIndex = Math.max(0, Math.min(state.uiState.selectedResultWeekIndex || 0, Math.max(weeks.length - 1, 0)));
   state.uiState.selectedResultWeekIndex = activeWeekIndex;
   const weekViews = weeks.map((week) => getWeekValidationView(week, state));

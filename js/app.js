@@ -1,7 +1,7 @@
 import { APP_BUILD_VERSION, CACHE_BUST_VERSION } from './constants.js';
 import { getState, getDefaultWeek, syncCompatibilityViews, setWeekStart, setMioChef, setNumWeeks, setWeeklyMioChef } from './state.js';
 import { normalizeWeekStart, getPlanningHorizon } from './utils.js';
-import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260718e';
+import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260718g';
 import { addChef, createBlankChefDraft, createChefDraft, getChefById, removeChef, updateChef } from './staff.js';
 import { addAvailabilityEntry, removeAvailabilityEntry, updateAvailabilityField, addAdditionalChefRequest, updateAdditionalChefRequest, removeAdditionalChefRequest, validateAdditionalChefDate, validateAdditionalChefCount } from './weekly-inputs.js';
 import {
@@ -20,6 +20,7 @@ import {
   syncChefChoiceChipState
 } from './render.js';
 import { upsertPublishedHistory } from './history.js';
+import { openPrintWindow } from './print.js';
 
 const state = getState();
 let editingReqDate = null;
@@ -277,6 +278,14 @@ function attachEvents() {
   requireElement('addAdditionalChefBtn').addEventListener('click', () => openAdditionalChefModal(null));
   requireElement('cancelAdditionalChefBtn').addEventListener('click', closeAdditionalChefModal);
   requireElement('saveAdditionalChefBtn').addEventListener('click', handleAdditionalChefSave);
+  requireElement('printRotaBtn').addEventListener('click', () => {
+    const message = requireElement('printMessage');
+    message.textContent = '';
+    if (!state.generatedRotas.latestResult) return;
+    if (!openPrintWindow(state.generatedRotas.latestResult)) {
+      message.textContent = 'Your browser blocked the printable rota. Allow pop-ups for this page, then try again.';
+    }
+  });
 
   document.addEventListener('change', (event) => {
     if (event.target.matches('select[data-weekly-mio-start]')) {

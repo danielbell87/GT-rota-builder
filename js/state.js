@@ -25,7 +25,8 @@ function buildInitialState() {
     },
     weeklyInputs: buildDefaultWeeklyInputs(),
     generatedRotas: {
-      current: null
+      current: null,
+      latestResult: null
     },
     history: [],
     uiState: {

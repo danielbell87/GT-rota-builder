@@ -210,6 +210,9 @@ export async function runUiTests(assert) {
   const canonicalMarkup = await fetch('../index.html').then((response) => response.text());
   const canonicalDoc = new DOMParser().parseFromString(canonicalMarkup, 'text/html');
   assert(!!canonicalDoc.querySelector('#numWeeks'), 'UI: canonical page contains #numWeeks');
+  assert(canonicalDoc.querySelector('#results').closest('.panel').querySelector('h2 + .print-action #printRotaBtn') === canonicalDoc.getElementById('printRotaBtn'), 'UI: Print / Save as PDF button appears immediately within the Generated rota section');
+  assert(canonicalDoc.getElementById('printRotaBtn').textContent.includes('Print / Save as PDF'), 'UI: print button has the required label');
+  assert(canonicalDoc.getElementById('printRotaBtn').disabled, 'UI: print button is initially unavailable when no generated rota exists');
   assert(canonicalDoc.querySelector('label[for="mioChef"]')?.textContent.trim() === 'MIO chef', 'UI: one-week MIO selector has a visible associated label');
   assert(!canonicalDoc.querySelector('#chefWeekendRuleInput') && !canonicalDoc.querySelector('#chefFixedDayOffInput') && !!canonicalDoc.querySelector('#chefPreferredBreakfastInput') && !canonicalDoc.querySelector('#chefSkillBreakfastInput') && !canonicalMarkup.includes('Weekend rule') && !canonicalMarkup.includes('Fixed unavailable day'), 'UI: Preferred breakfast day is restored and Breakfast competency is absent');
   assert([...canonicalDoc.querySelectorAll('#chefPreferredBreakfastInput option')].map((option) => option.value).join(',') === ',Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday', 'UI: Preferred breakfast day offers no preference and every weekday');
@@ -242,6 +245,7 @@ export async function runUiTests(assert) {
     assert(canonicalFrame.contentWindow.__gtRotaBootstrap?.status === 'ok', 'UI: canonical URL loads without console errors');
 
     const doc = canonicalFrame.contentDocument;
+    assert(!doc.getElementById('printRotaBtn').disabled, 'UI: print button is available when a successful rota exists');
     await setFieldValue(doc.getElementById('weekStart'), '2026-07-13');
     await setFieldValue(doc.getElementById('numWeeks'), '1');
     await waitFor(() => doc.querySelector('details.technical-details'));
@@ -418,6 +422,7 @@ export async function runUiTests(assert) {
     assert(visibleWeekTwoText.includes('Rota could not be generated') && visibleWeekTwoText.includes('cannot place exactly 3 MIO shifts due to availability/unavailability constraints'), 'UI: infeasible weeks immediately show specific failure reasons');
     assert(!visibleWeekTwoText.includes('H015'), 'UI: normal multi-week failure messaging hides hard-rule IDs');
     assert(canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.activeWeekHardFailureCount >= 1, 'UI: switching weeks updates the visible issue summary for the selected week');
+    assert(doc.getElementById('printRotaBtn').disabled, 'UI: print button is unavailable when the generated rota is not fully successful');
 
     infeasibleRow.querySelector('button[data-remove]').click();
     await waitFor(() => doc.querySelectorAll('#availabilityBody tr').length === 0);
@@ -425,6 +430,7 @@ export async function runUiTests(assert) {
     await setFieldValue(doc.querySelector('select[data-weekly-mio-start="2026-07-20"]'), '');
     doc.querySelector('button[data-results-week-index="0"]').click();
     await waitFor(() => !getWeekPanel(doc, 0)?.classList.contains('hidden'));
+    assert(!doc.getElementById('printRotaBtn').disabled, 'UI: print button becomes available again after successful generation');
 
     doc.getElementById('addAdditionalChefBtn').click();
     await waitFor(() => doc.getElementById('additionalChefModal').classList.contains('open'));
