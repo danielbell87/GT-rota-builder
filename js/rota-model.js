@@ -12,6 +12,20 @@ export function hasGtAssignment(day, chefName) {
   return getGtChefNamesForDay(day).includes(chefName);
 }
 
+export function getGtDaysByChef(rota = []) {
+  const counts = {};
+  rota.forEach((day) => {
+    getGtChefNamesForDay(day).forEach((name) => {
+      counts[name] = (counts[name] || 0) + 1;
+    });
+  });
+  return counts;
+}
+
+export function getVisibleGtChefDayTotal(rota = []) {
+  return rota.reduce((total, day) => total + getGtChefNamesForDay(day).length, 0);
+}
+
 export function syncDayGtChefs(day) {
   day.chefs = getGtChefNamesForDay(day);
   return day;

@@ -9,14 +9,15 @@ import {
   formatPlanningHorizonLabel,
   getWeekStartAtOffset
 } from './utils.js';
-import { scoreSoftPreferences } from './scoring.js';
-import { buildRota, buildMultiWeekRota } from './solver.js';
+import { scoreSoftPreferences } from './scoring.js?v=20260718q';
+import { buildRota, buildMultiWeekRota, summarizeRota } from './solver.js?v=20260718q';
 import { getChefSoftPreferenceDetails } from './staff.js';
-import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260718h';
+import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260718q';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
-import { cellKey, ensureManualEditState, getChefConcerns, MANUALLY_EDITABLE_SECTIONS } from './manual-edit.js';
-import { buildRotaDiagnostics, checkRotaFeasibility, summarizeDiagnostics } from './diagnostics.js';
-import { getGtChefNamesForDay } from './rota-model.js';
+import { cellKey, ensureManualEditState, getChefConcerns, MANUALLY_EDITABLE_SECTIONS } from './manual-edit.js?v=20260718q';
+import { buildRotaDiagnostics, checkRotaFeasibility, summarizeDiagnostics } from './diagnostics.js?v=20260718q';
+import { getGtChefNamesForDay, syncRotaGtChefs } from './rota-model.js?v=20260718q';
+import { buildContextualScore, combineContextualScores } from './score-context.js?v=20260718q';
 
 function getRequiredElement(id) {
   const element = document.getElementById(id);
@@ -180,7 +181,7 @@ function renderDecisionPanel(view) {
     <span>${escapeHtml(item.message)}</span>${item.affectsScore ? '<span class="decision-score-note">Affects score</span>' : ''}
   </li>`;
   return `<section class="results-section decisions-panel">
-    <div class="decisions-heading"><div><h4>Why this rota?</h4><p class="section-note">The most important decisions and compromises, using the same evidence as validation and scoring.</p></div><span class="rota-score">Score ${Number(view.softScore.score || 0).toFixed(1)}</span></div>
+    <div class="decisions-heading"><div><h4>Key decisions</h4><p class="section-note">The most important preferences and compromises.</p></div></div>
     <ul class="decision-list">${summary.visible.map(renderItem).join('')}</ul>
     ${summary.remaining.length ? `<details class="decisions-more"><summary>Show all decisions (${summary.all.length})</summary><ul class="decision-list">${summary.remaining.map(renderItem).join('')}</ul></details>` : ''}
   </section>`;
@@ -403,7 +404,7 @@ function renderTechnicalDetails(view) {
 
   return `
     <details class="technical-details print-hidden">
-      <summary>View technical details</summary>
+      <summary>Technical details</summary>
       <div class="technical-block">
         <h5>Weekly MIO configuration</h5>
         <p class="small">MIO chef: ${escapeHtml(view.inputs.mioChef || 'None')}</p>
@@ -453,6 +454,44 @@ function renderTechnicalDetails(view) {
         <div class="small">${view.softScore.explanation?.length ? view.softScore.explanation.map((line) => `• ${escapeHtml(line)}`).join('<br>') : '• No soft-rule trade-offs detected.'}</div>
       </div>
     </details>`;
+}
+
+function renderContextualScore(view) {
+  const contextual = view.contextualScore;
+  if (!contextual) return '';
+  const categoryRows = contextual.categories.map((item) => `
+    <tr><th scope="row">${escapeHtml(item.label)}</th><td>${item.achieved.toFixed(1)}</td><td>${item.available.toFixed(1)}</td></tr>`).join('');
+  return `<section class="results-section score-context">
+    <h4>Preference score</h4>
+    <p><strong>${contextual.valid
+      ? `${contextual.achieved.toFixed(1)}/${contextual.available.toFixed(1)} applicable preference points · ${contextual.percentage}% · ${escapeHtml(contextual.rating)}`
+      : 'Invalid rota · no quality rating'}</strong></p>
+    <p class="section-note">${escapeHtml(contextual.explanation)}</p>
+    ${contextual.valid ? `<table class="summary-table score-breakdown-table">
+      <thead><tr><th>Category</th><th>Achieved</th><th>Applicable</th></tr></thead>
+      <tbody>${categoryRows}</tbody>
+    </table>` : ''}
+  </section>`;
+}
+
+function renderRotaSummary(view, fairnessHtml = '') {
+  const contextual = view.contextualScore;
+  const label = contextual?.valid
+    ? `Rota summary · ${contextual.percentage}% · ${contextual.rating}`
+    : 'Rota summary · Invalid';
+  return `<details class="rota-summary">
+    <summary>${escapeHtml(label)}</summary>
+    <div class="rota-summary-content">
+      ${renderContextualScore(view)}
+      ${renderDecisionPanel(view)}
+      ${renderChefHoursSummary(view)}
+      ${fairnessHtml}
+      ${renderHardFailureSection(view)}
+      ${renderSoftCompromiseSection(view)}
+      ${view.valid ? '<section class="results-section"><h4>Validation details</h4><p>All required staffing rules passed.</p></section>' : ''}
+      ${renderTechnicalDetails(view)}
+    </div>
+  </details>`;
 }
 
 function getSuggestedMioRotation(eligibleChefs) {
@@ -901,12 +940,7 @@ export function renderWeekPanel(view, options = {}) {
       <p class="week-mio-summary"><strong>MIO chef:</strong> ${escapeHtml(view.inputs.mioChef || 'None')}</p>
       ${showStatus ? renderWeekStatusCard(view) : ''}
       ${view.week.status === 'infeasible' ? '' : renderRotaTable(view.week, view)}
-      ${view.week.status === 'infeasible' ? '' : renderDecisionPanel(view)}
-      ${view.week.status === 'infeasible' ? '' : renderChefHoursSummary(view)}
-      ${fairnessHtml}
-      ${renderHardFailureSection(view)}
-      ${renderSoftCompromiseSection(view)}
-      ${renderTechnicalDetails(view)}
+      ${renderRotaSummary(view, fairnessHtml)}
     </section>`;
 }
 
@@ -935,6 +969,20 @@ export function renderResultsPanel(options = {}) {
     });
   }
 
+  (overallResult.weeks || []).forEach((week) => {
+    if (!week?.rota?.length) return;
+    syncRotaGtChefs(week.rota);
+    const annualLeaveHoursByChef = Object.fromEntries((week.summary || []).map((item) => [item.name, item.annualLeaveHours || 0]));
+    const gtTargetsByChef = Object.fromEntries((week.summary || []).map((item) => [item.name, item.adjustedGtTarget]));
+    week.summary = summarizeRota({
+      state,
+      rota: week.rota,
+      mioChefName: week.inputs?.mioChef || week.mioChef || '',
+      annualLeaveHoursByChef,
+      gtTargetsByChef
+    }).summary;
+  });
+
   state.uiState.lastError = '';
   const weeks = overallResult.weeks || [];
   state.generatedRotas.latestResult = overallResult;
@@ -946,6 +994,9 @@ export function renderResultsPanel(options = {}) {
   const activeWeekIndex = Math.max(0, Math.min(state.uiState.selectedResultWeekIndex || 0, Math.max(weeks.length - 1, 0)));
   state.uiState.selectedResultWeekIndex = activeWeekIndex;
   const weekViews = weeks.map((week) => getWeekValidationView(week, state));
+  weekViews.forEach((view) => {
+    view.contextualScore = buildContextualScore({ state, week: view.week, valid: view.valid });
+  });
   const activeView = weekViews[activeWeekIndex] || null;
   const firstOk = weeks.find((week) => week.status === 'ok');
   state.generatedRotas.current = activeView?.week?.status === 'ok' ? activeView.week : (firstOk || null);
@@ -969,8 +1020,7 @@ export function renderResultsPanel(options = {}) {
       <div class="results-layout">
         ${renderResultsHeader(1, inputs.weekStart)}
         ${renderManualToolbar(state)}
-        ${renderOverallStatusCard(overallResult, weekViews)}
-        ${activeView ? renderWeekPanel(activeView, { showHeader: false, showStatus: false }) : ''}
+        ${activeView ? renderWeekPanel(activeView, { showHeader: false, showStatus: true }) : ''}
       </div>`;
   } else {
     const tabs = weeks.map((week, index) => `<button class="week-tab ${index === activeWeekIndex ? 'active' : ''}" data-results-week-index="${index}">Week ${index + 1}</button>`).join('');
@@ -985,8 +1035,6 @@ export function renderResultsPanel(options = {}) {
       <div class="results-layout">
         ${renderResultsHeader(overallResult.numberOfWeeks, inputs.weekStart)}
         ${renderManualToolbar(state)}
-        ${renderOverallStatusCard(overallResult, weekViews)}
-        ${renderWeekChecksOverview(weekViews)}
         <div class="desktop-only week-tabs print-hidden" role="tablist">${tabs}</div>
         <label class="mobile-only print-hidden">Week<select id="resultsWeekSelect">${dropdownOptions}</select></label>
         <div class="week-panels">${panels}</div>
@@ -1014,6 +1062,8 @@ export function renderResultsPanel(options = {}) {
         activeWeekIndex,
         activeWeekHardFailureCount: activeView?.visibleHardFailures?.length || 0,
         validationByWeek: state.uiState.validationByWeek,
+        contextualScores: weekViews.map((view) => view.contextualScore),
+        overallContextualScore: combineContextualScores(weekViews.map((view) => view.contextualScore)),
         weekValidationSummary: weekViews.map((view) => ({
           weekIndex: view.week.weekIndex,
           status: view.week.status,

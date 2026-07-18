@@ -2,7 +2,7 @@ import { CORE_SECTIONS, SHIFT_LENGTHS } from './constants.js';
 import { normalizeWeekStart, parseLocalDate, toDateString } from './utils.js';
 import { isSenior } from './scoring.js';
 import { canCoverSection } from './section-levels.js';
-import { getGtChefNamesForDay, hasGtAssignment } from './rota-model.js';
+import { getGtChefNamesForDay, getGtDaysByChef, getVisibleGtChefDayTotal, hasGtAssignment } from './rota-model.js';
 
 // Weekly leave credit is capped at four days because a standard GT week targets four credited workdays.
 const MAX_CREDITABLE_LEAVE_DAYS = 4;
@@ -302,12 +302,8 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
     }
   });
 
-  const gtDaysByChef = Object.fromEntries(state.staff.map((chef) => [chef.name, 0]));
-  rota.forEach((day) => {
-    getGtChefNamesForDay(day).forEach((chefName) => {
-      gtDaysByChef[chefName] = (gtDaysByChef[chefName] || 0) + 1;
-    });
-  });
+  const calculatedGtDays = getGtDaysByChef(rota);
+  const gtDaysByChef = Object.fromEntries(state.staff.map((chef) => [chef.name, calculatedGtDays[chef.name] || 0]));
   Object.entries(gtDaysByChef).forEach(([name, count]) => {
     const adjustedGtTarget = adjustedTargetsByChef[name] ?? getGtTargetForChef(name, inputs.mioChef);
     results.push(createResult('H016', count === adjustedGtTarget, `${name}: expected exactly ${adjustedGtTarget} GT days (actual ${count})`));
@@ -335,6 +331,23 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
   }
 
   const summaryByChef = Object.fromEntries((summary || []).map((item) => [item.name, item]));
+  const visibleGtChefDayTotal = getVisibleGtChefDayTotal(rota);
+  const summarizedGtChefDayTotal = Object.values(summaryByChef).reduce((total, item) => total + (item.gtDays || 0), 0);
+  results.push(createResult(
+    'H034',
+    summarizedGtChefDayTotal === visibleGtChefDayTotal,
+    `Visible GT chef-day total is ${visibleGtChefDayTotal}; summarized total is ${summarizedGtChefDayTotal}`
+  ));
+  state.staff.forEach((chef) => {
+    const actualDays = gtDaysByChef[chef.name] || 0;
+    const summaryDays = summaryByChef[chef.name]?.gtDays || 0;
+    results.push(createResult('H035', summaryDays === actualDays, `${chef.name}: summary GT days ${summaryDays} must match visible assignments ${actualDays}`));
+    const expectedGtHours = rota.reduce((total, day) => total + (
+      hasGtAssignment(day, chef.name) ? (SHIFT_LENGTHS.regularByDay[day.dayName] || 0) : 0
+    ), 0);
+    const summaryGtHours = summaryByChef[chef.name]?.gtHours || 0;
+    results.push(createResult('H036', summaryGtHours === expectedGtHours, `${chef.name}: summary GT hours ${summaryGtHours} must match visible-assignment hours ${expectedGtHours}`));
+  });
   Object.entries(annualLeaveDatesByChef).forEach(([chef, dateSet]) => {
     const leaveDays = Math.min(dateSet.size, MAX_CREDITABLE_LEAVE_DAYS);
     const expectedCredit = leaveDays * SHIFT_LENGTHS.annualLeaveCreditPerDay;

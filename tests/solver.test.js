@@ -17,6 +17,7 @@ import { isSenior, getHoursForDay, getHoursForAssignment, scoreSoftPreferences }
 import { isUnavailable, validateRotaHardRules, validateRotaSoftRules } from '../js/validation.js?v=20260718h';
 import { canCoverSection, sectionCandidateScore } from '../js/section-levels.js';
 import { normalizeChefRecord } from '../js/staff.js';
+import { getGtChefNamesForDay, getVisibleGtChefDayTotal } from '../js/rota-model.js';
 
 const PRIMARY_GT_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry', 'Float'];
 
@@ -756,6 +757,21 @@ export async function runSolverTests(assert) {
     ))),
     'Multi-week: weekend rotation does not schedule Aled on a Preferred Day Off when hard-valid alternatives exist'
   );
+
+  const confirmedWeekTwoState = setupBaseState();
+  confirmedWeekTwoState.staff.find((chef) => chef.name === 'Connor').mioEligible = true;
+  const confirmedWeekTwoResult = buildMultiWeekRota({
+    ...multiWeekInputs,
+    numWeeks: 2,
+    weeklyMioSelections: { '2026-07-13': 'Dan', '2026-07-20': 'Connor' }
+  });
+  const confirmedWeekTwo = confirmedWeekTwoResult.weeks[1];
+  const confirmedDan = confirmedWeekTwo.summary.find((item) => item.name === 'Dan');
+  const confirmedMyles = confirmedWeekTwo.summary.find((item) => item.name === 'Myles');
+  assert(confirmedWeekTwoResult.status === 'ok' && getVisibleGtChefDayTotal(confirmedWeekTwo.rota) === 38, 'Regression: Week 2 visibly schedules all 38 required GT chef-days');
+  assert(confirmedDan.gtDays === 4 && confirmedWeekTwo.rota.filter((day) => getGtChefNamesForDay(day).includes('Dan')).length === 4, 'Regression: Dan cannot display 4/4 without four visible GT assignments');
+  assert(confirmedMyles.gtDays === 4 && confirmedWeekTwo.rota.filter((day) => getGtChefNamesForDay(day).includes('Myles')).length === 4, 'Regression: Myles cannot display 4/4 without four visible GT assignments');
+  assert(confirmedWeekTwo.rota.every((day) => JSON.stringify(day.chefs) === JSON.stringify(getGtChefNamesForDay(day))), 'Multi-week final candidate normalization prevents phantom day.chefs names');
 
   const week1Start = multiWeekInputs.weekStart;
   const week2Start = twoWeekResult.weeks[1].weekStart;

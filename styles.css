@@ -500,6 +500,29 @@ th { color: var(--ink-soft); font-size: 11px; font-weight: 800; letter-spacing: 
 .decision-warning { border-left-color: #c53030; }
 .decision-compromise { border-left-color: #b7791f; }
 .decision-fairness { border-left-color: #4c51bf; }
+.rota-summary {
+  margin-top: 16px;
+  border: 1px solid #cbd5e0;
+  border-radius: 10px;
+  background: #fff;
+}
+.rota-summary > summary {
+  cursor: pointer;
+  min-height: 48px;
+  padding: 14px 18px;
+  font-weight: 700;
+  color: #243b53;
+  display: flex;
+  align-items: center;
+}
+.rota-summary > summary:focus-visible { outline: 3px solid #4c51bf; outline-offset: 2px; }
+.rota-summary-content { padding: 0 18px 18px; }
+.rota-summary-content .results-section { margin-top: 14px; }
+.score-breakdown-table { max-width: 620px; }
+@media (max-width: 900px) {
+  .rota-summary > summary { min-height: 54px; padding: 16px; }
+  .rota-summary-content { padding: 0 12px 14px; overflow-x: auto; }
+}
 .decision-satisfied { border-left-color: #2f855a; }
 .decision-label { font-size: .78rem; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; }
 .decision-score-note { color: #744210; font-size: .78rem; font-weight: 700; white-space: nowrap; }

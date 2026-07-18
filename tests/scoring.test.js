@@ -4,6 +4,8 @@ import { validateRotaHardRules } from '../js/validation.js?v=20260718h';
 import { scoreSoftPreferences } from '../js/scoring.js';
 import { saveAppState, loadAppState } from '../js/storage.js?v=20260718h';
 import { upsertPublishedHistory, upsertPublishedWeeks } from '../js/history.js';
+import { buildContextualScore, combineContextualScores } from '../js/score-context.js';
+import { migrateStorageIfNeeded } from '../js/storage.js?v=20260718q';
 
 function baseState() {
   resetStateToDefaults();
@@ -152,6 +154,45 @@ export async function runScoringTests(assert) {
   const second = upsertPublishedHistory(state, state.weeklyInputs.weekStart, solve.rota, solve.summary);
   assert(first.inserted > 0, 'Published history inserts first week records');
   assert(second.inserted === 0, 'Published history does not create duplicate week/chef records');
+
+  const contextualState = JSON.parse(JSON.stringify(state));
+  contextualState.staff = [{
+    ...contextualState.staff[0],
+    name: 'Context Chef',
+    preferredDaysOff: [],
+    preferredBreakfast: '',
+    skills: { ...contextualState.staff[0].skills, Sauce: 3 }
+  }];
+  const contextualWeek = {
+    inputs: { availability: [] },
+    rota: [{ dayName: 'Monday', date: '2026-07-13', assignments: [{ chef: 'Context Chef', section: 'Sauce' }] }],
+    softScore: { weekendFairnessPenalty: 0 }
+  };
+  const perfectContextual = buildContextualScore({ state: contextualState, week: contextualWeek, valid: true });
+  assert(perfectContextual.percentage === 100 && perfectContextual.rating === 'Excellent', 'Contextual score can reach 100% when all applicable preferences are satisfied');
+  const invalidContextual = buildContextualScore({ state: contextualState, week: contextualWeek, valid: false });
+  assert(invalidContextual.rating === 'Invalid' && invalidContextual.explanation.includes('no positive quality rating'), 'Invalid rotas do not receive a misleading quality rating');
+  contextualState.staff[0].preferredDaysOff = ['Monday'];
+  contextualWeek.inputs.availability = [{ chef: 'Context Chef', type: 'Unavailable', startDate: '2026-07-13', finishDate: '2026-07-13' }];
+  const unavailablePreference = buildContextualScore({ state: contextualState, week: contextualWeek, valid: true });
+  assert(!unavailablePreference.categories.some((item) => item.label === 'Preferred days off'), 'Unavailable preferred days are excluded from applicable preference points');
+  const combinedContextual = combineContextualScores([
+    { achieved: 90, available: 100, valid: true },
+    { achieved: 10, available: 20, valid: true }
+  ]);
+  assert(combinedContextual.percentage === 83, 'Multi-week contextual score is weighted by applicable points rather than a simple average');
+  assert([perfectContextual, invalidContextual, unavailablePreference, combinedContextual].every((item) => item.percentage >= 0 && item.percentage <= 100), 'Contextual score percentages are clamped between 0 and 100');
+
+  localStorage.setItem('gtRota.schemaVersion', '14');
+  localStorage.setItem('gtRota.state.v2', JSON.stringify({
+    staff: contextualState.staff,
+    weeklyInputs: contextualState.weeklyInputs,
+    generatedRotas: { current: { rota: [{ chefs: ['Phantom'], assignments: [] }] }, latestResult: { numberOfWeeks: 1, weeks: [] } }
+  }));
+  migrateStorageIfNeeded();
+  const migratedCachedState = JSON.parse(localStorage.getItem('gtRota.state.v2'));
+  assert(migratedCachedState.generatedRotas.current === null && migratedCachedState.generatedRotas.latestResult === null, 'Schema 15 invalidates cached generated rotas that may contain phantom staffing');
+  state.weeklyInputs.status = 'Published';
   const historyBeforeFailedBlock = JSON.stringify(state.history);
   let failedBlockRejected = false;
   try {

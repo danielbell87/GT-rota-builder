@@ -1,4 +1,4 @@
-import { hasGtAssignment } from './rota-model.js';
+import { hasGtAssignment } from './rota-model.js?v=20260718q';
 
 export function normalizeHistoryKey(weekStart, chef) {
   return `${weekStart}__${chef}`;

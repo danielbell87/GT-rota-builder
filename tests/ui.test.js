@@ -267,6 +267,7 @@ export async function runUiTests(assert) {
     await setFieldValue(doc.getElementById('mioChef'), 'Dan');
 
     const visibleSingleWeekText = getVisibleResultsText(doc);
+    const singleWeekSummary = doc.querySelector('details.rota-summary');
     const singleWeekDetails = doc.querySelector('details.technical-details');
     const singleWeekTables = singleWeekDetails.querySelectorAll('.technical-table');
     assert(singleWeekTables.length >= 2, 'UI: technical details render hard and soft validation tables');
@@ -274,6 +275,9 @@ export async function runUiTests(assert) {
     const singleWeekHardTable = singleWeekTables[0];
     const singleWeekSoftTable = singleWeekTables[1];
     const singleWeekRender = canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender;
+    assert(doc.querySelectorAll('details.rota-summary').length === 1 && singleWeekSummary?.open === false, 'UI: one collapsed Rota summary consolidates secondary output for a one-week rota');
+    assert(normalizeText(singleWeekSummary?.textContent || '').includes('%') && normalizeText(singleWeekSummary?.textContent || '').includes('applicable preference points'), 'UI: Rota summary explains the contextual percentage and its dynamic denominator');
+    assert(!/Score\\s+\\d/i.test(visibleSingleWeekText), 'UI: raw unbounded solver scores are hidden from the main result');
     assert(visibleSingleWeekText.includes('✓ Rota valid') && visibleSingleWeekText.includes('No hard-rule problems found.'), 'UI: valid one-week rota shows one concise success status');
     assert(!visibleSingleWeekText.includes('H008') && !visibleSingleWeekText.includes('at least one Sous Chef or higher required'), 'UI: successful hard-rule checks are hidden from the normal one-week interface');
     assert(singleWeekDetails.open === false, 'UI: one-week technical details stay collapsed by default');
@@ -340,9 +344,11 @@ export async function runUiTests(assert) {
     let mioPersistenceFrame = null;
     try {
       mioPersistenceFrame = await loadFrame('../index.html');
+      await waitFor(() => mioPersistenceFrame.contentDocument.querySelectorAll('select[data-weekly-mio-start]').length === 3);
       const reloadedSelectors = [...mioPersistenceFrame.contentDocument.querySelectorAll('select[data-weekly-mio-start]')];
-      assert(JSON.stringify(reloadedSelectors.map((select) => select.value)) === JSON.stringify(['Fred', '', 'Dan']), 'UI: every weekly MIO selection, including No MIO chef, persists after reload');
-      assert(mioPersistenceFrame.contentWindow.__gtRotaBootstrap?.status === 'ok', 'UI: persisted mixed MIO selections reload without browser errors');
+      const reloadedMioValues = reloadedSelectors.map((select) => select.value);
+      assert(JSON.stringify(reloadedMioValues) === JSON.stringify(['Fred', '', 'Dan']), 'UI: every weekly MIO selection, including No MIO chef, persists after reload', JSON.stringify(reloadedMioValues));
+      assert(mioPersistenceFrame.contentWindow.__gtRotaBootstrap?.status === 'ok', 'UI: persisted mixed MIO selections reload without browser errors', mioPersistenceFrame.contentWindow.__gtRotaBootstrap?.error || '');
     } finally {
       destroyFrame(mioPersistenceFrame);
     }
@@ -436,7 +442,7 @@ export async function runUiTests(assert) {
 
     infeasibleRow.querySelector('button[data-remove]').click();
     await waitFor(() => doc.querySelectorAll('#availabilityBody tr').length === 0);
-    await waitFor(() => doc.querySelectorAll('.week-check').length === 3);
+    await waitFor(() => doc.querySelectorAll('section[data-week-panel]').length === 3);
     await setFieldValue(doc.querySelector('select[data-weekly-mio-start="2026-07-20"]'), '');
     doc.querySelector('button[data-results-week-index="0"]').click();
     await waitFor(() => !getWeekPanel(doc, 0)?.classList.contains('hidden'));
@@ -762,7 +768,7 @@ export async function runUiTests(assert) {
     assert(migratedState.staff.find((chef) => chef.name === 'Myles')?.mioEligible === true && migratedState.staff.find((chef) => chef.name === 'Dan')?.mioEligible === false, 'UI: legacy MIO eligibility map migrates into canonical chef records');
     assert(migratedState.staff.find((chef) => chef.name === 'Charlie')?.notes === 'User-entered migration note' && migratedState.staff.find((chef) => chef.name === 'Charlie')?.skills?.Sauce === 3, 'UI: schema migration preserves user notes and merges legacy structured profile data');
     assert(JSON.stringify(migratedState.weeklyInputs.availability) === JSON.stringify(legacyStaffState.weeklyInputs.availability), 'UI: schema migration preserves annual leave and unavailable entries');
-    assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '14', 'UI: storage schema version increments to 14');
+    assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '15', 'UI: storage schema version increments to 15');
     assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.mioEligibilityByChef') === null && migrationFrame.contentWindow.localStorage.getItem('gtRota.staffProfilesByChef') === null, 'UI: legacy per-chef storage maps are removed after migration');
   } finally {
     destroyFrame(migrationFrame);
@@ -788,7 +794,7 @@ export async function runUiTests(assert) {
     assert(restoredState.staff.length === 10, 'UI: schema 12 restores the canonical chef list when saved staff is empty');
     assert(restoredState.staff.find((chef) => chef.name === 'Aled')?.senior === true && restoredState.staff.find((chef) => chef.name === 'Aled')?.skills?.Pass === 3, 'UI: restored defaults include canonical seniority and section strengths');
     assert(JSON.stringify(restoredState.staff.find((chef) => chef.name === 'Aled')?.preferredDaysOff) === JSON.stringify(['Saturday', 'Sunday']), 'UI: restored defaults include canonical chef preferences');
-    assert(restoredDefaultsFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '14', 'UI: empty-staff restoration completes the schema 14 migration');
+    assert(restoredDefaultsFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '15', 'UI: empty-staff restoration completes the schema 15 migration');
   } finally {
     destroyFrame(restoredDefaultsFrame);
   }

@@ -191,12 +191,18 @@ export async function runValidationTests(assert) {
     annualLeaveHoursByChef: {}, gtTargetsByChef: canonicalTargets
   }).summary;
   const phantomDanSummary = phantomSummary.find((item) => item.name === 'Dan');
+  const stalePhantomSummary = JSON.parse(JSON.stringify(phantomSummary));
+  const stalePhantomDan = stalePhantomSummary.find((item) => item.name === 'Dan');
+  stalePhantomDan.gtDays += 1;
+  stalePhantomDan.gtHours += 12.5;
   const phantomValidation = validateRotaHardRules({
     rota: phantomRota, state, inputs: state.weeklyInputs,
-    summary: phantomSummary, fullWeekDates: result.fullWeekDates
+    summary: stalePhantomSummary, fullWeekDates: result.fullWeekDates
   });
   assert(phantomDanSummary.gtDays === 2 && phantomDanSummary.gtHours < 36, 'Canonical GT summary ignores a phantom day.chefs name and awards no phantom hours');
   assert(phantomValidation.some((item) => item.ruleId === 'H033' && !item.passed && item.message.includes('Extra internal chef: Dan')), 'Hard validation reports an internal chef without a visible GT assignment');
+  assert(phantomValidation.some((item) => item.ruleId === 'H034' && !item.passed), 'Hard validation rejects a summarized GT-day total that differs from visible chef-days');
+  assert(phantomValidation.some((item) => item.ruleId === 'H035' && !item.passed && item.message.startsWith('Dan:')), 'Hard validation rejects a chef summary that differs from visible assignments');
 
   const visibleThreeDayRota = JSON.parse(JSON.stringify(result.rota));
   const fredVisibleDay = visibleThreeDayRota.find((day) => getGtChefNamesForDay(day).includes('Fred'));

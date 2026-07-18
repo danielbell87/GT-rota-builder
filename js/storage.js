@@ -11,7 +11,7 @@ export const STORAGE_KEYS = {
 
 const LEGACY_MIO_ELIGIBILITY_KEY = 'gtRota.mioEligibilityByChef';
 const LEGACY_STAFF_PROFILES_KEY = 'gtRota.staffProfilesByChef';
-const CURRENT_SCHEMA_VERSION = 14;
+const CURRENT_SCHEMA_VERSION = 15;
 
 function normalizeManualEditing(value) {
   if (!value || typeof value !== 'object') return null;
@@ -172,6 +172,10 @@ export function migrateStorageIfNeeded() {
       saved.staff = normalizeStaffRecords(JSON.parse(JSON.stringify(DEFAULT_STAFF)));
     }
     if (current < 14) saved.manualEditing = normalizeManualEditing(saved.manualEditing);
+    if (current < 15) {
+      saved.generatedRotas = { current: null, latestResult: null };
+      saved.manualEditing = null;
+    }
     localStorage.setItem(STORAGE_KEYS.appState, JSON.stringify(saved));
   }
 
