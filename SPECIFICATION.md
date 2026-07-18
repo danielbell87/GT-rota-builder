@@ -51,6 +51,8 @@ Weekly GT allocation is solved across the whole week rather than as seven isolat
 - build valid core coverage for all seven days
 - add explicit Float assignments to satisfy remaining GT deficits
 - recalculate GT days, GT hours, and summary rows from the final rota data
+- retain the greedy day builder only as the initial hard-valid solution generator
+- optimize the complete week before returning or reporting soft compromises
 
 ## Hard Rules
 Implemented as structured hard validation checks in `js/validation.js` and rule metadata in `data/default-rules.js`, including:
@@ -85,9 +87,20 @@ Section levels are interpreted in order:
 - **Preferred** — strongest and favoured option
 
 ## Scoring Approach
-- Compute soft score from assignment quality and fairness metrics
+- Compute soft score across the complete Monday-to-Sunday rota from Preferred Days Off, section levels, Preferred breakfast day, breakfast fairness, weekend fairness, senior distribution, senior-on-Pass, consecutive days off, and multi-week fairness history where present
 - If any hard rule fails, mark invalid and cap score
 - Provide explanation lines for penalties and trade-offs
+
+## Bounded Search
+
+- Generate deterministic candidates from chronological, reverse-chronological, and weekend-first planning orders.
+- Revalidate every candidate and neighbour with `validateRotaHardRules`; hard-invalid neighbours can never be accepted.
+- Explore two-chef/two-day membership exchanges (which preserve exact weekly targets), affected-day section rebuilds, valid primary-section swaps, and Breakfast reassignment.
+- Accept only strict whole-rota soft-score improvements and repeat until local convergence or the configured iteration bound.
+- Compare optimized candidates with complete soft scoring, including the existing multi-week fairness context.
+- Lock the selected MIO chef's established GT-day plan during local search so exact 3 MIO + 2 GT and existing weekend-first/fallback behaviour remain unchanged.
+
+Search limits are 3 candidates × 8 iterations × 120 neighbours for a single week, and 2 × 4 × 72 per week for multi-week requests. These explicit limits bound browser work; the lower multi-week budget keeps an eight-week request practical while still performing several hundred hard-validated neighbour comparisons per week.
 
 ## Results Presentation
 - The normal results UI shows only failed hard rules and unmet soft preferences.
@@ -95,6 +108,7 @@ Section levels are interpreted in order:
 - Valid weeks use a compact success state instead of listing every passed rule.
 - Multi-week results include a compact per-week checks overview and keep week navigation above the selected rota.
 - Technical diagnostics use a collapsed details section and are excluded from print output.
+- Technical diagnostics include initial/final soft score, candidate count, accepted optimization moves, improvement status, and configured limits.
 - Chef-hours summary shows exact GT progress as `actual/adjustedTarget`, for example `4/4`, `3/3`, or `2/2`.
 
 ## Publication Workflow

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-18 — Whole-rota soft optimization
+
+- Kept the chronological greedy builder as a feasible-solution generator while removing its first-valid early return.
+- Added deterministic multi-candidate generation and bounded complete-week local search with separate clone, rebuild, neighbour, hard-validation, scoring, optimization, and comparison functions.
+- Added hard-validated two-chef/two-day exchanges, affected-day section rebuilds, primary-section swaps, and Breakfast reassignments.
+- Expanded complete soft scoring to include consecutive days off, senior distribution, zero-load weekend fairness, and existing multi-week fairness context.
+- Added final-only compromise reporting plus initial/final score, candidate, move, improvement, and limit diagnostics.
+- Strengthened candidate hard validation for complete-week coverage, availability, core-section eligibility, known/unique chefs, GT/MIO overlap, and selected-MIO ownership.
+- Added regression coverage for avoidable Aled weekend work, hard-rule invariants, MIO locking, determinism, bounds, multi-week fairness, rejected lower-quality exchanges, and unavoidable compromises.
+
 ## 2026-07-17 — Breakfast settings cleanup
 - Restored Preferred breakfast day as a saved, migration-safe soft preference.
 - Removed Breakfast competency from the chef UI, core skill data, validation, scoring, and solver qualification logic.

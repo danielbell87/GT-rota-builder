@@ -20,9 +20,12 @@
 - Browser test page and modular tests
 - Date-based additional-chef requests via compact list and accessible modal dialog (v2.1.0)
 - Results UI now filters out successful validation checks from the main interface while preserving full validation arrays for technical details and tests
+- Deterministic bounded whole-rota optimization after greedy feasible generation, with hard validation on every neighbour
+- Complete candidate scoring includes Preferred Days Off, section fit, breakfast preferences/fairness, weekend and senior distribution, senior-on-Pass, and multi-week fairness history
+- Technical details expose initial/final score and bounded-search diagnostics
 
 ## Unfinished Features
-- Advanced multi-candidate optimization and explainability beyond current heuristics
+- Exact/global mathematical optimization beyond the current bounded deterministic local search
 - Extended fairness analytics across long history windows
 
 ## Known Bugs
@@ -48,4 +51,4 @@
 - Relative paths only; no external API requirement
 
 ## Next Recommended Task
-Add deterministic snapshot tests for known weeks and compare expected rota outputs to detect algorithm regressions quickly.
+Add lightweight performance telemetry for unusually large custom staff lists and additional-chef requests.

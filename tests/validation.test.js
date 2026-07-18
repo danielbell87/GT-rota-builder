@@ -1,6 +1,6 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota } from '../js/solver.js';
-import { validateRotaHardRules, validateRotaSoftRules, isRotaValid, getStaffConfigurationWarnings } from '../js/validation.js?v=20260717i';
+import { validateRotaHardRules, validateRotaSoftRules, isRotaValid, getStaffConfigurationWarnings } from '../js/validation.js?v=20260718a';
 
 function createSummary(state, annualLeaveHoursByChef = {}) {
   return state.staff.map((chef) => {
@@ -94,6 +94,37 @@ export async function runValidationTests(assert) {
   const breakfastEligibilityValidation = validateRotaHardRules({ rota: breakfastEligibilityCorrupted, state: breakfastEligibilityState, inputs: breakfastEligibilityState.weeklyInputs, summary: result.summary, fullWeekDates: result.fullWeekDates });
   assert(breakfastEligibilityValidation.some((v) => v.ruleId === 'H028' && !v.passed), 'Validation rejects a Breakfast assignment for an ineligible chef');
 
+  const sectionEligibilityState = JSON.parse(JSON.stringify(state));
+  const sectionEligibilityCorrupted = JSON.parse(JSON.stringify(result.rota));
+  const firstCoreAssignment = sectionEligibilityCorrupted[0].assignments.find((assignment) => ['Sauce', 'Garnish', 'Larder', 'Pastry'].includes(assignment.section));
+  sectionEligibilityState.staff.find((chef) => chef.name === firstCoreAssignment.chef).skills[firstCoreAssignment.section] = 0;
+  const sectionEligibilityValidation = validateRotaHardRules({
+    rota: sectionEligibilityCorrupted,
+    state: sectionEligibilityState,
+    inputs: sectionEligibilityState.weeklyInputs,
+    summary: result.summary,
+    fullWeekDates: result.fullWeekDates
+  });
+  assert(sectionEligibilityValidation.some((v) => v.ruleId === 'H025' && !v.passed), 'Hard validation rejects an ineligible core-section assignment');
+
+  const availabilityValidationState = JSON.parse(JSON.stringify(state));
+  const assignedMondayChef = result.rota[0].chefs[0];
+  availabilityValidationState.weeklyInputs.availability = [{
+    chef: assignedMondayChef,
+    type: 'Unavailable',
+    startDate: result.rota[0].date,
+    finishDate: result.rota[0].date,
+    notes: ''
+  }];
+  const availabilityValidation = validateRotaHardRules({
+    rota: result.rota,
+    state: availabilityValidationState,
+    inputs: availabilityValidationState.weeklyInputs,
+    summary: result.summary,
+    fullWeekDates: result.fullWeekDates
+  });
+  assert(availabilityValidation.some((v) => v.ruleId === 'H019' && !v.passed), 'Hard validation independently rejects a chef assigned while unavailable');
+
   const corrupted = JSON.parse(JSON.stringify(result.rota));
   corrupted[0].assignments = corrupted[0].assignments.filter((a) => a.section !== 'Breakfast');
   const corruptedValidation = validateRotaHardRules({ rota: corrupted, state, inputs: state.weeklyInputs, summary: result.summary, fullWeekDates: result.fullWeekDates });
@@ -131,11 +162,12 @@ export async function runValidationTests(assert) {
   assert(floatValidation.some((v) => v.ruleId === 'H026' && !v.passed), 'Hard validation rejects a GT chef without an explicit primary assignment');
 
   const fullWeekDates = result.fullWeekDates;
+  const fredFourDayPartial = result.rota.filter((day) => day.chefs.includes('Fred'));
+  const fredThreeDayPartial = fredFourDayPartial.slice(0, 3);
 
   const sundayLeaveState = setupState();
   sundayLeaveState.weeklyInputs.availability = [{ chef: 'Fred', type: 'Annual Leave', startDate: '2026-07-19', finishDate: '2026-07-19', notes: '' }];
   syncCompatibilityViews();
-  const saturdayPartial = result.rota.filter((day) => day.dayName !== 'Sunday');
   const sundayLeaveSummary = result.summary.map((item) => item.name === 'Fred'
     ? {
       ...item,
@@ -145,7 +177,7 @@ export async function runValidationTests(assert) {
     }
     : item);
   const sundayLeaveValidation = validateRotaHardRules({
-    rota: saturdayPartial,
+    rota: fredFourDayPartial,
     state: sundayLeaveState,
     inputs: sundayLeaveState.weeklyInputs,
     summary: sundayLeaveSummary,
@@ -159,7 +191,6 @@ export async function runValidationTests(assert) {
   const fridayLeaveState = setupState();
   fridayLeaveState.weeklyInputs.availability = [{ chef: 'Fred', type: 'Annual Leave', startDate: '2026-07-17', finishDate: '2026-07-17', notes: '' }];
   syncCompatibilityViews();
-  const wednesdayPartial = result.rota.filter((day) => ['Monday', 'Tuesday', 'Wednesday'].includes(day.dayName));
   const fridayLeaveSummary = result.summary.map((item) => item.name === 'Fred'
     ? {
       ...item,
@@ -169,7 +200,7 @@ export async function runValidationTests(assert) {
     }
     : item);
   const fridayLeaveValidation = validateRotaHardRules({
-    rota: wednesdayPartial,
+    rota: fredThreeDayPartial,
     state: fridayLeaveState,
     inputs: fridayLeaveState.weeklyInputs,
     summary: fridayLeaveSummary,
@@ -179,7 +210,7 @@ export async function runValidationTests(assert) {
   const fridayLeaveTarget = parseGtDayRule(fridayLeaveH016);
   assert(fridayLeaveH016?.passed, 'Partial rota stopping on Wednesday correctly adjusts the GT target for Friday leave');
   assert(fridayLeaveTarget?.target === 3 && fridayLeaveTarget?.actual === 3, 'Later Friday leave still reduces the expected GT target');
-  const fridayFailurePartial = result.rota.filter((day) => day.chefs.includes('Fred'));
+  const fridayFailurePartial = fredFourDayPartial;
   const fridayLeaveFailureValidation = validateRotaHardRules({
     rota: fridayFailurePartial,
     state: fridayLeaveState,
@@ -217,7 +248,7 @@ export async function runValidationTests(assert) {
 
   const noLeaveState = setupState();
   const noLeaveValidation = validateRotaHardRules({
-    rota: saturdayPartial,
+    rota: fredFourDayPartial,
     state: noLeaveState,
     inputs: noLeaveState.weeklyInputs,
     summary: result.summary,
@@ -259,8 +290,10 @@ export async function runValidationTests(assert) {
   const mioLeaveState = setupState();
   mioLeaveState.weeklyInputs.availability = [{ chef: 'Dan', type: 'Annual Leave', startDate: '2026-07-19', finishDate: '2026-07-19', notes: '' }];
   syncCompatibilityViews();
+  const firstDanGtDay = result.rota.find((day) => day.chefs.includes('Dan'));
+  const mioPartial = result.rota.filter((day) => day.date !== firstDanGtDay?.date);
   const mioLeaveValidation = validateRotaHardRules({
-    rota: saturdayPartial,
+    rota: mioPartial,
     state: mioLeaveState,
     inputs: mioLeaveState.weeklyInputs,
     summary: result.summary,

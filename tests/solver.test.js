@@ -1,7 +1,18 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
-import { buildRota, buildMultiWeekRota, compareFairnessTieBreak, getSectionCandidateBaseScore, selectBreakfastChef } from '../js/solver.js';
-import { isSenior, getHoursForDay, getHoursForAssignment } from '../js/scoring.js';
-import { isUnavailable, validateRotaHardRules } from '../js/validation.js?v=20260717i';
+import {
+  SOLVER_SEARCH_LIMITS,
+  buildRota,
+  buildMultiWeekRota,
+  cloneRotaCandidate,
+  compareFairnessTieBreak,
+  generateNeighborCandidates,
+  getSectionCandidateBaseScore,
+  hardValidateRotaCandidate,
+  optimizeRotaCandidate,
+  selectBreakfastChef
+} from '../js/solver.js';
+import { isSenior, getHoursForDay, getHoursForAssignment, scoreSoftPreferences } from '../js/scoring.js';
+import { isUnavailable, validateRotaHardRules, validateRotaSoftRules } from '../js/validation.js?v=20260718a';
 import { canCoverSection, sectionCandidateScore } from '../js/section-levels.js';
 import { normalizeChefRecord } from '../js/staff.js';
 
@@ -72,6 +83,38 @@ export async function runSolverTests(assert) {
   assert(state.weeklyInputs.availability.length === 0, 'Fresh and reset state contains no example annual leave or unavailability');
   assert(baseline.status === 'ok', 'Baseline week with Dan on MIO is feasible');
   assert(baselineFailures.length === 0, 'Baseline week has no hard-rule failures');
+  assert(
+    baseline.optimizationDiagnostics?.candidateRotasEvaluated >= 1
+      && baseline.optimizationDiagnostics.candidateRotasEvaluated <= SOLVER_SEARCH_LIMITS.singleWeek.initialCandidateCount,
+    'Whole-rota optimization evaluates a bounded set of hard-valid initial candidates'
+  );
+  assert(
+    baseline.optimizationDiagnostics?.winningCandidateIterations <= SOLVER_SEARCH_LIMITS.singleWeek.maxOptimizationIterations,
+    'Whole-rota optimization terminates within its configured iteration limit'
+  );
+  assert(
+    baseline.optimizationDiagnostics?.finalSoftScore >= baseline.optimizationDiagnostics?.initialSoftScore,
+    'Whole-rota optimization never returns a lower score than the initial valid rota'
+  );
+  const clonedBaseline = cloneRotaCandidate(baseline.rota);
+  clonedBaseline[0].chefs.push('Synthetic mutation');
+  assert(!baseline.rota[0].chefs.includes('Synthetic mutation'), 'Rota candidate cloning is deep for day chef and assignment arrays');
+
+  const deterministicBaseline = runScenario(state);
+  assert(
+    JSON.stringify(deterministicBaseline.rota) === JSON.stringify(baseline.rota)
+      && deterministicBaseline.optimizationDiagnostics.finalSoftScore === baseline.optimizationDiagnostics.finalSoftScore,
+    'Whole-rota optimization is deterministic for identical inputs'
+  );
+  const aledWeekendDays = baseline.rota
+    .filter((day) => ['Saturday', 'Sunday'].includes(day.dayName) && day.chefs.includes('Aled'))
+    .map((day) => day.dayName);
+  const baselineSoftCompromises = validateRotaSoftRules({ rota: baseline.rota, state, inputs: state.weeklyInputs });
+  assert(aledWeekendDays.length === 0, 'Regression: whole-week search moves Aled off both preferred weekend days when a valid reallocation exists');
+  assert(
+    !baselineSoftCompromises.some((result) => result.ruleId === 'S002' && result.message.includes('Aled') && /Saturday|Sunday/.test(result.message)),
+    'Regression: avoidable Aled weekend compromises are not reported after optimization'
+  );
   const danBaseline = baseline.summary.find((item) => item.name === 'Dan');
   assert((danBaseline?.mioDays || 0) === 3, 'Selected MIO chef receives exactly 3 MIO shifts in baseline');
   assert((danBaseline?.gtDays || 0) === 2, 'Selected MIO chef receives exactly 2 GT shifts in baseline');
@@ -192,6 +235,11 @@ export async function runSolverTests(assert) {
   const aledWeekendRequired = runScenario(aledWeekendRequiredState);
   const saturdayRequired = aledWeekendRequired.rota.find((day) => day.dayName === 'Saturday');
   assert(aledWeekendRequired.status === 'ok' && saturdayRequired?.chefs.includes('Aled'), 'Aled remains schedulable on Saturday when senior coverage requires it');
+  assert(
+    validateRotaSoftRules({ rota: aledWeekendRequired.rota, state: aledWeekendRequiredState, inputs: aledWeekendRequiredState.weeklyInputs })
+      .some((result) => result.ruleId === 'S002' && result.message.includes('Aled') && result.message.includes('Saturday')),
+    'A genuinely unavoidable Preferred Day Off breach is still reported after optimization'
+  );
 
   const fredAnnualLeaveState = setupBaseState();
   fredAnnualLeaveState.weeklyInputs.availability = [{ chef: 'Fred', type: 'Annual Leave', startDate: '2026-07-14', finishDate: '2026-07-14', notes: '' }];
@@ -383,7 +431,83 @@ export async function runSolverTests(assert) {
     .filter((assignment) => assignment.section === 'Float')
     .map((assignment) => assignment.chef) || [];
   assert(floatSpecialist.status === 'ok', 'Specialists can be assigned to Float without breaking the rota');
-  assert(fridayFloatChefs.some((chef) => ['Myles', 'Fred', 'Joel'].includes(chef)), 'Specialist chefs can be selected for explicit Float work');
+  assert(fridayFloatChefs.length >= 2 && fridayFloatChefs.every((name) => floatSpecialistState.staff.some((chef) => chef.name === name)), 'Explicit extra staffing remains represented by valid Float chefs after optimization');
+
+  const greedyOnlyState = setupBaseState();
+  const greedyOnlyInputs = {
+    weekStart: greedyOnlyState.weeklyInputs.weekStart,
+    mioChef: greedyOnlyState.weeklyInputs.mioChef,
+    additionalChefRequirements: [],
+    availability: []
+  };
+  const greedyOnly = buildRota(greedyOnlyInputs, {
+    searchLimits: {
+      initialCandidateCount: 1,
+      maxOptimizationIterations: 0,
+      maxNeighborEvaluationsPerIteration: 120
+    }
+  });
+  const greedyHard = hardValidateRotaCandidate({
+    rota: greedyOnly.rota,
+    state: greedyOnlyState,
+    inputs: greedyOnlyInputs,
+    fullWeekDates: greedyOnly.fullWeekDates
+  });
+  const greedyScore = scoreSoftPreferences({
+    state: greedyOnlyState,
+    rota: greedyOnly.rota,
+    hardValidation: greedyHard.hardValidation
+  }).score;
+  const countPreferredDayBreaches = (rota) => rota.reduce((total, day) => total + day.chefs.filter((name) => (
+    greedyOnlyState.staff.find((chef) => chef.name === name)?.preferredDaysOff?.includes(day.dayName)
+  )).length, 0);
+  const greedyBreachCount = countPreferredDayBreaches(greedyOnly.rota);
+  const validNeighbors = generateNeighborCandidates({
+    rota: greedyOnly.rota,
+    state: greedyOnlyState,
+    inputs: greedyOnlyInputs,
+    limit: 120
+  }).map((neighbor) => {
+    const hardResult = hardValidateRotaCandidate({
+      rota: neighbor.rota,
+      state: greedyOnlyState,
+      inputs: greedyOnlyInputs,
+      fullWeekDates: greedyOnly.fullWeekDates
+    });
+    return {
+      ...neighbor,
+      hardResult,
+      score: scoreSoftPreferences({
+        state: greedyOnlyState,
+        rota: neighbor.rota,
+        hardValidation: hardResult.hardValidation
+      }).score,
+      breachCount: countPreferredDayBreaches(neighbor.rota)
+    };
+  }).filter((neighbor) => neighbor.hardResult.valid);
+  const weakerDayOffRepair = validNeighbors.find((neighbor) => (
+    neighbor.breachCount < greedyBreachCount && neighbor.score < greedyScore
+  ));
+  const optimizedGreedy = optimizeRotaCandidate({
+    rota: greedyOnly.rota,
+    state: greedyOnlyState,
+    inputs: greedyOnlyInputs,
+    fullWeekDates: greedyOnly.fullWeekDates,
+    limits: {
+      initialCandidateCount: 1,
+      maxOptimizationIterations: 2,
+      maxNeighborEvaluationsPerIteration: 120
+    }
+  });
+  assert(!!weakerDayOffRepair, 'A hard-valid day-off repair with an unacceptable total section-strength loss is available for rejection testing');
+  assert(
+    !weakerDayOffRepair
+      || (
+        optimizedGreedy.softScore.score > weakerDayOffRepair.score
+        && JSON.stringify(optimizedGreedy.rota) !== JSON.stringify(weakerDayOffRepair.rota)
+      ),
+    'Optimization rejects a Preferred Day Off repair when its complete soft score is worse'
+  );
 
   // ─── Multi-week rota generation ────────────────────────────────────────────
   const multiWeekState = setupBaseState();
@@ -407,6 +531,10 @@ export async function runSolverTests(assert) {
   assert(twoWeekResult.weeks[0].status === 'ok', 'Multi-week: week 1 is feasible');
   assert(twoWeekResult.weeks[1].status === 'ok', 'Multi-week: week 2 is feasible');
   assert(twoWeekResult.weeks[0].mioChef === 'Dan' && twoWeekResult.weeks[1].mioChef === 'Fred', 'Multi-week: different weekly MIO chefs are applied per week');
+  assert(
+    twoWeekResult.weeks.every((week) => week.softScore?.explanation?.some((line) => line.includes('Multi-week fairness burden spread'))),
+    'Multi-week fairness history is included in complete candidate scoring and comparison'
+  );
 
   const week1Start = multiWeekInputs.weekStart;
   const week2Start = twoWeekResult.weeks[1].weekStart;

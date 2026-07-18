@@ -122,3 +122,28 @@ These tests are designed to prove that each hard rule is enforced.
 - Given a feasible multi-week generation request,
 - when each week is solved in sequence,
 - then every feasible week must satisfy the exact GT target rules independently while weekend fairness continues across weeks.
+
+## 20. Whole-rota Preferred Days Off optimization
+- Given a greedy valid plan where Aled works Saturday and Sunday despite preferring both off, and Adam can exchange weekend work without weakening hard coverage,
+- when bounded whole-rota optimization runs,
+- then Aled is moved off both weekend days and those avoidable compromises are absent from final soft validation.
+
+## 21. Hard-rule safety during optimization
+- Given any proposed day, section, Float, or Breakfast change,
+- when the neighbour is evaluated,
+- then it must pass the complete shared hard validator before it can replace the current candidate.
+
+## 22. Complete-score dominance
+- Given a hard-valid exchange that removes a Preferred Day Off breach but causes a larger section-strength loss,
+- when complete soft scores are compared,
+- then the lower total-score exchange is rejected.
+
+## 23. Bounded deterministic termination
+- Given identical weekly inputs,
+- when the solver is run repeatedly,
+- then the rota and final score are identical, candidate/iteration/neighbour limits are respected, and the search terminates.
+
+## 24. Final-only compromise reporting
+- Given an avoidable Preferred Day Off breach in an initial feasible rota,
+- when optimization finds a better hard-valid rota,
+- then the initial breach is not displayed; a genuinely unavoidable breach remains displayed.

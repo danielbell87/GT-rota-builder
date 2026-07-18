@@ -223,12 +223,19 @@ export async function runUiTests(assert) {
     const singleWeekDetails = doc.querySelector('details.technical-details');
     const singleWeekTables = singleWeekDetails.querySelectorAll('.technical-table');
     assert(singleWeekTables.length >= 2, 'UI: technical details render hard and soft validation tables');
+    const optimizationDiagnosticsTable = singleWeekDetails.querySelector('.optimization-diagnostics-table');
     const singleWeekHardTable = singleWeekTables[0];
     const singleWeekSoftTable = singleWeekTables[1];
     const singleWeekRender = canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender;
     assert(visibleSingleWeekText.includes('✓ Rota valid') && visibleSingleWeekText.includes('No hard-rule problems found.'), 'UI: valid one-week rota shows one concise success status');
     assert(!visibleSingleWeekText.includes('H008') && !visibleSingleWeekText.includes('at least one Sous Chef or higher required'), 'UI: successful hard-rule checks are hidden from the normal one-week interface');
     assert(singleWeekDetails.open === false, 'UI: one-week technical details stay collapsed by default');
+    assert(
+      normalizeText(optimizationDiagnosticsTable?.textContent || '').includes('Initial soft score')
+        && normalizeText(optimizationDiagnosticsTable?.textContent || '').includes('Candidate rotas evaluated')
+        && normalizeText(optimizationDiagnosticsTable?.textContent || '').includes('Accepted optimisation moves'),
+      'UI: technical details show whole-rota optimization diagnostics'
+    );
     assert(singleWeekHardTable.querySelectorAll('tbody tr').length === singleWeekRender.validationByWeek[0].hardValidation.length, 'UI: technical details include the full hard-validation dataset');
     assert(singleWeekSoftTable.querySelectorAll('tbody tr').length === singleWeekRender.validationByWeek[0].softValidation.length, 'UI: technical details include the full soft-validation dataset');
     assert(singleWeekRender.validationByWeek[0].hardValidation.some((result) => result.passed), 'UI: complete hard-validation arrays remain available in application state data');

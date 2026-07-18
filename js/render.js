@@ -12,7 +12,7 @@ import {
 import { scoreSoftPreferences } from './scoring.js';
 import { isSenior } from './scoring.js';
 import { buildRota, buildMultiWeekRota } from './solver.js';
-import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260717i';
+import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260718a';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
 
 function getRequiredElement(id) {
@@ -277,6 +277,7 @@ function renderSoftCompromiseSection(view) {
 }
 
 function renderTechnicalDetails(view) {
+  const optimization = view.week.optimizationDiagnostics;
   const hardRows = view.hardValidation.map((result) => `
     <tr>
       <td>${escapeHtml(result.ruleId)}</td>
@@ -304,6 +305,20 @@ function renderTechnicalDetails(view) {
   return `
     <details class="technical-details print-hidden">
       <summary>View technical details</summary>
+      ${optimization ? `
+        <div class="technical-block">
+          <h5>Whole-rota optimisation</h5>
+          <table class="summary-table optimization-diagnostics-table">
+            <tbody>
+              <tr><th>Initial soft score</th><td>${optimization.initialSoftScore.toFixed(1)}</td></tr>
+              <tr><th>Final soft score</th><td>${optimization.finalSoftScore.toFixed(1)}</td></tr>
+              <tr><th>Candidate rotas evaluated</th><td>${optimization.candidateRotasEvaluated}</td></tr>
+              <tr><th>Accepted optimisation moves</th><td>${optimization.acceptedOptimizationMoves}</td></tr>
+              <tr><th>Improved from initial valid rota</th><td>${optimization.improvedFromInitial ? 'Yes' : 'No'}</td></tr>
+              <tr><th>Search limits</th><td>${optimization.limits.initialCandidateCount} initial candidates · ${optimization.limits.maxOptimizationIterations} iterations · ${optimization.limits.maxNeighborEvaluationsPerIteration} neighbours per iteration</td></tr>
+            </tbody>
+          </table>
+        </div>` : ''}
       ${generatorRows ? `
         <div class="technical-block">
           <h5>Generation diagnostics</h5>

@@ -51,6 +51,16 @@ These are scoring and quality objectives rather than hard blocking rules.
 - The workbook's scoring sheet explicitly states that hard-rule failures cap the overall score at 80.
 - The workbook indicates that the AI prompt and scoring sheet are intended to be used as the source of truth for rule interpretation.
 
+## Whole-rota search
+
+- The greedy Monday-to-Sunday builder supplies initial feasible rotas; it is not the final decision-maker.
+- Single-week search evaluates up to 3 deterministic initial candidates, with at most 8 local-search iterations and 120 neighbour evaluations per iteration.
+- Multi-week search uses 2 candidates, 4 iterations, and 72 neighbours per iteration for each week.
+- Neighbours include two-chef/two-day exchanges, affected-day section rebuilds, primary-section exchanges, and Breakfast reassignment.
+- Every neighbour is passed through the shared hard validator. Only a strict improvement from the shared complete soft scorer can be accepted.
+- The selected MIO chef's feasible 3 MIO + 2 GT day plan is locked during local search.
+- Soft compromises are reported only from the final selected rota.
+
 ## Clarifications (confirmed from workbook)
 
 ### Daily sections
