@@ -1,8 +1,8 @@
 import { DISPLAY_SECTIONS, SHIFT_LENGTHS } from './constants.js';
-import { validateRotaHardRules, validateRotaSoftRules } from './validation.js?v=20260718q';
-import { scoreSoftPreferences } from './scoring.js?v=20260718q';
-import { buildRotaDiagnostics } from './diagnostics.js?v=20260718q';
-import { getGtChefNamesForDay, hasGtAssignment, syncDayGtChefs } from './rota-model.js?v=20260718q';
+import { validateRotaHardRules, validateRotaSoftRules } from './validation.js?v=20260718r';
+import { scoreSoftPreferences } from './scoring.js?v=20260718r';
+import { buildRotaDiagnostics } from './diagnostics.js?v=20260718r';
+import { getGtChefNamesForDay, hasGtAssignment, syncDayGtChefs } from './rota-model.js?v=20260718r';
 
 export const MANUAL_HISTORY_LIMIT = 50;
 export const MANUALLY_EDITABLE_SECTIONS = DISPLAY_SECTIONS.filter((section) => section !== 'MIO');

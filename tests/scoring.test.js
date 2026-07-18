@@ -5,7 +5,7 @@ import { scoreSoftPreferences } from '../js/scoring.js';
 import { saveAppState, loadAppState } from '../js/storage.js?v=20260718h';
 import { upsertPublishedHistory, upsertPublishedWeeks } from '../js/history.js';
 import { buildContextualScore, combineContextualScores } from '../js/score-context.js';
-import { migrateStorageIfNeeded } from '../js/storage.js?v=20260718q';
+import { migrateStorageIfNeeded } from '../js/storage.js?v=20260718r';
 
 function baseState() {
   resetStateToDefaults();

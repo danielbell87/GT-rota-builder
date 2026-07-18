@@ -340,6 +340,11 @@ export async function runUiTests(assert) {
     assert(!baselineMultiWeek.weeks[1].rota.some((day) => day.assignments.some((assignment) => assignment.section === 'MIO')), 'UI: a multi-week no-MIO selection produces no MIO assignments for that week');
     assert(baselineMultiWeek.weeks[1].summary.every((item) => item.gtDays === item.adjustedGtTarget && item.adjustedGtTarget === 4), 'UI: the no-MIO week uses normal GT targets for all chefs');
     assert(normalizeText(getWeekPanel(doc, 0)?.textContent || '').includes('Float'), 'UI: rota table renders an explicit Float row');
+    const weekTwoFloatText = normalizeText([...getWeekPanel(doc, 1).querySelectorAll('.rota-table tbody tr')]
+      .find((row) => row.querySelector('th')?.textContent.trim() === 'Float')?.textContent || '');
+    const weekTwoVisibleFloatChefs = baselineMultiWeek.weeks[1].rota
+      .flatMap((day) => day.assignments.filter((assignment) => assignment.section === 'Float').map((assignment) => assignment.chef));
+    assert(weekTwoVisibleFloatChefs.every((chef) => weekTwoFloatText.includes(chef)), 'UI: every generated Float assignment is visible in the rota table, including additional chefs in the same cell');
 
     let mioPersistenceFrame = null;
     try {

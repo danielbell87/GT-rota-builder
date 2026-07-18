@@ -9,15 +9,15 @@ import {
   formatPlanningHorizonLabel,
   getWeekStartAtOffset
 } from './utils.js';
-import { scoreSoftPreferences } from './scoring.js?v=20260718q';
-import { buildRota, buildMultiWeekRota, summarizeRota } from './solver.js?v=20260718q';
+import { scoreSoftPreferences } from './scoring.js?v=20260718r';
+import { buildRota, buildMultiWeekRota, summarizeRota } from './solver.js?v=20260718r';
 import { getChefSoftPreferenceDetails } from './staff.js';
-import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260718q';
+import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260718r';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
-import { cellKey, ensureManualEditState, getChefConcerns, MANUALLY_EDITABLE_SECTIONS } from './manual-edit.js?v=20260718q';
-import { buildRotaDiagnostics, checkRotaFeasibility, summarizeDiagnostics } from './diagnostics.js?v=20260718q';
-import { getGtChefNamesForDay, syncRotaGtChefs } from './rota-model.js?v=20260718q';
-import { buildContextualScore, combineContextualScores } from './score-context.js?v=20260718q';
+import { cellKey, ensureManualEditState, getChefConcerns, MANUALLY_EDITABLE_SECTIONS } from './manual-edit.js?v=20260718r';
+import { buildRotaDiagnostics, checkRotaFeasibility, summarizeDiagnostics } from './diagnostics.js?v=20260718r';
+import { getGtChefNamesForDay, syncRotaGtChefs } from './rota-model.js?v=20260718r';
+import { buildContextualScore, combineContextualScores } from './score-context.js?v=20260718r';
 
 function getRequiredElement(id) {
   const element = document.getElementById(id);
@@ -854,6 +854,7 @@ function renderRotaTable(solveResult, view) {
     const cells = solveResult.rota.map((day) => {
       const matches = day.assignments.filter((assignment) => assignment.section === section);
       const chef = matches[0]?.chef || '';
+      const displayedChefs = matches.map((assignment) => assignment.chef).join(', ');
       if (!MANUALLY_EDITABLE_SECTIONS.includes(section)) return `<td>${matches.length ? escapeHtml(matches.map((assignment) => assignment.chef).join(', ')) : '—'}</td>`;
       const key = cellKey(solveResult.weekStart, day.date, section);
       const edited = Object.prototype.hasOwnProperty.call(manual.edits || {}, key);
@@ -862,7 +863,7 @@ function renderRotaTable(solveResult, view) {
       const failureText = affected ? [...new Set(failures.map((failure) => explainHardRuleFailure(failure, solveResult, state)))].join(' ') : '';
       return `<td class="rota-assignment-cell${edited ? ' manually-edited' : ''}${affected ? ' hard-rule-affected' : ''}"${failureText ? ` title="${escapeHtml(failureText)}"` : ''}>
         <button type="button" class="assignment-button" data-edit-assignment data-week-index="${solveResult.weekIndex || 0}" data-date="${day.date}" data-section="${section}" aria-label="Edit ${escapeHtml(section)} on ${escapeHtml(formatDate(day.date))}${edited ? ', Manually edited' : ''}">
-          <span>${chef ? escapeHtml(chef) : 'None'}</span>${edited ? '<span class="manual-dot" aria-hidden="true">•</span><span class="visually-hidden">Manually edited</span>' : ''}
+          <span>${displayedChefs ? escapeHtml(displayedChefs) : 'None'}</span>${edited ? '<span class="manual-dot" aria-hidden="true">•</span><span class="visually-hidden">Manually edited</span>' : ''}
         </button>
       </td>`;
     }).join('');
