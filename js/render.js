@@ -10,9 +10,9 @@ import {
   getWeekStartAtOffset
 } from './utils.js';
 import { scoreSoftPreferences } from './scoring.js';
-import { isSenior } from './scoring.js';
 import { buildRota, buildMultiWeekRota } from './solver.js';
-import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260718a';
+import { getChefSoftPreferenceDetails } from './staff.js';
+import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260718b';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
 
 function getRequiredElement(id) {
@@ -419,10 +419,43 @@ function getStaffForDisplay() {
   return state.staff.map((chef, index) => ({ chef, index }));
 }
 
-function formatChefSecondaryLabel(chef) {
-  if (isSenior(chef)) return 'Senior';
-  if (chef.mioEligible) return 'MIO eligible';
-  return '';
+function getChefBadges(chef) {
+  const preferenceDetails = getChefSoftPreferenceDetails(chef);
+  return [
+    chef.senior === true ? {
+      key: 'senior',
+      label: 'Senior',
+      accessibleLabel: 'Senior chef'
+    } : null,
+    chef.mioEligible === true ? {
+      key: 'mio',
+      label: 'MIO',
+      accessibleLabel: 'MIO eligible'
+    } : null,
+    chef.breakfastEligible === true ? {
+      key: 'breakfast',
+      label: 'Breakfast',
+      accessibleLabel: 'Breakfast eligible'
+    } : null,
+    preferenceDetails.count > 0 ? {
+      key: 'preferences',
+      label: `Preferences · ${preferenceDetails.count}`,
+      accessibleLabel: `${preferenceDetails.count} active soft preference${preferenceDetails.count === 1 ? '' : 's'}`,
+      title: preferenceDetails.summary
+    } : null
+  ].filter(Boolean);
+}
+
+function renderChefBadge(badge) {
+  const title = badge.title ? ` title="${escapeHtml(badge.title)}"` : '';
+  const ariaLabel = getChefBadgeAccessibleText(badge);
+  return `<span class="chef-list-badge chef-list-badge-${badge.key}" aria-label="${escapeHtml(ariaLabel)}"${title}>${escapeHtml(badge.label)}</span>`;
+}
+
+function getChefBadgeAccessibleText(badge) {
+  return badge.title
+    ? `${badge.accessibleLabel}. ${badge.title}`
+    : badge.accessibleLabel;
 }
 
 export function openChefModal() {
@@ -591,22 +624,23 @@ export function renderStaffTable() {
   container.innerHTML = `
     ${warnings.map((warning) => `<p class="section-note">${escapeHtml(warning.message)}</p>`).join('')}
     ${getStaffForDisplay().map(({ chef }) => {
-    const label = formatChefSecondaryLabel(chef);
+    const badges = getChefBadges(chef);
+    const badgeSummary = badges.map(getChefBadgeAccessibleText).join(', ');
     return `
       <button
         type="button"
         class="chef-list-row"
         data-open-chef-id="${escapeHtml(chef.id)}"
-        aria-label="Edit ${escapeHtml(chef.name)}, ${escapeHtml(chef.role)}"
+        aria-label="Edit ${escapeHtml(chef.name)}, ${escapeHtml(chef.role || 'role not set')}${badgeSummary ? `. ${escapeHtml(badgeSummary)}` : ''}"
       >
         <span class="chef-list-copy">
           <span class="chef-list-name">${escapeHtml(chef.name)}</span>
-          <span class="chef-list-role">${escapeHtml(chef.role)}</span>
+          <span class="chef-list-secondary">
+            <span class="chef-list-role">${escapeHtml(chef.role || 'Role not set')}</span>
+            ${badges.length ? `<span class="chef-list-badges">${badges.map(renderChefBadge).join('')}</span>` : ''}
+          </span>
         </span>
-        <span class="chef-list-meta">
-          ${label ? `<span class="chef-list-badge">${escapeHtml(label)}</span>` : ''}
-          <span class="chef-list-action" aria-hidden="true">Edit ›</span>
-        </span>
+        <span class="chef-list-action" aria-hidden="true">›</span>
       </button>`;
   }).join('')}`;
   renderMioControls();

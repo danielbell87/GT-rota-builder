@@ -27,7 +27,8 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 
 ## Chefs UI
 
-- The **Chefs** section now shows a compact staff list with chef name, role, and at most one small status badge.
+- The **Chefs** section shows a compact staff list with chef name, role, and every applicable badge in a consistent order: Senior, MIO, Breakfast, then the active soft-preference count.
+- The Preferences badge counts each valid Preferred Day Off plus a valid Preferred breakfast day and provides a concise summary without exposing detailed profile data on the list.
 - Click **Add chef** to open the staff editor in creation mode.
 - Click any chef row to open the full editable popup profile.
 - The popup keeps profile fields, section suitability, availability preferences, and advanced settings in one place.

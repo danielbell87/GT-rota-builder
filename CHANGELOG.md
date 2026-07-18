@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-07-18 — Chef list badges and polish
+
+- Reworked compact chef cards so Senior, MIO, Breakfast, and Preferences badges render independently and in a stable order.
+- Added a reusable soft-preference helper that filters invalid values, counts configured days off plus Preferred breakfast, and builds the badge summary text.
+- Refined card borders, spacing, typography, hover/focus states, responsive wrapping, and the editable chevron while keeping the list compact.
+- Expanded browser coverage for badge combinations and ordering, preference counts and summaries, badge/card activation, keyboard access, mobile overflow, safe editable text, persistence, and unchanged solver output.
+
 ## 2026-07-18 — Whole-rota soft optimization
 
 - Kept the chronological greedy builder as a feasible-solution generator while removing its first-valid early return.

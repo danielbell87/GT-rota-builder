@@ -53,6 +53,27 @@ export function normalizeStaffRecords(staff = []) {
   return (Array.isArray(staff) ? staff : []).map((chef, index) => normalizeChefRecord(chef, index, usedIds));
 }
 
+export function getChefSoftPreferenceDetails(chef = {}) {
+  const preferredDaysOff = [...new Set(
+    (Array.isArray(chef.preferredDaysOff) ? chef.preferredDaysOff : [])
+      .filter((day) => WEEKDAYS.includes(day))
+  )];
+  const preferredBreakfast = WEEKDAYS.includes(chef.preferredBreakfast)
+    ? chef.preferredBreakfast
+    : '';
+  const summary = [
+    preferredDaysOff.length ? `Preferred days off: ${preferredDaysOff.join(', ')}` : '',
+    preferredBreakfast ? `Preferred breakfast: ${preferredBreakfast}` : ''
+  ].filter(Boolean).join('. ');
+
+  return {
+    count: preferredDaysOff.length + (preferredBreakfast ? 1 : 0),
+    preferredDaysOff,
+    preferredBreakfast,
+    summary
+  };
+}
+
 export function getChefById(chefId, state = getState()) {
   return state.staff.find((chef) => chef.id === chefId) || null;
 }

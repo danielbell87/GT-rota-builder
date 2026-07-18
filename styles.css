@@ -577,34 +577,55 @@ th {
   font-weight: 500;
 }
 
+#addChefBtn {
+  flex: 0 0 auto;
+  border: 1px solid #3d5773;
+  background: #1a2d43;
+  white-space: nowrap;
+}
+
+#addChefBtn:hover,
+#addChefBtn:focus-visible {
+  border-color: #72c9ee;
+  background: #203a55;
+}
+
 .chef-list {
   display: grid;
-  gap: 10px;
+  gap: 9px;
 }
 
 .chef-list-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 14px;
   width: 100%;
-  padding: 14px 16px;
-  border: 1px solid #243547;
-  border-radius: 14px;
-  background: #0b1422;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid #2a3b50;
+  border-radius: 12px;
+  background: #0c1624;
   color: var(--text);
   text-align: left;
+  box-shadow: none;
 }
 
-.chef-list-row:hover,
+.chef-list-row:hover {
+  border-color: #46627f;
+  background: #101d2d;
+}
+
 .chef-list-row:focus-visible {
-  border-color: rgba(77, 200, 255, 0.8);
-  box-shadow: 0 0 0 2px rgba(77, 200, 255, 0.18);
+  outline: 3px solid #7dd3fc;
+  outline-offset: 2px;
+  border-color: #7dd3fc;
+  background: #101d2d;
 }
 
 .chef-list-copy {
   display: grid;
-  gap: 4px;
+  gap: 5px;
   min-width: 0;
 }
 
@@ -612,34 +633,77 @@ th {
   font-size: 16px;
   font-weight: 700;
   color: #f5f8fc;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.chef-list-secondary {
+  display: flex;
+  align-items: center;
+  gap: 7px 10px;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .chef-list-role {
-  color: var(--muted);
-  white-space: normal;
+  color: #9aacc4;
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
-.chef-list-meta {
+.chef-list-badges {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 5px;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  min-width: 0;
 }
 
 .chef-list-badge {
   display: inline-flex;
   align-items: center;
+  min-height: 20px;
+  border: 1px solid transparent;
   border-radius: 999px;
-  background: #17263a;
-  color: #dbe9f7;
-  padding: 5px 10px;
-  font-size: 12px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.chef-list-badge-senior {
+  background: #2d6b8a;
+  color: #fff;
+}
+
+.chef-list-badge-mio {
+  border-color: #4fb9e9;
+  background: transparent;
+  color: #bfeaff;
+}
+
+.chef-list-badge-breakfast {
+  background: #664817;
+  color: #ffe4a3;
+}
+
+.chef-list-badge-preferences {
+  background: #403864;
+  color: #ebe7ff;
 }
 
 .chef-list-action {
-  color: var(--muted);
-  font-size: 13px;
+  color: #8da2bd;
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.chef-list-row:hover .chef-list-action,
+.chef-list-row:focus-visible .chef-list-action {
+  color: #d8f3ff;
 }
 
 .chef-empty-state {
@@ -933,12 +997,13 @@ th {
   }
 
   .chef-list-row {
-    align-items: flex-start;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 12px;
   }
 
-  .chef-list-meta {
-    flex-direction: column;
-    align-items: flex-end;
+  .chef-list-secondary {
+    align-items: flex-start;
   }
 
   .summary-table th,

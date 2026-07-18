@@ -12,7 +12,7 @@ import {
   selectBreakfastChef
 } from '../js/solver.js';
 import { isSenior, getHoursForDay, getHoursForAssignment, scoreSoftPreferences } from '../js/scoring.js';
-import { isUnavailable, validateRotaHardRules, validateRotaSoftRules } from '../js/validation.js?v=20260718a';
+import { isUnavailable, validateRotaHardRules, validateRotaSoftRules } from '../js/validation.js?v=20260718b';
 import { canCoverSection, sectionCandidateScore } from '../js/section-levels.js';
 import { normalizeChefRecord } from '../js/staff.js';
 
