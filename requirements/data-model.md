@@ -11,9 +11,10 @@ Fields:
 - role: display-only job role or title
 - senior: boolean; the sole source of senior-cover eligibility
 - breakfast_eligible: boolean
+- preferred_breakfast: optional day name used only as a soft tie-breaker after breakfast fairness
 - mio_eligible: boolean
 - preferred_days_off: list of day names (Sunday through Saturday)
-- skills: section-level map using Should not cover, In training, Competent, and Preferred
+- skills: core-section level map for Pass, Sauce, Garnish, Larder, and Pastry using Should not cover, In training, Competent, and Preferred
 - notes: free-text notes
 
 ### WeeklyInput
@@ -69,9 +70,11 @@ Represents required section coverage for one day.
 Fields:
 - id: unique identifier
 - day_requirement_id: foreign key
-- section_name: text (Pass, Sauce, Garnish, Larder, Pastry, Breakfast, Tournant)
+- section_name: text (Pass, Sauce, Garnish, Larder, Pastry)
 - required: boolean
 - notes: optional text
+
+Breakfast is an assignment overlay controlled by `breakfast_required`, `breakfast_assignment`, and staff `breakfast_eligible`; it has no competency level.
 
 ### RotaAssignment
 Represents one shift assignment in the weekly rota.

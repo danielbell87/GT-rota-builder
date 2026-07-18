@@ -106,13 +106,6 @@ export async function runSolverTests(assert) {
     .every((item) => item.gtDays === item.adjustedGtTarget && item.adjustedGtTarget === 4);
   assert(baselineNonMioExactTargets, 'Baseline week gives every non-MIO chef exactly 4 GT days');
 
-  const breakfastIneligibleState = setupBaseState();
-  breakfastIneligibleState.staff.find((chef) => chef.name === 'Aled').breakfastEligible = false;
-  const breakfastIneligibleResult = runScenario(breakfastIneligibleState);
-  assert(
-    breakfastIneligibleResult.rota.every((day) => !day.assignments.some((assignment) => assignment.section === 'Breakfast' && assignment.chef === 'Aled')),
-    'Breakfast-ineligible chefs are never assigned Breakfast'
-  );
   assert(
     baseline.rota.every((day) => {
       const breakfast = day.assignments.find((assignment) => assignment.section === 'Breakfast');
@@ -120,6 +113,14 @@ export async function runSolverTests(assert) {
       return chef?.breakfastEligible === true && !Object.prototype.hasOwnProperty.call(chef.skills || {}, 'Breakfast');
     }),
     'Breakfast-eligible chefs can cover Breakfast without a competency value'
+  );
+
+  const breakfastIneligibleState = setupBaseState();
+  breakfastIneligibleState.staff.find((chef) => chef.name === 'Aled').breakfastEligible = false;
+  const breakfastIneligibleResult = runScenario(breakfastIneligibleState);
+  assert(
+    breakfastIneligibleResult.rota.every((day) => !day.assignments.some((assignment) => assignment.section === 'Breakfast' && assignment.chef === 'Aled')),
+    'Breakfast-ineligible chefs are never assigned Breakfast'
   );
 
   const preferredBreakfastState = setupBaseState();
