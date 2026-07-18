@@ -419,7 +419,7 @@ function ensureWeeklyMioSelections() {
   });
 }
 
-function renderPlanningHorizonSummary() {
+export function renderPlanningHorizonSummary() {
   const state = getState();
   const horizonLabel = document.getElementById('planningHorizonLabel');
   if (!horizonLabel) return;

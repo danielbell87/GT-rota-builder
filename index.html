@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>GT Rota Builder</title>
-  <link rel="stylesheet" href="styles.css?v=20260718i" />
+  <link rel="stylesheet" href="styles.css?v=20260718n" />
 </head>
 <body>
   <div class="wrap">
@@ -68,6 +68,19 @@
       </div>
       <div id="staffList" class="chef-list" aria-live="polite"></div>
     </div>
+
+    <section class="panel backup-panel" aria-labelledby="backupHeading">
+      <div class="backup-copy">
+        <h2 id="backupHeading">Data &amp; backup</h2>
+        <p>Download a backup to transfer your rota data to another device, or recover it if browser storage is cleared.</p>
+      </div>
+      <div class="backup-actions">
+        <button id="downloadBackupBtn" type="button">Download backup</button>
+        <button id="restoreBackupBtn" type="button" class="secondary">Restore backup</button>
+        <input id="restoreBackupInput" class="visually-hidden" type="file" accept=".json,application/json" aria-label="Choose a GT Rota Builder JSON backup">
+      </div>
+      <p id="backupMessage" class="backup-message" role="status" aria-live="polite" aria-atomic="true"></p>
+    </section>
 
     <div class="panel">
       <h2>Generated rota</h2>
@@ -194,6 +207,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260718i"></script>
+  <script type="module" src="js/app.js?v=20260718n"></script>
 </body>
 </html>

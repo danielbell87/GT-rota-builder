@@ -1,11 +1,12 @@
 import { APP_BUILD_VERSION, CACHE_BUST_VERSION } from './constants.js';
-import { getState, getDefaultWeek, syncCompatibilityViews, setWeekStart, setMioChef, setNumWeeks, setWeeklyMioChef } from './state.js';
+import { getState, getDefaultWeek, resetStateToDefaults, syncCompatibilityViews, setWeekStart, setMioChef, setNumWeeks, setWeeklyMioChef } from './state.js';
 import { normalizeWeekStart, getPlanningHorizon } from './utils.js';
 import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260718h';
 import { addChef, createBlankChefDraft, createChefDraft, getChefById, removeChef, updateChef } from './staff.js';
 import { addAvailabilityEntry, removeAvailabilityEntry, updateAvailabilityField, addAdditionalChefRequest, updateAdditionalChefRequest, removeAdditionalChefRequest, validateAdditionalChefDate, validateAdditionalChefCount } from './weekly-inputs.js';
 import {
   renderAll,
+  renderPlanningHorizonSummary,
   renderResultsPanel,
   updateRotaScrollAccessibility,
   renderAdditionalChefRequirements,
@@ -19,9 +20,10 @@ import {
   showChefModalError,
   setChefRemovalConfirmation,
   syncChefChoiceChipState
-} from './render.js';
+} from './render.js?v=20260718n';
 import { upsertPublishedHistory } from './history.js';
 import { openPrintWindow } from './print.js';
+import { createBackup, createBackupFilename, restoreBackup, serializeBackup } from './backup.js';
 
 const state = getState();
 let editingReqDate = null;
@@ -45,6 +47,68 @@ function persistState() {
 
 function refreshAll() {
   renderAll();
+}
+
+function showBackupMessage(message, tone = '') {
+  const element = requireElement('backupMessage');
+  element.textContent = message;
+  element.className = `backup-message${tone ? ` ${tone}` : ''}`;
+}
+
+function syncRestoredInterface() {
+  requireElement('weekStart').value = normalizeWeekStart(state.weeklyInputs.weekStart || getDefaultWeek());
+  requireElement('numWeeks').value = String(state.weeklyInputs.numWeeks || 1);
+  requireElement('mioChef').value = state.weeklyInputs.mioChef || '';
+  renderPlanningHorizonSummary();
+  renderAdditionalChefRequirements();
+  renderStaffTable();
+  renderAvailabilityTable();
+  const results = requireElement('results');
+  results.innerHTML = '<p class="section-note">Backup restored. The rota has not been regenerated.</p>';
+  requireElement('printRotaBtn').disabled = true;
+}
+
+function downloadBackup() {
+  try {
+    const now = new Date();
+    const json = serializeBackup(createBackup(localStorage, now));
+    const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = createBackupFilename(now);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showBackupMessage('Backup downloaded successfully.', 'success');
+  } catch (error) {
+    showBackupMessage(error.message || 'The backup could not be downloaded.', 'error');
+  }
+}
+
+async function restoreBackupFile(file) {
+  if (!file) return;
+  showBackupMessage('');
+  try {
+    const text = await file.text();
+    const result = await restoreBackup(text, {
+      confirmRestore: () => window.confirm('Restore this backup? This will replace all current GT Rota Builder data.')
+    });
+    if (result.cancelled) {
+      showBackupMessage('Restore cancelled.');
+      return;
+    }
+    resetStateToDefaults();
+    migrateStorageIfNeeded();
+    loadAppState();
+    state.history = loadHistory();
+    syncCompatibilityViews();
+    syncRestoredInterface();
+    const created = new Date(result.backup.createdAt).toLocaleString('en-GB');
+    showBackupMessage(`Backup restored successfully. Backup created ${created}.`, 'success');
+  } catch (error) {
+    showBackupMessage(error.message || 'The backup could not be restored.', 'error');
+  }
 }
 
 function focusSelector(selector) {
@@ -288,6 +352,13 @@ function attachEvents() {
     if (!openPrintWindow(state.generatedRotas.latestResult)) {
       message.textContent = 'Your browser blocked the printable rota. Allow pop-ups for this page, then try again.';
     }
+  });
+  requireElement('downloadBackupBtn').addEventListener('click', downloadBackup);
+  requireElement('restoreBackupBtn').addEventListener('click', () => requireElement('restoreBackupInput').click());
+  requireElement('restoreBackupInput').addEventListener('change', async (event) => {
+    const [file] = event.target.files || [];
+    event.target.value = '';
+    await restoreBackupFile(file);
   });
 
   document.addEventListener('change', (event) => {

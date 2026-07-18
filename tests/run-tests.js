@@ -4,6 +4,7 @@ import { runScoringTests } from './scoring.test.js?v=20260718k';
 import { runAdditionalChefTests } from './additional-chef.test.js';
 import { runUiTests } from './ui.test.js';
 import { runPrintTests } from './print.test.js';
+import { runBackupTests } from './backup.test.js';
 import { SOLVER_ENGINE_VERSION } from '../js/solver.js';
 
 const summaryEl = document.getElementById('testSummary');
@@ -25,6 +26,7 @@ async function runAllTests() {
     await runScoringTests(assert);
     await runAdditionalChefTests(assert);
     await runPrintTests(assert);
+    await runBackupTests(assert);
     await runUiTests(assert);
   } catch (error) {
     results.push({
