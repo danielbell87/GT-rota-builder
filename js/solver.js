@@ -6,7 +6,8 @@ import {
   getPreferredDayOffPenalty,
   isSenior,
   getHoursForDay,
-  getHoursForAssignment
+  getHoursForAssignment,
+  scoreSoftPreferences
 } from './scoring.js';
 import { canCoverSection, sectionCandidateScore } from './section-levels.js';
 import {
@@ -16,7 +17,7 @@ import {
   validateRotaHardRules,
   getAdjustedGtTargetsByChef,
   getAnnualLeaveDatesByChef
-} from './validation.js?v=20260717i';
+} from './validation.js?v=20260718a';
 import { filterAvailabilityForWeek, filterAdditionalChefRequirementsForWeek } from './weekly-inputs.js';
 
 const PASS_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -26,7 +27,20 @@ const MIO_GT_PRIMARY_DAYS = ['Saturday', 'Sunday'];
 const MIO_GT_FALLBACK_DAYS = ['Thursday', 'Friday', 'Monday', 'Tuesday', 'Wednesday'];
 const FLOAT_PRIORITY_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-export const SOLVER_ENGINE_VERSION = '2026-07-17-weekly-target-float';
+export const SOLVER_ENGINE_VERSION = '2026-07-18-whole-rota-optimization';
+
+export const SOLVER_SEARCH_LIMITS = Object.freeze({
+  singleWeek: Object.freeze({
+    initialCandidateCount: 3,
+    maxOptimizationIterations: 8,
+    maxNeighborEvaluationsPerIteration: 120
+  }),
+  multiWeek: Object.freeze({
+    initialCandidateCount: 2,
+    maxOptimizationIterations: 4,
+    maxNeighborEvaluationsPerIteration: 72
+  })
+});
 
 function getChefGtTarget(chefName, mioChefName, gtTargetsByChef = null) {
   if (gtTargetsByChef && Number.isFinite(gtTargetsByChef[chefName])) return gtTargetsByChef[chefName];
@@ -598,7 +612,14 @@ function buildDailyChefTargets({ state, dates, inputs, mioChefName, mioDays, mio
   };
 }
 
-function buildPlanningOrder(dayPlans) {
+function buildPlanningOrder(dayPlans, variantIndex = 0) {
+  if (variantIndex % 3 === 1) {
+    return dayPlans.slice().sort((a, b) => b.date.localeCompare(a.date));
+  }
+  if (variantIndex % 3 === 2) {
+    const priority = ['Saturday', 'Sunday', 'Friday', 'Thursday', 'Wednesday', 'Tuesday', 'Monday'];
+    return dayPlans.slice().sort((a, b) => priority.indexOf(a.dayName) - priority.indexOf(b.dayName));
+  }
   return dayPlans.slice().sort((a, b) => a.date.localeCompare(b.date));
 }
 
@@ -666,15 +687,600 @@ function summarizeRota({ state, rota, mioChefName, annualLeaveHoursByChef, gtTar
   };
 }
 
+function getSearchLimits(options = {}) {
+  const defaults = options.multiWeekMode ? SOLVER_SEARCH_LIMITS.multiWeek : SOLVER_SEARCH_LIMITS.singleWeek;
+  const overrides = options.searchLimits || {};
+  const readLimit = (key, minimum, maximum) => {
+    const parsed = Number.parseInt(overrides[key], 10);
+    const value = Number.isFinite(parsed) ? parsed : defaults[key];
+    return Math.max(minimum, Math.min(maximum, value));
+  };
+  return {
+    initialCandidateCount: readLimit('initialCandidateCount', 1, 6),
+    maxOptimizationIterations: readLimit('maxOptimizationIterations', 0, 20),
+    maxNeighborEvaluationsPerIteration: readLimit('maxNeighborEvaluationsPerIteration', 1, 500)
+  };
+}
+
+function getRotaSignature(rota) {
+  return rota
+    .slice()
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((day) => {
+      const chefs = day.chefs.slice().sort().join(',');
+      const assignments = day.assignments
+        .map((assignment) => `${assignment.section}:${assignment.chef}`)
+        .sort()
+        .join(',');
+      return `${day.date}[${chefs}](${assignments})`;
+    })
+    .join('|');
+}
+
+export function cloneRotaCandidate(rota) {
+  return (rota || []).map((day) => ({
+    ...day,
+    chefs: [...day.chefs],
+    assignments: day.assignments.map((assignment) => ({ ...assignment }))
+  }));
+}
+
+function getStaffOrder(state) {
+  return new Map(state.staff.map((chef, index) => [chef.name, index]));
+}
+
+function sortChefNames(names, state) {
+  const staffOrder = getStaffOrder(state);
+  return [...names].sort((a, b) => {
+    const orderDiff = (staffOrder.get(a) ?? Number.MAX_SAFE_INTEGER) - (staffOrder.get(b) ?? Number.MAX_SAFE_INTEGER);
+    return orderDiff || a.localeCompare(b);
+  });
+}
+
+function rebuildDayAssignments({ day, state, inputs, breakfastCounts }) {
+  const selectedChefNames = [...new Set(day.chefs)];
+  const selectedChefs = selectedChefNames
+    .map((name) => state.staff.find((chef) => chef.name === name))
+    .filter(Boolean);
+  const coreSections = getCoreSections(day.dayName, inputs);
+  if (selectedChefs.length !== selectedChefNames.length || selectedChefs.length < coreSections.length) return null;
+
+  const eligibleBySection = Object.fromEntries(coreSections.map((section) => [
+    section,
+    selectedChefs
+      .filter((chef) => canCoverSection(chef, section))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  ]));
+  if (coreSections.some((section) => eligibleBySection[section].length === 0)) return null;
+
+  const sectionOrder = coreSections.slice().sort((a, b) => {
+    const scarcityDiff = eligibleBySection[a].length - eligibleBySection[b].length;
+    return scarcityDiff || coreSections.indexOf(a) - coreSections.indexOf(b);
+  });
+  let best = null;
+  const assignedBySection = {};
+  const usedNames = new Set();
+
+  function search(sectionIndex, localScore) {
+    if (sectionIndex === sectionOrder.length) {
+      const coreChefNames = coreSections.map((section) => assignedBySection[section]);
+      if (!coreChefNames.some((name) => state.staff.find((chef) => chef.name === name)?.breakfastEligible === true)) return;
+      const signature = coreChefNames.join('|');
+      if (!best || localScore > best.score || (localScore === best.score && signature.localeCompare(best.signature) < 0)) {
+        best = {
+          score: localScore,
+          signature,
+          assignedBySection: { ...assignedBySection }
+        };
+      }
+      return;
+    }
+
+    const section = sectionOrder[sectionIndex];
+    eligibleBySection[section].forEach((chef) => {
+      if (usedNames.has(chef.name)) return;
+      assignedBySection[section] = chef.name;
+      usedNames.add(chef.name);
+      const seniorPassBonus = section === 'Pass' && isSenior(chef) ? 12 : 0;
+      search(sectionIndex + 1, localScore + (getSectionScore(chef, section, {}) * 4) + seniorPassBonus);
+      usedNames.delete(chef.name);
+      delete assignedBySection[section];
+    });
+  }
+
+  search(0, 0);
+  if (!best) return null;
+
+  const coreAssignments = coreSections.map((section) => ({
+    chef: best.assignedBySection[section],
+    section
+  }));
+  const coreChefNames = new Set(coreAssignments.map((assignment) => assignment.chef));
+  const floatAssignments = sortChefNames(
+    selectedChefNames.filter((name) => !coreChefNames.has(name)),
+    state
+  ).map((chef) => ({ chef, section: 'Float' }));
+  const breakfastChef = selectBreakfastChef(
+    coreAssignments.map((assignment) => state.staff.find((chef) => chef.name === assignment.chef)),
+    day.dayName,
+    breakfastCounts
+  );
+  if (!breakfastChef) return null;
+
+  const mioAssignments = day.assignments
+    .filter((assignment) => assignment.section === 'MIO')
+    .map((assignment) => ({ ...assignment }));
+  return {
+    ...day,
+    chefs: sortChefNames(selectedChefNames, state),
+    assignments: [
+      ...coreAssignments,
+      ...floatAssignments,
+      { chef: breakfastChef.name, section: 'Breakfast' },
+      ...mioAssignments
+    ]
+  };
+}
+
+export function rebuildAffectedDayAssignments({ rota, dayIndexes, state, inputs }) {
+  const rebuilt = cloneRotaCandidate(rota);
+  const affectedIndexes = [...new Set(dayIndexes)].sort((a, b) => a - b);
+  const affectedIndexSet = new Set(affectedIndexes);
+  const breakfastCounts = {};
+
+  rebuilt.forEach((day, index) => {
+    if (affectedIndexSet.has(index)) return;
+    const breakfast = day.assignments.find((assignment) => assignment.section === 'Breakfast');
+    if (breakfast) breakfastCounts[breakfast.chef] = (breakfastCounts[breakfast.chef] || 0) + 1;
+  });
+
+  for (const dayIndex of affectedIndexes) {
+    const rebuiltDay = rebuildDayAssignments({
+      day: rebuilt[dayIndex],
+      state,
+      inputs,
+      breakfastCounts
+    });
+    if (!rebuiltDay) return null;
+    rebuilt[dayIndex] = rebuiltDay;
+    const breakfast = rebuiltDay.assignments.find((assignment) => assignment.section === 'Breakfast');
+    if (breakfast) breakfastCounts[breakfast.chef] = (breakfastCounts[breakfast.chef] || 0) + 1;
+  }
+
+  return rebuilt;
+}
+
+export function hardValidateRotaCandidate({ rota, state, inputs, fullWeekDates }) {
+  const availability = getAvailabilityEntries(inputs, state);
+  const weekDateSet = new Set(fullWeekDates);
+  const annualLeaveHoursByChef = getAnnualLeaveHoursByChef(state.staff, availability, weekDateSet);
+  const gtTargetsByChef = getAdjustedGtTargetsByChef({
+    staff: state.staff,
+    mioChefName: inputs.mioChef,
+    availability,
+    weeklyDates: weekDateSet
+  });
+  const { summary } = summarizeRota({
+    state,
+    rota,
+    mioChefName: inputs.mioChef,
+    annualLeaveHoursByChef,
+    gtTargetsByChef
+  });
+  const hardValidation = validateRotaHardRules({
+    rota,
+    state,
+    inputs: { ...inputs, availability },
+    summary,
+    fullWeekDates
+  });
+  return {
+    valid: hardValidation.every((result) => result.passed),
+    hardValidation,
+    summary
+  };
+}
+
+function addUniqueNeighbor({ neighbors, seen, rota, move, limit }) {
+  if (!rota || neighbors.length >= limit) return;
+  const signature = getRotaSignature(rota);
+  if (seen.has(signature)) return;
+  seen.add(signature);
+  neighbors.push({ rota, move, signature });
+}
+
+function buildChefDaySwap({ rota, sourceIndex, targetIndex, sourceChef, targetChef, state, inputs }) {
+  const swapped = cloneRotaCandidate(rota);
+  swapped[sourceIndex].chefs = swapped[sourceIndex].chefs.map((name) => name === sourceChef ? targetChef : name);
+  swapped[targetIndex].chefs = swapped[targetIndex].chefs.map((name) => name === targetChef ? sourceChef : name);
+  return rebuildAffectedDayAssignments({
+    rota: swapped,
+    dayIndexes: [sourceIndex, targetIndex],
+    state,
+    inputs
+  });
+}
+
+export function generateNeighborCandidates({
+  rota,
+  state,
+  inputs,
+  limit = SOLVER_SEARCH_LIMITS.singleWeek.maxNeighborEvaluationsPerIteration
+}) {
+  const neighbors = [];
+  const seen = new Set([getRotaSignature(rota)]);
+  const orderedDayIndexes = rota
+    .map((day, index) => ({ index, date: day.date }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((item) => item.index);
+
+  // Preferred-day repairs are evaluated first so the bounded search reaches the
+  // most visible compromises even when the general swap space is large.
+  orderedDayIndexes.forEach((sourceIndex) => {
+    const sourceDay = rota[sourceIndex];
+    sourceDay.chefs.slice().sort().forEach((sourceChefName) => {
+      if (sourceChefName === inputs.mioChef) return;
+      const sourceChef = state.staff.find((chef) => chef.name === sourceChefName);
+      if (!sourceChef?.preferredDaysOff?.includes(sourceDay.dayName)) return;
+      orderedDayIndexes.forEach((targetIndex) => {
+        if (targetIndex === sourceIndex || neighbors.length >= limit) return;
+        const targetDay = rota[targetIndex];
+        if (targetDay.chefs.includes(sourceChefName) || sourceChef.preferredDaysOff.includes(targetDay.dayName)) return;
+        targetDay.chefs.slice().sort().forEach((targetChefName) => {
+          if (neighbors.length >= limit || targetChefName === inputs.mioChef || sourceDay.chefs.includes(targetChefName)) return;
+          addUniqueNeighbor({
+            neighbors,
+            seen,
+            rota: buildChefDaySwap({
+              rota,
+              sourceIndex,
+              targetIndex,
+              sourceChef: sourceChefName,
+              targetChef: targetChefName,
+              state,
+              inputs
+            }),
+            move: `swap-days:${sourceChefName}:${sourceDay.dayName}<->${targetChefName}:${targetDay.dayName}`,
+            limit
+          });
+        });
+      });
+    });
+  });
+
+  orderedDayIndexes.forEach((dayIndex) => {
+    if (neighbors.length >= limit) return;
+    addUniqueNeighbor({
+      neighbors,
+      seen,
+      rota: rebuildAffectedDayAssignments({ rota, dayIndexes: [dayIndex], state, inputs }),
+      move: `rebuild-day:${rota[dayIndex].dayName}`,
+      limit
+    });
+  });
+
+  orderedDayIndexes.forEach((dayIndex) => {
+    if (neighbors.length >= limit) return;
+    const day = rota[dayIndex];
+    const primaryAssignments = day.assignments.filter((assignment) => CORE_SECTIONS.includes(assignment.section));
+    for (let left = 0; left < primaryAssignments.length; left += 1) {
+      for (let right = left + 1; right < primaryAssignments.length; right += 1) {
+        if (neighbors.length >= limit) break;
+        const first = primaryAssignments[left];
+        const second = primaryAssignments[right];
+        const firstChef = state.staff.find((chef) => chef.name === first.chef);
+        const secondChef = state.staff.find((chef) => chef.name === second.chef);
+        if (!canCoverSection(firstChef, second.section) || !canCoverSection(secondChef, first.section)) continue;
+        const swapped = cloneRotaCandidate(rota);
+        const dayAssignments = swapped[dayIndex].assignments;
+        dayAssignments.find((assignment) => assignment.section === first.section).chef = second.chef;
+        dayAssignments.find((assignment) => assignment.section === second.section).chef = first.chef;
+        addUniqueNeighbor({
+          neighbors,
+          seen,
+          rota: swapped,
+          move: `swap-sections:${day.dayName}:${first.section}<->${second.section}`,
+          limit
+        });
+      }
+    }
+
+    const breakfast = day.assignments.find((assignment) => assignment.section === 'Breakfast');
+    const eligibleCoreChefs = day.assignments
+      .filter((assignment) => CORE_SECTIONS.includes(assignment.section))
+      .map((assignment) => assignment.chef)
+      .filter((name) => state.staff.find((chef) => chef.name === name)?.breakfastEligible === true)
+      .sort();
+    eligibleCoreChefs.forEach((chefName) => {
+      if (neighbors.length >= limit || chefName === breakfast?.chef) return;
+      const changed = cloneRotaCandidate(rota);
+      changed[dayIndex].assignments.find((assignment) => assignment.section === 'Breakfast').chef = chefName;
+      addUniqueNeighbor({
+        neighbors,
+        seen,
+        rota: changed,
+        move: `breakfast:${day.dayName}:${chefName}`,
+        limit
+      });
+    });
+  });
+
+  for (let leftDay = 0; leftDay < orderedDayIndexes.length; leftDay += 1) {
+    for (let rightDay = leftDay + 1; rightDay < orderedDayIndexes.length; rightDay += 1) {
+      if (neighbors.length >= limit) break;
+      const sourceIndex = orderedDayIndexes[leftDay];
+      const targetIndex = orderedDayIndexes[rightDay];
+      const sourceDay = rota[sourceIndex];
+      const targetDay = rota[targetIndex];
+      const sourceOnly = sourceDay.chefs.filter((name) => !targetDay.chefs.includes(name)).sort();
+      const targetOnly = targetDay.chefs.filter((name) => !sourceDay.chefs.includes(name)).sort();
+      sourceOnly.forEach((sourceChef) => {
+        if (sourceChef === inputs.mioChef) return;
+        targetOnly.forEach((targetChef) => {
+          if (neighbors.length >= limit || targetChef === inputs.mioChef) return;
+          addUniqueNeighbor({
+            neighbors,
+            seen,
+            rota: buildChefDaySwap({
+              rota,
+              sourceIndex,
+              targetIndex,
+              sourceChef,
+              targetChef,
+              state,
+              inputs
+            }),
+            move: `swap-days:${sourceChef}:${sourceDay.dayName}<->${targetChef}:${targetDay.dayName}`,
+            limit
+          });
+        });
+      });
+    }
+  }
+
+  return neighbors;
+}
+
+function evaluateCompleteRotaCandidate({ rota, state, inputs, fullWeekDates, fairnessContext }) {
+  const hardResult = hardValidateRotaCandidate({ rota, state, inputs, fullWeekDates });
+  const softScore = scoreSoftPreferences({
+    state,
+    rota,
+    hardValidation: hardResult.hardValidation,
+    fairnessContext
+  });
+  return {
+    rota,
+    signature: getRotaSignature(rota),
+    valid: hardResult.valid,
+    hardValidation: hardResult.hardValidation,
+    summary: hardResult.summary,
+    softScore
+  };
+}
+
+export function compareCompleteRotaCandidates(a, b) {
+  if (a.valid !== b.valid) return a.valid ? -1 : 1;
+  if (a.softScore.score !== b.softScore.score) return b.softScore.score - a.softScore.score;
+  return a.signature.localeCompare(b.signature);
+}
+
+export function optimizeRotaCandidate({
+  rota,
+  state,
+  inputs,
+  fullWeekDates,
+  fairnessContext = null,
+  limits = SOLVER_SEARCH_LIMITS.singleWeek
+}) {
+  let current = evaluateCompleteRotaCandidate({ rota, state, inputs, fullWeekDates, fairnessContext });
+  let acceptedMoves = 0;
+  let neighborEvaluations = 0;
+  const acceptedMoveDescriptions = [];
+  let iterationsRun = 0;
+
+  for (let iteration = 0; iteration < limits.maxOptimizationIterations; iteration += 1) {
+    iterationsRun += 1;
+    const neighbors = generateNeighborCandidates({
+      rota: current.rota,
+      state,
+      inputs,
+      limit: limits.maxNeighborEvaluationsPerIteration
+    });
+    let bestImprovement = null;
+    let bestMove = '';
+
+    neighbors.forEach((neighbor) => {
+      neighborEvaluations += 1;
+      const evaluated = evaluateCompleteRotaCandidate({
+        rota: neighbor.rota,
+        state,
+        inputs,
+        fullWeekDates,
+        fairnessContext
+      });
+      if (!evaluated.valid || evaluated.softScore.score <= current.softScore.score) return;
+      if (!bestImprovement || compareCompleteRotaCandidates(evaluated, bestImprovement) < 0) {
+        bestImprovement = evaluated;
+        bestMove = neighbor.move;
+      }
+    });
+
+    if (!bestImprovement) break;
+    current = bestImprovement;
+    acceptedMoves += 1;
+    acceptedMoveDescriptions.push(bestMove);
+  }
+
+  return {
+    ...current,
+    optimization: {
+      acceptedMoves,
+      acceptedMoveDescriptions,
+      iterationsRun,
+      neighborEvaluations
+    }
+  };
+}
+
+function buildGreedyCandidate({
+  state,
+  inputs,
+  dates,
+  fullWeekDates,
+  weekDateSet,
+  availability,
+  ruleOverrides,
+  annualLeaveHoursByChef,
+  mioChefName,
+  mioChef,
+  mioDays,
+  mioGtDays,
+  planningVariant,
+  fairnessContext
+}) {
+  const gtTargetsByChef = getAdjustedGtTargetsByChef({
+    staff: state.staff,
+    mioChefName,
+    availability,
+    weeklyDates: weekDateSet
+  });
+  const dailyChefTargets = buildDailyChefTargets({
+    state,
+    dates,
+    inputs,
+    mioChefName,
+    mioDays,
+    mioGtDays,
+    ruleOverrides,
+    gtTargetsByChef
+  });
+  if (!dailyChefTargets.ok) {
+    return {
+      status: 'infeasible',
+      rota: [],
+      summary: [],
+      validation: [{ day: 'Overall', message: dailyChefTargets.message, severity: 'bad' }]
+    };
+  }
+
+  const planningDays = buildPlanningOrder(dailyChefTargets.dayPlans, planningVariant);
+  const gtDaysByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, 0]));
+  const breakfastCounts = {};
+  const currentWeekDaysByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, new Set()]));
+  const completedDates = new Set();
+  const validation = [];
+  const rota = [];
+  const forcedSeniorPassByDay = chooseSeniorPassPlan({ state, dates, ruleOverrides, mioChefName, mioDays, gtTargetsByChef });
+
+  for (const { dayName, date, totalChefs } of planningDays) {
+    const coreSections = getCoreSections(dayName, inputs);
+    const remainingAvailabilityByChef = getRemainingAvailabilityByChef({
+      planningDays,
+      state,
+      mioChefName,
+      mioDays,
+      mioGtDays,
+      ruleOverrides,
+      gtTargetsByChef,
+      completedDates
+    });
+    const candidates = getGtEligibleChefsForDay({
+      state,
+      dayName,
+      date,
+      mioChefName,
+      mioDays,
+      mioGtDays,
+      ruleOverrides,
+      gtTargetsByChef
+    }).filter((staff) => gtDaysByChef[staff.name] < getChefGtTarget(staff.name, mioChefName, gtTargetsByChef));
+
+    const dayPlan = createDayPlan({
+      state,
+      dayName,
+      date,
+      requiredChefs: totalChefs,
+      coreSections,
+      ruleOverrides,
+      candidates,
+      gtDaysByChef,
+      gtTargetsByChef,
+      breakfastCounts,
+      mioChefName,
+      remainingAvailabilityByChef,
+      forcedPassSeniorName: forcedSeniorPassByDay[dayName],
+      forcedChefName: mioGtDays.has(dayName) ? mioChefName : null,
+      fairnessContext,
+      currentWeekDaysByChef
+    });
+
+    if (!dayPlan) {
+      validation.push({ day: dayName, message: 'Could not build a valid day plan with current hard constraints.', severity: 'bad' });
+      break;
+    }
+
+    const breakfastAssignment = dayPlan.assignments.find((assignment) => assignment.section === 'Breakfast');
+    if (breakfastAssignment) {
+      breakfastCounts[breakfastAssignment.chef] = (breakfastCounts[breakfastAssignment.chef] || 0) + 1;
+    }
+    dayPlan.chefs.forEach((chefName) => {
+      gtDaysByChef[chefName] += 1;
+      currentWeekDaysByChef[chefName].add(dayName);
+    });
+    if (mioChef && mioChef.mioEligible && mioDays.has(dayName) && !isUnavailable(mioChef, date, dayName, ruleOverrides)) {
+      dayPlan.assignments.push({ chef: mioChefName, section: 'MIO' });
+    }
+    rota.push(dayPlan);
+    completedDates.add(date);
+  }
+
+  rota.sort((a, b) => a.date.localeCompare(b.date));
+  const { summary } = summarizeRota({
+    state,
+    rota,
+    mioChefName,
+    annualLeaveHoursByChef,
+    gtTargetsByChef
+  });
+  const hardValidation = validateRotaHardRules({
+    rota,
+    state,
+    inputs: { ...inputs, availability },
+    summary,
+    fullWeekDates
+  });
+  const hardFailures = hardValidation.filter((result) => !result.passed);
+  const isFeasible = rota.length > 0
+    && !validation.some((item) => item.severity === 'bad')
+    && hardFailures.length === 0;
+
+  return {
+    status: isFeasible ? 'ok' : 'infeasible',
+    rota,
+    summary,
+    hardValidation,
+    validation: isFeasible
+      ? validation
+      : validation.concat(hardFailures.map((result) => ({
+        day: 'Overall',
+        message: `${result.ruleId}: ${result.message}`,
+        severity: 'bad'
+      })))
+  };
+}
+
 export function buildRota(inputs, options = {}) {
   const state = getState();
   const dates = buildWeekDates(inputs.weekStart);
   // Preserve the requested Monday-to-Sunday horizon even if generation stops early.
   const fullWeekDates = dates.map((item) => item.date);
-  const weekDateSet = new Set(dates.map((item) => item.date));
+  const weekDateSet = new Set(fullWeekDates);
   const availability = getAvailabilityEntries(inputs, state);
+  const normalizedInputs = { ...inputs, availability };
   const ruleOverrides = { _availability: availability };
   const annualLeaveHoursByChef = getAnnualLeaveHoursByChef(state.staff, availability, weekDateSet);
+  const limits = getSearchLimits(options);
 
   const mioChefName = inputs.mioChef;
   const mioChef = state.staff.find((staff) => staff.name === mioChefName);
@@ -701,152 +1307,94 @@ export function buildRota(inputs, options = {}) {
   }
 
   const attemptPlans = mioGtDayPlanOptions.length ? mioGtDayPlanOptions : [new Set()];
-  let attemptLevelFailure = null;
+  const optimizedCandidates = [];
+  let lastFailure = null;
 
-  for (let attemptIndex = 0; attemptIndex < attemptPlans.length; attemptIndex += 1) {
-    const mioGtDays = attemptPlans[attemptIndex];
-    const gtTargetsByChef = getAdjustedGtTargetsByChef({
-      staff: state.staff,
-      mioChefName,
-      availability,
-      weeklyDates: weekDateSet
-    });
-    const dailyChefTargets = buildDailyChefTargets({
-      state,
-      dates,
-      inputs,
-      mioChefName,
-      mioDays,
-      mioGtDays,
-      ruleOverrides,
-      gtTargetsByChef
-    });
-    if (!dailyChefTargets.ok) {
-      attemptLevelFailure = dailyChefTargets.message;
-      if (attemptIndex < attemptPlans.length - 1) continue;
-      return {
-        status: 'infeasible',
-        rota: [],
-        validation: [{ day: 'Overall', message: dailyChefTargets.message, severity: 'bad' }],
-        summary: []
-      };
-    }
-
-    const planningDays = buildPlanningOrder(dailyChefTargets.dayPlans);
-    const gtDaysByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, 0]));
-    const breakfastCounts = {};
-    const currentWeekDaysByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, new Set()]));
-    const completedDates = new Set();
-    const validation = [];
-    const rota = [];
-    const forcedSeniorPassByDay = chooseSeniorPassPlan({ state, dates, ruleOverrides, mioChefName, mioDays, gtTargetsByChef });
-
-    for (const { dayName, date, totalChefs } of planningDays) {
-      const coreSections = getCoreSections(dayName, inputs);
-      const remainingAvailabilityByChef = getRemainingAvailabilityByChef({
-        planningDays,
+  for (let variantIndex = 0; variantIndex < limits.initialCandidateCount; variantIndex += 1) {
+    let feasibleCandidate = null;
+    for (let offset = 0; offset < attemptPlans.length; offset += 1) {
+      const planIndex = offset;
+      const greedyCandidate = buildGreedyCandidate({
         state,
+        inputs: normalizedInputs,
+        dates,
+        fullWeekDates,
+        weekDateSet,
+        availability,
+        ruleOverrides,
+        annualLeaveHoursByChef,
         mioChefName,
+        mioChef,
         mioDays,
-        mioGtDays,
-        ruleOverrides,
-        gtTargetsByChef,
-        completedDates
+        mioGtDays: attemptPlans[planIndex],
+        planningVariant: variantIndex,
+        fairnessContext: options.fairnessContext || null
       });
-      const candidates = getGtEligibleChefsForDay({
-        state,
-        dayName,
-        date,
-        mioChefName,
-        mioDays,
-        mioGtDays,
-        ruleOverrides,
-        gtTargetsByChef
-      }).filter((staff) => gtDaysByChef[staff.name] < getChefGtTarget(staff.name, mioChefName, gtTargetsByChef));
-
-      const dayPlan = createDayPlan({
-        state,
-        dayName,
-        date,
-        requiredChefs: totalChefs,
-        coreSections,
-        ruleOverrides,
-        candidates,
-        gtDaysByChef,
-        gtTargetsByChef,
-        breakfastCounts,
-        mioChefName,
-        remainingAvailabilityByChef,
-        forcedPassSeniorName: forcedSeniorPassByDay[dayName],
-        forcedChefName: mioGtDays.has(dayName) ? mioChefName : null,
-        fairnessContext: options.fairnessContext || null,
-        currentWeekDaysByChef
-      });
-
-      if (!dayPlan) {
-        validation.push({ day: dayName, message: 'Could not build a valid day plan with current hard constraints.', severity: 'bad' });
+      if (greedyCandidate.status === 'ok') {
+        feasibleCandidate = greedyCandidate;
         break;
       }
-
-      const breakfastAssignment = dayPlan.assignments.find((assignment) => assignment.section === 'Breakfast');
-      if (breakfastAssignment) {
-        breakfastCounts[breakfastAssignment.chef] = (breakfastCounts[breakfastAssignment.chef] || 0) + 1;
-      }
-
-      dayPlan.chefs.forEach((chefName) => {
-        gtDaysByChef[chefName] += 1;
-        currentWeekDaysByChef[chefName].add(dayName);
-      });
-
-      if (mioChef && mioChef.mioEligible && mioDays.has(dayName) && !isUnavailable(mioChef, date, dayName, ruleOverrides)) {
-        dayPlan.assignments.push({ chef: mioChefName, section: 'MIO' });
-      }
-
-      rota.push(dayPlan);
-      completedDates.add(date);
+      lastFailure = greedyCandidate;
     }
 
-    rota.sort((a, b) => a.date.localeCompare(b.date));
-    const { summary } = summarizeRota({
+    if (!feasibleCandidate) continue;
+    const initialEvaluation = evaluateCompleteRotaCandidate({
+      rota: feasibleCandidate.rota,
       state,
-      rota,
-      mioChefName,
-      annualLeaveHoursByChef,
-      gtTargetsByChef
+      inputs: normalizedInputs,
+      fullWeekDates,
+      fairnessContext: options.fairnessContext || null
     });
-
-    const validationInputs = { ...inputs, availability };
-    const hardValidation = validateRotaHardRules({ rota, state, inputs: validationInputs, summary, fullWeekDates });
-    const hardFailures = hardValidation.filter((result) => !result.passed);
-    const isFeasible = rota.length > 0 && !validation.some((item) => item.severity === 'bad') && hardFailures.length === 0;
-
-    if (isFeasible) {
-      return {
-        status: 'ok',
-        rota,
-        validation,
-        summary,
-        fullWeekDates
-      };
-    }
-
-    if (attemptIndex === attemptPlans.length - 1) {
-      return {
-        status: 'infeasible',
-        rota,
-        validation: validation.concat(hardFailures.map((result) => ({ day: 'Overall', message: `${result.ruleId}: ${result.message}`, severity: 'bad' }))),
-        summary,
-        fullWeekDates
-      };
-    }
+    const optimized = optimizeRotaCandidate({
+      rota: feasibleCandidate.rota,
+      state,
+      inputs: normalizedInputs,
+      fullWeekDates,
+      fairnessContext: options.fairnessContext || null,
+      limits
+    });
+    optimizedCandidates.push({
+      ...optimized,
+      initialSoftScore: initialEvaluation.softScore.score,
+      planningVariant: variantIndex
+    });
   }
 
+  if (!optimizedCandidates.length) {
+    return {
+      status: 'infeasible',
+      rota: lastFailure?.rota || [],
+      validation: lastFailure?.validation || [{ day: 'Overall', message: 'Could not build a valid week plan with current hard constraints.', severity: 'bad' }],
+      summary: lastFailure?.summary || [],
+      fullWeekDates
+    };
+  }
+
+  const firstInitialSoftScore = optimizedCandidates[0].initialSoftScore;
+  optimizedCandidates.sort(compareCompleteRotaCandidates);
+  const best = optimizedCandidates[0];
+  const initialSoftScore = firstInitialSoftScore;
+  const totalNeighborEvaluations = optimizedCandidates.reduce((total, candidate) => total + candidate.optimization.neighborEvaluations, 0);
+  const optimizationDiagnostics = {
+    initialSoftScore,
+    finalSoftScore: best.softScore.score,
+    candidateRotasEvaluated: optimizedCandidates.length,
+    acceptedOptimizationMoves: best.optimization.acceptedMoves,
+    winningCandidateIterations: best.optimization.iterationsRun,
+    neighborCandidatesEvaluated: totalNeighborEvaluations,
+    improvedFromInitial: best.softScore.score > initialSoftScore,
+    limits: { ...limits }
+  };
+
   return {
-    status: 'infeasible',
-    rota: [],
-    validation: [{ day: 'Overall', message: attemptLevelFailure || 'Could not build a valid week plan with current hard constraints.', severity: 'bad' }],
-    summary: [],
-    fullWeekDates
+    status: 'ok',
+    rota: best.rota,
+    validation: [],
+    hardValidation: best.hardValidation,
+    softScore: best.softScore,
+    summary: best.summary,
+    fullWeekDates,
+    optimizationDiagnostics
   };
 }
 
@@ -872,7 +1420,10 @@ export function buildMultiWeekRota(inputs, legacyNumWeeks) {
       availability: filterAvailabilityForWeek(allAvailability, weekStart),
       additionalChefRequirements: filterAdditionalChefRequirementsForWeek(allAdditionalChefRequirements, weekStart)
     };
-    const weekResult = buildRota(weekInputs, { fairnessContext });
+    const weekResult = buildRota(weekInputs, {
+      fairnessContext,
+      multiWeekMode: numberOfWeeks > 1
+    });
     const weekRecord = {
       weekIndex,
       weekNumber: weekIndex + 1,

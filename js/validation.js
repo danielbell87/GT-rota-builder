@@ -180,6 +180,15 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
     weeklyDates: requestedWeekDateSet
   });
 
+  if (requestedWeekDates) {
+    const rotaDates = rota.map((day) => day.date);
+    const uniqueRotaDates = new Set(rotaDates);
+    const completeRequestedWeek = requestedWeekDates.every((date) => uniqueRotaDates.has(date))
+      && uniqueRotaDates.size === requestedWeekDates.length
+      && rotaDates.length === requestedWeekDates.length;
+    results.push(createResult('H029', completeRequestedWeek, 'Rota must contain exactly one plan for each requested Monday-to-Sunday date'));
+  }
+
   availability.forEach((entry) => {
     if (entry.type !== 'Annual Leave') return;
     const start = parseLocalDate(entry.startDate || entry.date);
@@ -191,6 +200,27 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
   });
 
   rota.forEach((day) => {
+    const knownChefNames = new Set(state.staff.map((chef) => chef.name));
+    const uniqueGtChefs = new Set(day.chefs);
+    results.push(createResult('H030', uniqueGtChefs.size === day.chefs.length, `${day.dayName}: GT chef list must not contain duplicates`));
+    day.chefs.forEach((chefName) => {
+      const chef = getChef(state.staff, chefName);
+      results.push(createResult('H019', !!chef && !isUnavailable(chef, day.date, day.dayName, { _availability: availability }), `${day.dayName}: ${chefName} must be known and available`));
+    });
+    day.assignments.forEach((assignment) => {
+      results.push(createResult('H030', knownChefNames.has(assignment.chef), `${day.dayName}: ${assignment.chef} assignment must reference a known chef`));
+    });
+
+    const requiredCoreSections = getCoreSections(day.dayName, inputs);
+    requiredCoreSections.forEach((section) => {
+      const assignments = findAssignmentsBySection(day, section);
+      const assignedChef = assignments.length === 1 ? getChef(state.staff, assignments[0].chef) : null;
+      const validCoverage = assignments.length === 1
+        && day.chefs.includes(assignments[0].chef)
+        && canCoverSection(assignedChef, section);
+      results.push(createResult('H025', validCoverage, `${day.dayName}: ${section} must have exactly one eligible GT chef`));
+    });
+
     const breakfast = findAssignmentsBySection(day, 'Breakfast');
     results.push(createResult('H006', breakfast.length === 1, `${day.dayName}: expected exactly one breakfast chef`));
 
@@ -227,6 +257,12 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
     }
 
     const mioAssignments = findAssignmentsBySection(day, 'MIO');
+    mioAssignments.forEach((assignment) => {
+      const chef = getChef(state.staff, assignment.chef);
+      results.push(createResult('H019', !!chef && !isUnavailable(chef, day.date, day.dayName, { _availability: availability }), `${day.dayName}: ${assignment.chef} must be available for MIO`));
+      results.push(createResult('H023', !day.chefs.includes(assignment.chef), `${day.dayName}: ${assignment.chef} cannot overlap GT and MIO`));
+      results.push(createResult('H031', assignment.chef === inputs.mioChef, `${day.dayName}: only the selected MIO chef may receive MIO`));
+    });
     if (['Saturday', 'Sunday'].includes(day.dayName)) {
       results.push(createResult('H013', mioAssignments.length === 0, `${day.dayName}: MIO cannot be on weekends`));
     }

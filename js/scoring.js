@@ -1,4 +1,4 @@
-import { SCORING_WEIGHTS, SHIFT_LENGTHS } from './constants.js';
+import { DAY_FAIRNESS_WEIGHTS, SCORING_WEIGHTS, SHIFT_LENGTHS } from './constants.js';
 import { getSectionLevel, getSectionLevelLabel, SECTION_LEVELS } from './section-levels.js';
 
 export function getSectionScore(staff, section, ruleOverrides) {
@@ -34,12 +34,35 @@ export function getHoursForAssignment(dayName, section) {
   return getHoursForDay(dayName, section === 'Breakfast');
 }
 
-export function scoreSoftPreferences({ state, rota, hardValidation }) {
+function getWorkedDaysByChef(state, rota) {
+  const workedDaysByChef = Object.fromEntries(state.staff.map((chef) => [chef.name, new Set()]));
+  rota.forEach((day) => {
+    day.chefs.forEach((chefName) => workedDaysByChef[chefName]?.add(day.dayName));
+  });
+  return workedDaysByChef;
+}
+
+function getWeekendPattern(workedDays) {
+  const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    .filter((dayName) => workedDays.has(dayName));
+  return {
+    dayNames,
+    weightedBurden: dayNames.reduce((total, dayName) => total + (DAY_FAIRNESS_WEIGHTS[dayName] || 0), 0),
+    saturdaySundayPair: workedDays.has('Saturday') && workedDays.has('Sunday'),
+    fullWeekend: workedDays.has('Friday') && workedDays.has('Saturday') && workedDays.has('Sunday'),
+    signature: dayNames.join('|')
+  };
+}
+
+export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnessContext = null }) {
   const hardFailed = hardValidation.some((result) => !result.passed);
   let score = 100;
   const explanations = [];
   const seniorOnPassWeight = getSoftRuleWeight(state, 'prefer-senior-on-pass', 12);
   const preferredDayOffWeight = getSoftRuleWeight(state, 'S002', 8);
+  const consecutiveDaysOffWeight = getSoftRuleWeight(state, 'S003', SCORING_WEIGHTS.twoConsecutiveDaysOffBonus);
+  const weekendFairnessWeight = getSoftRuleWeight(state, 'S004', Math.abs(SCORING_WEIGHTS.weekendFairnessPenalty));
+  const seniorDistributionWeight = getSoftRuleWeight(state, 'S006', SCORING_WEIGHTS.seniorDistributionBonus);
 
   const breakfastCounts = {};
   rota.forEach((day) => {
@@ -61,6 +84,7 @@ export function scoreSoftPreferences({ state, rota, hardValidation }) {
         }
         return;
       }
+      if (assignment.section === 'Float' || assignment.section === 'MIO') return;
 
       const quality = getQualityScore(chef, assignment.section);
       if (quality >= 3) {
@@ -99,7 +123,22 @@ export function scoreSoftPreferences({ state, rota, hardValidation }) {
     }
   });
 
-  const weekendLoads = {};
+  const workedDaysByChef = getWorkedDaysByChef(state, rota);
+  const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  Object.entries(workedDaysByChef).forEach(([name, workedDays]) => {
+    const hasConsecutiveDaysOff = weekdays.some((dayName, index) => (
+      index < weekdays.length - 1
+      && !workedDays.has(dayName)
+      && !workedDays.has(weekdays[index + 1])
+    ));
+    if (hasConsecutiveDaysOff) score += consecutiveDaysOffWeight;
+  });
+
+  const weekendLoads = Object.fromEntries(
+    state.staff
+      .filter((chef) => workedDaysByChef[chef.name]?.size > 0)
+      .map((chef) => [chef.name, 0])
+  );
   rota
     .filter((day) => ['Friday', 'Saturday', 'Sunday'].includes(day.dayName))
     .forEach((day) => {
@@ -111,9 +150,39 @@ export function scoreSoftPreferences({ state, rota, hardValidation }) {
   if (weekendValues.length > 1) {
     const max = Math.max(...weekendValues);
     const min = Math.min(...weekendValues);
-    if (max - min > 2) {
-      score += SCORING_WEIGHTS.weekendFairnessPenalty;
+    const spread = max - min;
+    if (spread > 1) {
+      score -= weekendFairnessWeight * (spread - 1);
       explanations.push('Weekend load distribution is uneven.');
+    }
+  }
+
+  ['Friday', 'Saturday', 'Sunday'].forEach((dayName) => {
+    const day = rota.find((candidate) => candidate.dayName === dayName);
+    if (!day) return;
+    const seniorCount = day.chefs
+      .map((name) => state.staff.find((chef) => chef.name === name))
+      .filter((chef) => isSenior(chef)).length;
+    if (seniorCount >= 2) score += seniorDistributionWeight;
+  });
+
+  if (fairnessContext) {
+    const projectedBurdens = [];
+    Object.entries(workedDaysByChef).forEach(([name, workedDays]) => {
+      const pattern = getWeekendPattern(workedDays);
+      const historicStats = fairnessContext.stats?.[name] || {};
+      const previous = fairnessContext.previousWeekPatterns?.[name];
+      projectedBurdens.push((historicStats.weightedBurden || 0) + pattern.weightedBurden);
+
+      if (previous?.saturdaySundayPair && pattern.saturdaySundayPair) score -= weekendFairnessWeight;
+      if (previous?.fullWeekend && pattern.fullWeekend) score -= weekendFairnessWeight;
+      if (previous?.signature && previous.signature === pattern.signature) score -= weekendFairnessWeight / 2;
+    });
+
+    if (projectedBurdens.length > 1) {
+      const projectedSpread = Math.max(...projectedBurdens) - Math.min(...projectedBurdens);
+      score -= projectedSpread * (weekendFairnessWeight / 4);
+      explanations.push(`Multi-week fairness burden spread after this rota: ${projectedSpread.toFixed(1)}.`);
     }
   }
 

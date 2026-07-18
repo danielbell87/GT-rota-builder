@@ -9,8 +9,9 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 - **Compact chefs list** with click-to-edit popup profiles
 - **Availability management** for annual leave and unavailable dates
 - **Additional chef requests** via compact date-based list and modal dialog
-- **Breakfast shift scheduling** with max 1 breakfast per chef per week
+- **Breakfast shift scheduling** with eligibility, core coupling, and fairness scoring
 - **Exact weekly GT target enforcement** with explicit Float assignments
+- **Deterministic whole-rota optimisation** after the first hard-valid weekly plan
 - **Hours tracking** with adjusted calculations for breakfast shifts
 - **Rule-based configuration** for customizing shift preferences
 - **Validation alerts** that show only failed hard rules and unmet soft preferences in the main UI, with full diagnostics kept in technical details
@@ -46,6 +47,7 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 - Failed hard rules are shown only when something needs attention.
 - Soft scheduling compromises are listed separately from hard-rule failures.
 - Full validation data, successful checks, and rule IDs remain available under **View technical details**.
+- Whole-rota initial/final scores, candidate counts, accepted moves, and search limits are kept in technical details.
 
 ### Adding Additional Chefs
 
@@ -60,6 +62,14 @@ Requests are tied to a specific calendar date and do not carry across week chang
 
 ## Scheduling Rules
 
+### Whole-rota optimisation
+
+The chronological greedy builder remains the feasible-solution generator, but a hard-valid week is no longer returned immediately. The solver builds deterministic starting rotas using chronological, reverse, and weekend-first planning orders; scores each complete week; then explores two-chef/two-day exchanges, affected-day section rebuilds, primary-section swaps, and Breakfast reassignments. Every neighbour is passed through the shared hard validator, and only a strict complete-score improvement can be accepted.
+
+Single-week generation is bounded to 3 initial candidates, 8 local-search iterations per candidate, and 120 neighbour evaluations per iteration. Multi-week generation uses 2 candidates, 4 iterations, and 72 neighbours per iteration. The lower multi-week limits retain meaningful search while keeping an eight-week request responsive in a normal desktop browser. Identical inputs produce deterministic results without uncontrolled randomness.
+
+Preferred Day Off compromises are calculated only from the final optimized rota.
+
 ### Core Constraints
 - Normal chefs work exactly 4 GT days per week unless credited annual leave reduces the target
 - Selected MIO chef works exactly 3 MIO days and exactly 2 GT days
@@ -71,7 +81,7 @@ Requests are tied to a specific calendar date and do not carry across week chang
 - Float is an explicit GT assignment used to complete contracted weekly days after core coverage
 
 ### Breakfast Shifts
-- One breakfast shift per chef per week (hard limit)
+- Spread breakfast shifts across eligible chefs where possible; repeats receive a soft fairness penalty
 - Breakfast is an overlay on a core GT section and does not replace the chef's primary section assignment
 - 7:30am start time with adjusted hours:
   - Mon-Fri: 14 hours
@@ -213,6 +223,7 @@ No external API keys or secrets are required.
 - ✅ Added schema-safe migration for existing saved staff profiles
 - ✅ Preserved senior-on-Pass, MIO, fairness, leave, and specialist rota rules
 - ✅ Enforced exact weekly GT targets with explicit Float assignments and adjusted leave targets
+- ✅ Added bounded deterministic whole-rota soft optimisation and final-only compromise reporting
 
 ## License
 
