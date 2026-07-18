@@ -77,6 +77,7 @@ export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnes
   let preferredDayOffViolationCount = 0;
   let preferredDayOffPenalty = 0;
   let weekendFairnessPenalty = 0;
+  let weekendStreakPenalty = 0;
   let weekendBlockFairnessPenalty = 0;
   const explanations = [];
   const seniorOnPassWeight = getSoftRuleWeight(state, 'prefer-senior-on-pass', 12);
@@ -214,8 +215,12 @@ export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnes
       weekendBlockFairnessPenalty -= blockCredit - fullWeekendPenalty;
 
       if (previous?.saturdaySundayPair && pattern.saturdaySundayPair) {
-        score -= weekendFairnessWeight;
-        weekendFairnessPenalty += weekendFairnessWeight;
+        const projectedStreak = (historicStats.consecutiveSaturdaySundayWeeks || 0) + 1;
+        const streakPenalty = weekendFairnessWeight * (projectedStreak >= 3 ? 30 : projectedStreak ** 2);
+        score -= streakPenalty;
+        weekendFairnessPenalty += streakPenalty;
+        weekendStreakPenalty += streakPenalty;
+        explanations.push(`${name} would work Saturday and Sunday for ${projectedStreak} consecutive weeks.`);
       }
       if (previous?.fullWeekend && pattern.fullWeekend) {
         score -= weekendFairnessWeight;
@@ -297,6 +302,7 @@ export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnes
       preferredDayOffViolationCount,
       preferredDayOffPenalty,
       weekendFairnessPenalty,
+      weekendStreakPenalty,
       weekendBlockFairnessPenalty,
       explanation: ['Hard-rule failure detected; score capped.', ...explanations]
     };
@@ -309,6 +315,7 @@ export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnes
     preferredDayOffViolationCount,
     preferredDayOffPenalty,
     weekendFairnessPenalty,
+    weekendStreakPenalty,
     weekendBlockFairnessPenalty,
     explanation: explanations
   };

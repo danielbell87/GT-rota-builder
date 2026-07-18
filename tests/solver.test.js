@@ -854,7 +854,7 @@ export async function runSolverTests(assert) {
   const singleWeekResult = buildMultiWeekRota({ ...multiWeekInputs, numWeeks: 1 });
   assert(singleWeekResult.weeks.length === 1, 'Multi-week: 1-week generation returns exactly 1 result');
   assert(singleWeekResult.weeks[0].weekStart === week1Start, 'Multi-week: 1-week result uses correct weekStart');
-  assert(singleWeekResult.fairnessApplied === false, 'Multi-week: fairness is disabled for one-week generation');
+  assert(singleWeekResult.fairnessApplied === true, 'Rolling fairness: persisted history also influences one-week generation');
 
   const outOfRangeResult = buildMultiWeekRota({ ...multiWeekInputs, numWeeks: 0 });
   assert(outOfRangeResult.weeks.length === 1, 'Multi-week: 0 weeks is clamped to 1');

@@ -3,7 +3,7 @@ import { buildRota } from '../js/solver.js?v=20260718k';
 import { validateRotaHardRules } from '../js/validation.js?v=20260718h';
 import { scoreSoftPreferences } from '../js/scoring.js';
 import { saveAppState, loadAppState } from '../js/storage.js?v=20260718h';
-import { upsertPublishedHistory } from '../js/history.js';
+import { upsertPublishedHistory, upsertPublishedWeeks } from '../js/history.js';
 
 function baseState() {
   resetStateToDefaults();
@@ -150,6 +150,23 @@ export async function runScoringTests(assert) {
   const second = upsertPublishedHistory(state, state.weeklyInputs.weekStart, solve.rota, solve.summary);
   assert(first.inserted > 0, 'Published history inserts first week records');
   assert(second.inserted === 0, 'Published history does not create duplicate week/chef records');
+  const historyBeforeFailedBlock = JSON.stringify(state.history);
+  let failedBlockRejected = false;
+  try {
+    upsertPublishedWeeks(state, [
+      { status: 'ok', weekStart: '2026-07-20', rota: solve.rota, summary: solve.summary },
+      { status: 'infeasible', weekStart: '2026-07-27', rota: [], summary: [] }
+    ]);
+  } catch (error) {
+    failedBlockRejected = true;
+  }
+  assert(failedBlockRejected && JSON.stringify(state.history) === historyBeforeFailedBlock, 'Published history is atomic when a later week fails');
+
+  const legacyRecord = { ...state.history[0] };
+  delete legacyRecord.key;
+  state.history = [legacyRecord];
+  const legacyUpsert = upsertPublishedHistory(state, legacyRecord.weekStart, solve.rota, solve.summary);
+  assert(legacyUpsert.inserted === solve.summary.length - 1 && state.history.filter((entry) => entry.weekStart === legacyRecord.weekStart && entry.chef === legacyRecord.chef).length === 1, 'Legacy history without a key migrates by replacing the matching week and chef');
 
   saveAppState(state);
   loadAppState();

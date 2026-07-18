@@ -28,7 +28,7 @@ const MIO_GT_PRIMARY_DAYS = ['Saturday', 'Sunday'];
 const MIO_GT_FALLBACK_DAYS = ['Thursday', 'Friday', 'Monday', 'Tuesday', 'Wednesday'];
 const FLOAT_PRIORITY_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-export const SOLVER_ENGINE_VERSION = '2026-07-18-consecutive-weekend-block-fairness';
+export const SOLVER_ENGINE_VERSION = '2026-07-18-rolling-weekend-fairness';
 
 export const SOLVER_SEARCH_LIMITS = Object.freeze({
   singleWeek: Object.freeze({
@@ -180,26 +180,58 @@ function getCompatibleColleagues(staff, member) {
 
 function createFairnessContext(staff, history = []) {
   const explicitHistory = history
-    .filter((entry) => entry?.earnedWeekendBlock === true)
+    .filter((entry) => entry?.weekStart && entry?.chef)
     .sort((a, b) => String(a.weekStart).localeCompare(String(b.weekStart)));
+  const historyByChef = Object.fromEntries(staff.map((member) => [member.name,
+    explicitHistory.filter((entry) => entry.chef === member.name)
+  ]));
   return {
-    stats: Object.fromEntries(staff.map((member) => [member.name, {
+    stats: Object.fromEntries(staff.map((member) => {
+      const chefHistory = historyByChef[member.name];
+      const latest = chefHistory.at(-1);
+      let consecutiveSaturdaySundayWeeks = 0;
+      for (let index = chefHistory.length - 1; index >= 0; index -= 1) {
+        if (!(chefHistory[index].saturdayWorked && chefHistory[index].sundayWorked)) break;
+        consecutiveSaturdaySundayWeeks += 1;
+      }
+      let weeksSinceWeekendBlock = 0;
+      for (let index = chefHistory.length - 1; index >= 0; index -= 1) {
+        if (chefHistory[index].earnedWeekendBlock === true) break;
+        weeksSinceWeekendBlock += 1;
+      }
+      return [member.name, {
       name: member.name,
-      fridayCount: 0,
-      saturdayCount: 0,
-      sundayCount: 0,
-      weightedBurden: 0,
+      fridayCount: chefHistory.filter((entry) => entry.fridayWorked).length,
+      saturdayCount: chefHistory.filter((entry) => entry.saturdayWorked).length,
+      sundayCount: chefHistory.filter((entry) => entry.sundayWorked).length,
+      weightedBurden: chefHistory.reduce((total, entry) => total
+        + (entry.fridayWorked ? DAY_FAIRNESS_WEIGHTS.Friday : 0)
+        + (entry.saturdayWorked ? DAY_FAIRNESS_WEIGHTS.Saturday : 0)
+        + (entry.sundayWorked ? DAY_FAIRNESS_WEIGHTS.Sunday : 0), 0),
       repeatedSaturdaySundayPairCount: 0,
       repeatedFullWeekendCount: 0,
       repeatedExactPatternCount: 0,
-      friSatBlocksOff: explicitHistory.filter((entry) => entry.chef === member.name && entry.weekendBlockType === 'fri-sat').length,
-      satSunBlocksOff: explicitHistory.filter((entry) => entry.chef === member.name && entry.weekendBlockType === 'sat-sun').length,
-      weeksSinceWeekendBlock: 0,
+      consecutiveSaturdaySundayWeeks,
+      friSatBlocksOff: chefHistory.filter((entry) => entry.earnedWeekendBlock && entry.weekendBlockType === 'fri-sat').length,
+      satSunBlocksOff: chefHistory.filter((entry) => entry.earnedWeekendBlock && entry.weekendBlockType === 'sat-sun').length,
+      weeksSinceWeekendBlock,
       compatibleColleagues: getCompatibleColleagues(staff, member),
       duePriority: false,
-      latestWeekendBlock: ''
-    }])),
-    previousWeekPatterns: {},
+      latestWeekendBlock: latest?.earnedWeekendBlock ? (latest.weekendBlockType || '') : '',
+      mostRecentFullWeekendOff: [...chefHistory].reverse().find((entry) => !entry.saturdayWorked && !entry.sundayWorked)?.weekStart || ''
+    }];
+    })),
+    previousWeekPatterns: Object.fromEntries(staff.map((member) => {
+      const latest = historyByChef[member.name].at(-1);
+      const dayNames = latest ? ['Friday', 'Saturday', 'Sunday'].filter((day) => latest[`${day.toLowerCase()}Worked`]) : [];
+      return [member.name, latest ? {
+        dayNames,
+        saturdaySundayPair: !!(latest.saturdayWorked && latest.sundayWorked),
+        fullWeekend: !!(latest.fridayWorked && latest.saturdayWorked && latest.sundayWorked),
+        signature: dayNames.join('|')
+      } : null];
+    })),
+    weeklyTimeline: Object.fromEntries(staff.map((member) => [member.name, []])),
     generatedWeeks: 0,
     currentUnavailableWeekendDays: {}
   };
@@ -245,6 +277,7 @@ function getFairnessProfile(name, dayName, fairnessContext, currentWeekDaysByChe
     saturdayCount: stats.saturdayCount,
     sundayCount: stats.sundayCount,
     repeatedSaturdaySundayPair,
+    consecutiveSaturdaySundayWeeks: stats.consecutiveSaturdaySundayWeeks || 0,
     repeatedFullWeekend,
     repeatedExactPattern,
     overlapCount,
@@ -262,11 +295,14 @@ export function compareFairnessTieBreak(a, b, dayName, fairnessContext, currentW
   const fairnessB = getFairnessProfile(b.name || b, dayName, fairnessContext, currentWeekDaysByChef);
 
   const comparisons = [
-    fairnessA.weightedBurden - fairnessB.weightedBurden,
+    (fairnessA.repeatedSaturdaySundayPair
+      ? fairnessA.consecutiveSaturdaySundayWeeks ** 2
+      : 0) - (fairnessB.repeatedSaturdaySundayPair ? fairnessB.consecutiveSaturdaySundayWeeks ** 2 : 0),
     fairnessA.repeatedSaturdaySundayPair - fairnessB.repeatedSaturdaySundayPair,
     fairnessA.repeatedFullWeekend - fairnessB.repeatedFullWeekend,
     fairnessA.repeatedExactPattern - fairnessB.repeatedExactPattern,
-    fairnessA.overlapCount - fairnessB.overlapCount
+    fairnessA.overlapCount - fairnessB.overlapCount,
+    fairnessA.weightedBurden - fairnessB.weightedBurden
   ];
 
   if (['Friday', 'Saturday', 'Sunday'].includes(dayName)) {
@@ -295,7 +331,7 @@ export function compareFairnessTieBreak(a, b, dayName, fairnessContext, currentW
   return String(a.id || a.name || a).localeCompare(String(b.id || b.name || b));
 }
 
-function updateFairnessContext(fairnessContext, rota) {
+function updateFairnessContext(fairnessContext, rota, weekStart = '') {
   if (!fairnessContext) return [];
   const weekDaysByChef = {};
 
@@ -334,6 +370,10 @@ function updateFairnessContext(fairnessContext, rota) {
     const signature = dayNames.join('|');
 
     if (previous?.saturdaySundayPair && saturdaySundayPair) stats.repeatedSaturdaySundayPairCount += 1;
+    stats.consecutiveSaturdaySundayWeeks = saturdaySundayPair
+      ? (stats.consecutiveSaturdaySundayWeeks || 0) + 1
+      : 0;
+    if (!saturdaySundayPair) stats.mostRecentFullWeekendOff = rota[0]?.date || '';
     if (previous?.fullWeekend && fullWeekend) stats.repeatedFullWeekendCount += 1;
     if (previous?.signature && previous.signature === signature) stats.repeatedExactPatternCount += 1;
 
@@ -343,6 +383,13 @@ function updateFairnessContext(fairnessContext, rota) {
       fullWeekend,
       signature
     };
+    fairnessContext.weeklyTimeline[name].push({
+      weekStart,
+      saturdaySundayWorked: saturdaySundayPair,
+      consecutiveSaturdaySundayWeeks: stats.consecutiveSaturdaySundayWeeks,
+      weekendBlockOff: satSunBlock ? 'sat-sun' : (friSatBlock ? 'fri-sat' : ''),
+      correctedPreviousImbalance: !saturdaySundayPair && !!previous?.saturdaySundayPair
+    });
   });
 
   fairnessContext.generatedWeeks += 1;
@@ -1372,6 +1419,9 @@ export function compareCompleteRotaCandidates(a, b) {
   const preferredPenaltyA = a.softScore.preferredDayOffPenalty || 0;
   const preferredPenaltyB = b.softScore.preferredDayOffPenalty || 0;
   if (preferredPenaltyA !== preferredPenaltyB) return preferredPenaltyA - preferredPenaltyB;
+  const streakPenaltyA = a.softScore.weekendStreakPenalty || 0;
+  const streakPenaltyB = b.softScore.weekendStreakPenalty || 0;
+  if (streakPenaltyA !== streakPenaltyB) return streakPenaltyA - streakPenaltyB;
   const blockFairnessPenaltyA = a.softScore.weekendBlockFairnessPenalty || 0;
   const blockFairnessPenaltyB = b.softScore.weekendBlockFairnessPenalty || 0;
   if (blockFairnessPenaltyA !== blockFairnessPenaltyB) return blockFairnessPenaltyA - blockFairnessPenaltyB;
@@ -1762,8 +1812,11 @@ export function buildMultiWeekRota(inputs, legacyNumWeeks) {
   const weeklyMioSelections = inputs?.weeklyMioSelections || {};
   const allAvailability = getAvailabilityEntries(inputs, state);
   const allAdditionalChefRequirements = inputs?.additionalChefRequirements || state.weeklyInputs.additionalChefRequirements || [];
-  const fairnessApplied = numberOfWeeks > 1;
-  const fairnessContext = fairnessApplied ? createFairnessContext(state.staff, state.history || []) : null;
+  const fairnessApplied = true;
+  const fairnessContext = createFairnessContext(
+    state.staff,
+    (state.history || []).filter((entry) => !entry?.weekStart || entry.weekStart < inputs.weekStart)
+  );
   const weeks = [];
 
   for (let weekIndex = 0; weekIndex < numberOfWeeks; weekIndex += 1) {
@@ -1817,7 +1870,7 @@ export function buildMultiWeekRota(inputs, legacyNumWeeks) {
       };
     }
 
-    if (fairnessContext) updateFairnessContext(fairnessContext, weekResult.rota);
+    if (fairnessContext) updateFairnessContext(fairnessContext, weekResult.rota, weekStart);
   }
 
   return {
@@ -1826,6 +1879,9 @@ export function buildMultiWeekRota(inputs, legacyNumWeeks) {
     weeks,
     validation: [],
     fairnessApplied,
-    fairnessSummary: fairnessContext ? Object.values(fairnessContext.stats).map((entry) => ({ ...entry })) : []
+    fairnessSummary: fairnessContext ? Object.values(fairnessContext.stats).map((entry) => ({
+      ...entry,
+      weeklyTimeline: fairnessContext.weeklyTimeline[entry.name] || []
+    })) : []
   };
 }

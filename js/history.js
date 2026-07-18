@@ -63,7 +63,8 @@ export function upsertPublishedHistory(state, weekStart, rota, summary) {
       publishedAt: new Date().toISOString()
     };
 
-    const index = nextHistory.findIndex((entry) => entry.key === key);
+    const index = nextHistory.findIndex((entry) => entry.key === key
+      || (entry.weekStart === weekStart && entry.chef === item.name));
     if (index >= 0) {
       nextHistory[index] = { ...nextHistory[index], ...record };
       updated += 1;
@@ -75,4 +76,23 @@ export function upsertPublishedHistory(state, weekStart, rota, summary) {
 
   state.history = nextHistory;
   return { updated, inserted };
+}
+
+export function upsertPublishedWeeks(state, weeks) {
+  if (state.weeklyInputs.status !== 'Published') return { updated: 0, inserted: 0 };
+  const originalHistory = state.history;
+  let updated = 0;
+  let inserted = 0;
+  try {
+    (weeks || []).forEach((week) => {
+      if (week?.status !== 'ok') throw new Error('Cannot publish an incomplete multi-week rota.');
+      const result = upsertPublishedHistory(state, week.weekStart, week.rota, week.summary);
+      updated += result.updated;
+      inserted += result.inserted;
+    });
+    return { updated, inserted };
+  } catch (error) {
+    state.history = originalHistory;
+    throw error;
+  }
 }

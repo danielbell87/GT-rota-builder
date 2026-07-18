@@ -867,7 +867,12 @@ function renderFairnessSummary(summary = []) {
           ? 'Fri–Sat off, consecutive weekend block'
           : 'No consecutive weekend block this rota');
       const priority = entry.duePriority ? ' · Next priority' : '';
-      return `<tr><th scope="row">${escapeHtml(entry.name)}</th><td>${entry.fridayCount}</td><td>${entry.saturdayCount}</td><td>${entry.sundayCount}</td><td>${entry.friSatBlocksOff || 0}</td><td>${entry.satSunBlocksOff || 0}</td><td>${escapeHtml(latest + priority)}</td></tr>`;
+      const timeline = (entry.weeklyTimeline || []).map((week) => {
+        if (week.saturdaySundayWorked) return `${week.weekStart}: Sat–Sun worked (streak ${week.consecutiveSaturdaySundayWeeks})`;
+        if (week.correctedPreviousImbalance) return `${week.weekStart}: previous streak corrected`;
+        return `${week.weekStart}: no full Sat–Sun weekend`;
+      }).join('; ');
+      return `<tr><th scope="row">${escapeHtml(entry.name)}</th><td>${entry.fridayCount}</td><td>${entry.saturdayCount}</td><td>${entry.sundayCount}</td><td>${entry.consecutiveSaturdaySundayWeeks || 0}</td><td>${entry.friSatBlocksOff || 0}</td><td>${entry.satSunBlocksOff || 0}</td><td>${escapeHtml(entry.mostRecentFullWeekendOff || 'Not recorded')}</td><td>${escapeHtml(timeline || latest + priority)}</td></tr>`;
     })
     .join('');
   return `
@@ -875,7 +880,7 @@ function renderFairnessSummary(summary = []) {
       <h4>Fairness summary</h4>
       <p class="section-note">Weekend fairness is applied only after Preferred Days Off have been satisfied as far as hard constraints allow.</p>
       <table class="summary-table fairness-table">
-        <thead><tr><th>Chef</th><th>Friday duties</th><th>Saturday duties</th><th>Sunday duties</th><th>Fri–Sat off</th><th>Sat–Sun off</th><th>Current block status</th></tr></thead>
+        <thead><tr><th>Chef</th><th>Friday duties</th><th>Saturday duties</th><th>Sunday duties</th><th>Current Sat–Sun streak</th><th>Fri–Sat off</th><th>Sat–Sun off</th><th>Most recent full weekend off</th><th>Week-by-week position</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
       ${spread > 2 ? '<p class="section-note">Weekend coverage is meaningfully uneven across the selected weeks.</p>' : ''}
@@ -922,16 +927,7 @@ export function renderResultsPanel(options = {}) {
       })), fairnessApplied: false, fairnessSummary: []
     };
   }
-  if (!overallResult && (inputs.numWeeks || 1) === 1) {
-    const solveResult = buildRota(inputs);
-    overallResult = {
-      status: solveResult.status,
-      numberOfWeeks: 1,
-      weeks: [{ weekIndex: 0, weekNumber: 1, weekStart: inputs.weekStart, mioChef: inputs.mioChef, inputs, ...solveResult }],
-      fairnessApplied: false,
-      fairnessSummary: []
-    };
-  } else if (!overallResult) {
+  if (!overallResult) {
     overallResult = buildMultiWeekRota({
       ...inputs,
       weeklyMioSelections: { ...(state.weeklyInputs.weeklyMioSelections || {}) }

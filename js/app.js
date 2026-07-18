@@ -24,7 +24,7 @@ import {
 } from './render.js?v=20260718p';
 import { renderChefSelector } from './render.js?v=20260718p';
 import { applyManualAssignment, findDuplicateCoreAssignment, redoManualEdit, resetAllManualEdits, resetManualCell, undoManualEdit } from './manual-edit.js';
-import { upsertPublishedHistory } from './history.js';
+import { upsertPublishedHistory, upsertPublishedWeeks } from './history.js';
 import { openPrintWindow } from './print.js';
 import { createBackup, createBackupFilename, restoreBackup, serializeBackup } from './backup.js';
 
@@ -362,6 +362,9 @@ function attachEvents() {
     addAvailabilityEntry();
     renderAvailabilityTable();
     renderResultsPanel();
+    if (state.generatedRotas.latestResult?.status === 'ok') {
+      upsertPublishedWeeks(state, state.generatedRotas.latestResult.weeks);
+    }
     persistState();
   });
 
