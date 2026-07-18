@@ -75,7 +75,7 @@ function renderPrintWeek(week, sections, isLast) {
     <section class="print-week${isLast ? ' print-week-last' : ''}">
       <header>
         <div>
-          <h1>GT Rota</h1>
+          <div class="print-brand"><img src="assets/general-tarleton-logo.svg" alt="The General Tarleton"><span>Rota</span></div>
           <h2>Week ${week.weekNumber}</h2>
         </div>
         <div class="week-details">
@@ -105,7 +105,9 @@ export function renderPrintDocument(model) {
     .print-week { width: min(100%, 277mm); min-height: 190mm; margin: 12px auto; padding: 10mm; background: #fff; break-after: page; page-break-after: always; }
     .print-week-last { break-after: auto; page-break-after: auto; }
     header { display: flex; align-items: end; justify-content: space-between; gap: 12mm; margin-bottom: 5mm; break-after: avoid; page-break-after: avoid; }
-    h1 { margin: 0; font-size: 22pt; line-height: 1; }
+    .print-brand { display: flex; align-items: center; gap: 4mm; }
+    .print-brand img { width: 43mm; height: auto; }
+    .print-brand span { padding-left: 4mm; border-left: 0.35mm solid #a68854; font-size: 18pt; font-weight: 700; line-height: 1; }
     h2 { margin: 2mm 0 0; color: #374151; font-size: 12pt; }
     .week-details { display: grid; gap: 1.5mm; text-align: right; font-size: 10pt; }
     table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 8.5pt; break-inside: avoid; page-break-inside: avoid; }
