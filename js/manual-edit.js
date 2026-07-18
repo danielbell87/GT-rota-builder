@@ -2,6 +2,7 @@ import { DISPLAY_SECTIONS, SHIFT_LENGTHS } from './constants.js';
 import { validateRotaHardRules, validateRotaSoftRules } from './validation.js';
 import { scoreSoftPreferences } from './scoring.js';
 import { buildRotaDiagnostics } from './diagnostics.js';
+import { getGtChefNamesForDay, hasGtAssignment, syncDayGtChefs } from './rota-model.js';
 
 export const MANUAL_HISTORY_LIMIT = 50;
 export const MANUALLY_EDITABLE_SECTIONS = DISPLAY_SECTIONS.filter((section) => section !== 'MIO');
@@ -39,10 +40,7 @@ function setCellChef(week, date, section, chef) {
   if (!day) return false;
   day.assignments = (day.assignments || []).filter((item) => item.section !== section);
   if (chef) day.assignments.push({ section, chef });
-  const primaryNames = [...new Set(day.assignments
-    .filter((item) => item.section !== 'Breakfast' && item.section !== 'MIO')
-    .map((item) => item.chef))];
-  day.chefs = primaryNames;
+  syncDayGtChefs(day);
   return true;
 }
 
@@ -152,8 +150,8 @@ export function resetAllManualEdits(state, overallResult) {
 function rebuildSummary(state, week) {
   const previous = Object.fromEntries((week.summary || []).map((item) => [item.name, item]));
   return state.staff.map((chef) => {
-    const gtDays = week.rota.filter((day) => day.chefs.includes(chef.name)).length;
-    const gtHours = week.rota.reduce((total, day) => total + (day.chefs.includes(chef.name) ? (SHIFT_LENGTHS.regularByDay[day.dayName] || 0) : 0), 0);
+    const gtDays = week.rota.filter((day) => hasGtAssignment(day, chef.name)).length;
+    const gtHours = week.rota.reduce((total, day) => total + (hasGtAssignment(day, chef.name) ? (SHIFT_LENGTHS.regularByDay[day.dayName] || 0) : 0), 0);
     const mioDays = week.rota.filter((day) => day.assignments.some((item) => item.section === 'MIO' && item.chef === chef.name)).length;
     const mioHours = mioDays * SHIFT_LENGTHS.mio;
     const annualLeaveHours = previous[chef.name]?.annualLeaveHours || 0;
@@ -168,9 +166,9 @@ export function recalculateEditedResult(state, overallResult) {
     week.softValidation = validateRotaSoftRules({ rota: week.rota, state, inputs: week.inputs || {} });
     week.softScore = scoreSoftPreferences({ state, rota: week.rota, hardValidation: week.hardValidation });
     week.diagnostics = buildRotaDiagnostics({ state, week, hardValidation: week.hardValidation, softScore: week.softScore });
-    week.status = 'ok';
+    week.status = week.hardValidation.every((result) => result.passed) ? 'ok' : 'infeasible';
   });
-  overallResult.status = 'ok';
+  overallResult.status = (overallResult.weeks || []).every((week) => week.status === 'ok') ? 'ok' : 'infeasible';
   if ((overallResult.weeks || []).length > 1) {
     overallResult.fairnessSummary = state.staff.map((chef) => {
       const worked = { Friday: 0, Saturday: 0, Sunday: 0 };
@@ -199,6 +197,6 @@ export function getChefConcerns({ state, week, date, section, chefName }) {
   }
   if (day?.assignments.some((item) => item.chef === chefName && item.section !== 'Breakfast' && item.section !== 'MIO' && item.section !== section)) concerns.push('Already assigned elsewhere that day');
   const summary = week.summary?.find((item) => item.name === chefName);
-  if ((summary?.gtDays || 0) >= (summary?.adjustedGtTarget ?? 4) && !day?.chefs.includes(chefName)) concerns.push('Would exceed weekly target');
+  if ((summary?.gtDays || 0) >= (summary?.adjustedGtTarget ?? 4) && !hasGtAssignment(day, chefName)) concerns.push('Would exceed weekly target');
   return [...new Set(concerns)];
 }

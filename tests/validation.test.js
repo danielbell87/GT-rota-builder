@@ -1,6 +1,7 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
-import { buildRota } from '../js/solver.js';
+import { buildRota, summarizeRota } from '../js/solver.js';
 import { validateRotaHardRules, validateRotaSoftRules, isRotaValid, getStaffConfigurationWarnings } from '../js/validation.js?v=20260718h';
+import { getGtChefNamesForDay, GT_SECTIONS } from '../js/rota-model.js';
 
 function createSummary(state, annualLeaveHoursByChef = {}) {
   return state.staff.map((chef) => {
@@ -161,6 +162,7 @@ export async function runValidationTests(assert) {
   const monday = mioOverlapCorrupted.find((day) => day.dayName === 'Monday');
   if (monday) {
     monday.chefs.push('Dan');
+    monday.assignments.push({ chef: 'Dan', section: 'Float' });
   }
   const mioOverlapValidation = validateRotaHardRules({ rota: mioOverlapCorrupted, state, inputs: state.weeklyInputs, summary: result.summary, fullWeekDates: result.fullWeekDates });
   assert(mioOverlapValidation.some((v) => v.ruleId === 'H023' && !v.passed), 'Hard validation rejects same-day GT and MIO for selected MIO chef');
@@ -177,13 +179,71 @@ export async function runValidationTests(assert) {
     'Hard validation fails when a chef falls below their exact GT target'
   );
 
+  const canonicalTargets = Object.fromEntries(state.staff.map((chef) => [
+    chef.name,
+    chef.name === state.weeklyInputs.mioChef ? 2 : 4
+  ]));
+  const phantomRota = JSON.parse(JSON.stringify(result.rota));
+  const phantomDay = phantomRota.find((day) => !getGtChefNamesForDay(day).includes('Dan'));
+  phantomDay.chefs.push('Dan');
+  const phantomSummary = summarizeRota({
+    state, rota: phantomRota, mioChefName: state.weeklyInputs.mioChef,
+    annualLeaveHoursByChef: {}, gtTargetsByChef: canonicalTargets
+  }).summary;
+  const phantomDanSummary = phantomSummary.find((item) => item.name === 'Dan');
+  const phantomValidation = validateRotaHardRules({
+    rota: phantomRota, state, inputs: state.weeklyInputs,
+    summary: phantomSummary, fullWeekDates: result.fullWeekDates
+  });
+  assert(phantomDanSummary.gtDays === 2 && phantomDanSummary.gtHours < 36, 'Canonical GT summary ignores a phantom day.chefs name and awards no phantom hours');
+  assert(phantomValidation.some((item) => item.ruleId === 'H033' && !item.passed && item.message.includes('Extra internal chef: Dan')), 'Hard validation reports an internal chef without a visible GT assignment');
+
+  const visibleThreeDayRota = JSON.parse(JSON.stringify(result.rota));
+  const fredVisibleDay = visibleThreeDayRota.find((day) => getGtChefNamesForDay(day).includes('Fred'));
+  fredVisibleDay.assignments = fredVisibleDay.assignments.filter((assignment) => (
+    assignment.chef !== 'Fred' || !GT_SECTIONS.includes(assignment.section)
+  ));
+  const visibleThreeDaySummary = summarizeRota({
+    state, rota: visibleThreeDayRota, mioChefName: state.weeklyInputs.mioChef,
+    annualLeaveHoursByChef: {}, gtTargetsByChef: canonicalTargets
+  }).summary;
+  const visibleFred = visibleThreeDaySummary.find((item) => item.name === 'Fred');
+  const visibleThreeDayValidation = validateRotaHardRules({
+    rota: visibleThreeDayRota, state, inputs: state.weeklyInputs,
+    summary: visibleThreeDaySummary, fullWeekDates: result.fullWeekDates
+  });
+  assert(visibleFred.gtDays === 3 && visibleFred.gtHours < 48, 'Three visible GT assignments report 3/4 and cannot produce 48 GT hours');
+  assert(visibleThreeDayValidation.some((item) => item.ruleId === 'H016' && !item.passed && item.message.includes('actual 3')), 'Three visible GT days cannot pass exact-target validation');
+
+  fredVisibleDay.assignments.push({ chef: 'Fred', section: 'Float' });
+  const restoredFred = summarizeRota({
+    state, rota: visibleThreeDayRota, mioChefName: state.weeklyInputs.mioChef,
+    annualLeaveHoursByChef: {}, gtTargetsByChef: canonicalTargets
+  }).summary.find((item) => item.name === 'Fred');
+  assert(restoredFred.gtDays === 4, 'A visible Float assignment restores a chef from 3/4 to 4/4 GT days');
+
+  const overlayRota = JSON.parse(JSON.stringify(result.rota));
+  const danOverlayDay = overlayRota.find((day) => getGtChefNamesForDay(day).includes('Dan'));
+  danOverlayDay.assignments.push({ chef: 'Dan', section: 'Breakfast' });
+  const mylesMioOnlyDay = overlayRota.find((day) => !getGtChefNamesForDay(day).includes('Myles'));
+  mylesMioOnlyDay.assignments.push({ chef: 'Myles', section: 'MIO' });
+  const overlaySummary = summarizeRota({
+    state, rota: overlayRota, mioChefName: state.weeklyInputs.mioChef,
+    annualLeaveHoursByChef: {}, gtTargetsByChef: canonicalTargets
+  }).summary;
+  assert(overlaySummary.find((item) => item.name === 'Dan').gtDays === 2, 'Breakfast overlay does not add a GT day');
+  assert(
+    overlaySummary.find((item) => item.name === 'Myles').gtDays === result.summary.find((item) => item.name === 'Myles').gtDays,
+    'MIO-only assignment does not count as a GT day'
+  );
+
   const floatCorrupted = JSON.parse(JSON.stringify(result.rota));
   const firstFloatDay = floatCorrupted.find((day) => day.assignments.some((assignment) => assignment.section === 'Float'));
   if (firstFloatDay) {
     firstFloatDay.assignments = firstFloatDay.assignments.filter((assignment) => assignment.section !== 'Float');
   }
   const floatValidation = validateRotaHardRules({ rota: floatCorrupted, state, inputs: state.weeklyInputs, summary: result.summary, fullWeekDates: result.fullWeekDates });
-  assert(floatValidation.some((v) => v.ruleId === 'H026' && !v.passed), 'Hard validation rejects a GT chef without an explicit primary assignment');
+  assert(floatValidation.some((v) => v.ruleId === 'H033' && !v.passed), 'Hard validation rejects an internal GT chef without a visible primary assignment');
 
   const fullWeekDates = result.fullWeekDates;
   const fredFourDayPartial = result.rota.filter((day) => day.chefs.includes('Fred'));

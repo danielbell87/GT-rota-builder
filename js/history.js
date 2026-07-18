@@ -1,3 +1,5 @@
+import { hasGtAssignment } from './rota-model.js';
+
 export function normalizeHistoryKey(weekStart, chef) {
   return `${weekStart}__${chef}`;
 }
@@ -22,9 +24,8 @@ export function upsertPublishedHistory(state, weekStart, rota, summary) {
     let mioDays = 0;
 
     rota.forEach((day) => {
-      const hasChef = day.assignments.some((a) => a.chef === item.name);
-      if (!hasChef) return;
-      if (weekends[day.dayName] !== undefined) weekends[day.dayName] = true;
+      const hasChef = hasGtAssignment(day, item.name);
+      if (hasChef && weekends[day.dayName] !== undefined) weekends[day.dayName] = true;
       if (day.assignments.some((a) => a.chef === item.name && a.section === 'Breakfast')) breakfasts += 1;
       if (day.assignments.some((a) => a.chef === item.name && a.section === 'MIO')) mioDays += 1;
     });

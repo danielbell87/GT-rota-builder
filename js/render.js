@@ -16,6 +16,7 @@ import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarn
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
 import { cellKey, ensureManualEditState, getChefConcerns, MANUALLY_EDITABLE_SECTIONS } from './manual-edit.js';
 import { buildRotaDiagnostics, checkRotaFeasibility, summarizeDiagnostics } from './diagnostics.js';
+import { getGtChefNamesForDay } from './rota-model.js';
 
 function getRequiredElement(id) {
   const element = document.getElementById(id);
@@ -86,7 +87,7 @@ export function explainHardRuleFailure(failure, week, state) {
   }
   if (failure.ruleId === 'H019' && day && chef) return `${chef.name} cannot work on ${dateLabel} because they are unavailable or on annual leave.`;
   if (failure.ruleId === 'H026' && day && chef) {
-    const count = day.assignments.filter((item) => item.chef === chef.name && item.section !== 'Breakfast' && item.section !== 'MIO').length;
+    const count = getGtChefNamesForDay(day).includes(chef.name) ? 1 : 0;
     return count > 1
       ? `${chef.name} is assigned to ${count} overlapping core sections on ${dateLabel}.`
       : `${chef.name} does not have exactly one core or Float assignment on ${dateLabel}.`;

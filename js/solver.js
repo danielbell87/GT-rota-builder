@@ -20,6 +20,7 @@ import {
   getAnnualLeaveDatesByChef
 } from './validation.js?v=20260718h';
 import { filterAvailabilityForWeek, filterAdditionalChefRequirementsForWeek } from './weekly-inputs.js';
+import { getGtChefNamesForDay, hasGtAssignment, syncRotaGtChefs } from './rota-model.js';
 
 const PASS_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
 const MIO_PRIMARY_DAYS = ['Monday', 'Tuesday', 'Wednesday'];
@@ -336,7 +337,7 @@ function updateFairnessContext(fairnessContext, rota, weekStart = '') {
   const weekDaysByChef = {};
 
   rota.forEach((day) => {
-    day.chefs.forEach((chefName) => {
+    getGtChefNamesForDay(day).forEach((chefName) => {
       if (!weekDaysByChef[chefName]) weekDaysByChef[chefName] = new Set();
       weekDaysByChef[chefName].add(day.dayName);
     });
@@ -759,7 +760,7 @@ function getRemainingAvailabilityByChef({ planningDays, state, mioChefName, mioD
   return remaining;
 }
 
-function summarizeRota({ state, rota, mioChefName, annualLeaveHoursByChef, gtTargetsByChef }) {
+export function summarizeRota({ state, rota, mioChefName, annualLeaveHoursByChef = {}, gtTargetsByChef = {} }) {
   const gtDaysByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, 0]));
   const mioDaysByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, 0]));
   const gtHoursByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, 0]));
@@ -768,7 +769,7 @@ function summarizeRota({ state, rota, mioChefName, annualLeaveHoursByChef, gtTar
   const currentWeekDaysByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, new Set()]));
 
   rota.forEach((day) => {
-    day.chefs.forEach((chefName) => {
+    getGtChefNamesForDay(day).forEach((chefName) => {
       gtDaysByChef[chefName] += 1;
       gtHoursByChef[chefName] += getHoursForDay(day.dayName);
       currentWeekDaysByChef[chefName].add(day.dayName);
@@ -869,12 +870,7 @@ function getBreakfastMetrics(rota, state) {
 }
 
 function getEligibleBreakfastChefNames(day, state) {
-  const workingPrimaryChefs = new Set(
-    day.assignments
-      .filter((assignment) => PRIMARY_GT_SECTIONS.includes(assignment.section))
-      .map((assignment) => assignment.chef)
-      .filter((name) => day.chefs.includes(name))
-  );
+  const workingPrimaryChefs = new Set(getGtChefNamesForDay(day));
 
   return state.staff
     .filter((chef) => chef.breakfastEligible === true && workingPrimaryChefs.has(chef.name))
@@ -1384,7 +1380,9 @@ export function generateNeighborCandidates({
 }
 
 function evaluateCompleteRotaCandidate({ rota, state, inputs, fullWeekDates, fairnessContext }) {
+  syncRotaGtChefs(rota);
   const breakfastOptimization = optimizeBreakfastAssignments({ rota, state });
+  syncRotaGtChefs(breakfastOptimization.rota);
   const hardResult = hardValidateRotaCandidate({
     rota: breakfastOptimization.rota,
     state,
@@ -1592,7 +1590,7 @@ function buildGreedyCandidate({
     if (breakfastAssignment) {
       breakfastCounts[breakfastAssignment.chef] = (breakfastCounts[breakfastAssignment.chef] || 0) + 1;
     }
-    dayPlan.chefs.forEach((chefName) => {
+    getGtChefNamesForDay(dayPlan).forEach((chefName) => {
       gtDaysByChef[chefName] += 1;
       currentWeekDaysByChef[chefName].add(dayName);
     });

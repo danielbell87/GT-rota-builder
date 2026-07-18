@@ -2,6 +2,7 @@ import { CORE_SECTIONS, SHIFT_LENGTHS } from './constants.js';
 import { normalizeWeekStart, parseLocalDate, toDateString } from './utils.js';
 import { isSenior } from './scoring.js';
 import { canCoverSection } from './section-levels.js';
+import { getGtChefNamesForDay, hasGtAssignment } from './rota-model.js';
 
 // Weekly leave credit is capped at four days because a standard GT week targets four credited workdays.
 const MAX_CREDITABLE_LEAVE_DAYS = 4;
@@ -211,9 +212,24 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
 
   rota.forEach((day) => {
     const knownChefNames = new Set(state.staff.map((chef) => chef.name));
-    const uniqueGtChefs = new Set(day.chefs);
-    results.push(createResult('H030', uniqueGtChefs.size === day.chefs.length, `${day.dayName}: GT chef list must not contain duplicates`));
-    day.chefs.forEach((chefName) => {
+    const internalGtChefs = Array.isArray(day.chefs) ? day.chefs : [];
+    const canonicalGtChefs = getGtChefNamesForDay(day);
+    const uniqueInternalGtChefs = new Set(internalGtChefs);
+    const canonicalGtChefSet = new Set(canonicalGtChefs);
+    const extraInternalChefs = [...uniqueInternalGtChefs].filter((name) => !canonicalGtChefSet.has(name));
+    const missingInternalChefs = canonicalGtChefs.filter((name) => !uniqueInternalGtChefs.has(name));
+    const duplicateInternalChefs = [...new Set(internalGtChefs.filter((name, index) => internalGtChefs.indexOf(name) !== index))];
+    const consistencyDetails = [
+      extraInternalChefs.length ? `Extra internal chef${extraInternalChefs.length === 1 ? '' : 's'}: ${extraInternalChefs.join(', ')}` : '',
+      missingInternalChefs.length ? `Missing internal chef${missingInternalChefs.length === 1 ? '' : 's'}: ${missingInternalChefs.join(', ')}` : '',
+      duplicateInternalChefs.length ? `Duplicate internal chef${duplicateInternalChefs.length === 1 ? '' : 's'}: ${duplicateInternalChefs.join(', ')}` : ''
+    ].filter(Boolean).join('. ');
+    results.push(createResult(
+      'H033',
+      !extraInternalChefs.length && !missingInternalChefs.length && !duplicateInternalChefs.length,
+      `${day.dayName} ${day.date}: internal GT staffing ${consistencyDetails ? `does not match visible section assignments. ${consistencyDetails}.` : 'matches visible section assignments'}`
+    ));
+    canonicalGtChefs.forEach((chefName) => {
       const chef = getChef(state.staff, chefName);
       results.push(createResult('H019', !!chef && !isUnavailable(chef, day.date, day.dayName, { _availability: availability }), `${day.dayName}: ${chefName} must be known and available`));
     });
@@ -226,7 +242,7 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
       const assignments = findAssignmentsBySection(day, section);
       const assignedChef = assignments.length === 1 ? getChef(state.staff, assignments[0].chef) : null;
       const validCoverage = assignments.length === 1
-        && day.chefs.includes(assignments[0].chef)
+        && canonicalGtChefSet.has(assignments[0].chef)
         && canCoverSection(assignedChef, section);
       results.push(createResult('H025', validCoverage, `${day.dayName}: ${section} must have exactly one eligible GT chef`));
     });
@@ -243,26 +259,26 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
     }
 
     const primaryAssignments = day.assignments.filter((assignment) => PRIMARY_GT_SECTIONS.includes(assignment.section));
-    day.chefs.forEach((chefName) => {
+    canonicalGtChefs.forEach((chefName) => {
       const primaryCount = primaryAssignments.filter((assignment) => assignment.chef === chefName).length;
       results.push(createResult('H026', primaryCount === 1, `${day.dayName}: ${chefName} must have exactly one primary GT assignment`));
     });
     primaryAssignments.forEach((assignment) => {
-      results.push(createResult('H027', day.chefs.includes(assignment.chef), `${day.dayName}: ${assignment.chef} has a primary GT assignment but is missing from day.chefs`));
+      results.push(createResult('H027', canonicalGtChefSet.has(assignment.chef), `${day.dayName}: ${assignment.chef} has a primary GT assignment but is missing from canonical GT staffing`));
     });
 
-    const hasSenior = day.chefs.some((name) => getChef(state.staff, name)?.senior === true);
+    const hasSenior = canonicalGtChefs.some((name) => getChef(state.staff, name)?.senior === true);
     results.push(createResult('H008', hasSenior, `${day.dayName}: at least one chef marked Senior chef is required`));
 
     if (['Monday', 'Tuesday', 'Wednesday'].includes(day.dayName)) {
       const requiredCount = getRequiredChefCount(day.dayName, inputs, day.date);
-      results.push(createResult('H009', new Set(day.chefs).size === requiredCount, `${day.dayName}: expected exactly ${requiredCount} GT chefs`));
+      results.push(createResult('H009', canonicalGtChefSet.size === requiredCount, `${day.dayName}: expected exactly ${requiredCount} visible GT chefs`));
       results.push(createResult('H012', findAssignmentsBySection(day, 'Pass').length === 0, `${day.dayName}: Pass should not be assigned`));
     }
 
     if (['Thursday', 'Friday', 'Saturday', 'Sunday'].includes(day.dayName)) {
       const requiredCount = getRequiredChefCount(day.dayName, inputs, day.date);
-      results.push(createResult('H010', new Set(day.chefs).size >= requiredCount, `${day.dayName}: expected at least ${requiredCount} GT chefs`));
+      results.push(createResult('H010', canonicalGtChefSet.size >= requiredCount, `${day.dayName}: expected at least ${requiredCount} visible GT chefs`));
       results.push(createResult('H011', findAssignmentsBySection(day, 'Pass').length >= 1, `${day.dayName}: Pass must be covered`));
     }
 
@@ -270,7 +286,7 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
     mioAssignments.forEach((assignment) => {
       const chef = getChef(state.staff, assignment.chef);
       results.push(createResult('H019', !!chef && !isUnavailable(chef, day.date, day.dayName, { _availability: availability }), `${day.dayName}: ${assignment.chef} must be available for MIO`));
-      results.push(createResult('H023', !day.chefs.includes(assignment.chef), `${day.dayName}: ${assignment.chef} cannot overlap GT and MIO`));
+      results.push(createResult('H023', !canonicalGtChefSet.has(assignment.chef), `${day.dayName}: ${assignment.chef} cannot overlap GT and MIO`));
       results.push(createResult('H031', assignment.chef === inputs.mioChef, `${day.dayName}: only the selected MIO chef may receive MIO`));
     });
     if (['Saturday', 'Sunday'].includes(day.dayName)) {
@@ -288,7 +304,7 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
 
   const gtDaysByChef = Object.fromEntries(state.staff.map((chef) => [chef.name, 0]));
   rota.forEach((day) => {
-    day.chefs.forEach((chefName) => {
+    getGtChefNamesForDay(day).forEach((chefName) => {
       gtDaysByChef[chefName] = (gtDaysByChef[chefName] || 0) + 1;
     });
   });
@@ -306,13 +322,13 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
     results.push(createResult('H021', !hasWeekendMio, `${mioChef}: MIO cannot be assigned on Saturday or Sunday`));
 
     const mioGtDays = rota
-      .filter((day) => day.chefs.includes(mioChef))
+      .filter((day) => hasGtAssignment(day, mioChef))
       .map((day) => day.dayName);
     results.push(createResult('H022', mioGtDays.length === 2, `${mioChef}: expected exactly 2 GT shifts (actual ${mioGtDays.length})`));
 
     const mioOverlap = rota.some((day) => {
       const hasMio = day.assignments.some((assignment) => assignment.section === 'MIO' && assignment.chef === mioChef);
-      const hasGt = day.chefs.includes(mioChef);
+      const hasGt = hasGtAssignment(day, mioChef);
       return hasMio && hasGt;
     });
     results.push(createResult('H023', !mioOverlap, `${mioChef}: cannot be assigned to both MIO and GT on the same day`));
@@ -357,7 +373,7 @@ export function validateRotaSoftRules({ rota, state, inputs }) {
   };
 
   rota.forEach((day) => {
-    day.chefs.forEach((chefName) => {
+    getGtChefNamesForDay(day).forEach((chefName) => {
       const chef = getChef(state.staff, chefName);
       if (!chef?.preferredDaysOff?.includes(day.dayName)) return;
       results.push({

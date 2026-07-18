@@ -47,7 +47,9 @@ export async function runScoringTests(assert) {
       dayName,
       date: `2026-07-${String(13 + index).padStart(2, '0')}`,
       chefs: (!['Friday', 'Saturday', 'Sunday'].includes(dayName) || workedWeekendDays.includes(dayName)) ? ['Dan'] : [],
-      assignments: []
+      assignments: (!['Friday', 'Saturday', 'Sunday'].includes(dayName) || workedWeekendDays.includes(dayName))
+        ? [{ chef: 'Dan', section: 'Float' }]
+        : []
     }))
   );
   const satSunOffScore = scoreSoftPreferences({
@@ -100,7 +102,7 @@ export async function runScoringTests(assert) {
 
   const preferredOverrideState = baseState();
   preferredOverrideState.staff.find((chef) => chef.name === 'Aled').preferredDaysOff = ['Monday'];
-  const preferredOverrideRota = [{ dayName: 'Monday', date: '2026-07-13', chefs: ['Aled'], assignments: [] }];
+  const preferredOverrideRota = [{ dayName: 'Monday', date: '2026-07-13', chefs: ['Aled'], assignments: [{ chef: 'Aled', section: 'Sauce' }] }];
   const preferredOverrideScore = scoreSoftPreferences({ state: preferredOverrideState, rota: preferredOverrideRota, hardValidation: [] });
   preferredOverrideState.staff.find((chef) => chef.name === 'Aled').preferredDaysOff = [];
   const noPreferenceScore = scoreSoftPreferences({ state: preferredOverrideState, rota: preferredOverrideRota, hardValidation: [] });

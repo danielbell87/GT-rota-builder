@@ -10,6 +10,7 @@ import {
   undoManualEdit
 } from '../js/manual-edit.js';
 import { explainHardRuleFailure } from '../js/render.js';
+import { getGtChefNamesForDay } from '../js/rota-model.js';
 
 function makeOverall() {
   const state = getState();
@@ -32,12 +33,15 @@ export async function runManualEditTests(assert) {
 
   const normal = applyManualAssignment({ state, overallResult: overall, weekIndex: 0, date: day.date, section: 'Sauce', chef: '' });
   assert(normal.applied && !day.assignments.some((item) => item.section === 'Sauce'), 'Manual edit: selecting None updates the rota model');
+  assert(JSON.stringify(day.chefs) === JSON.stringify(getGtChefNamesForDay(day)), 'Manual edit: visible GT assignments and day.chefs remain synchronized');
   assert(week.hardValidation.some((item) => item.passed === false), 'Manual edit: validation recalculates after an uncovered section');
   assert(!Object.prototype.hasOwnProperty.call(state.manualEditing, 'locks'), 'Manual edit: lock state is not created');
   const uncoveredFailure = week.hardValidation.find((item) => item.ruleId === 'H025' && item.passed === false && item.message.includes('Sauce'));
   assert(explainHardRuleFailure(uncoveredFailure, week, state).includes('Sauce is uncovered on 13 Jul 2026'), 'Manual edit: invalid edits produce a specific dated hard-rule explanation');
   assert(undoManualEdit(state, overall) && currentDay().assignments.some((item) => item.section === 'Sauce' && item.chef === originalSauce), 'Manual edit: undo restores the assignment');
+  assert(JSON.stringify(currentDay().chefs) === JSON.stringify(getGtChefNamesForDay(currentDay())), 'Manual edit: undo restores synchronized GT staffing');
   assert(redoManualEdit(state, overall) && !currentDay().assignments.some((item) => item.section === 'Sauce'), 'Manual edit: redo reapplies the assignment');
+  assert(JSON.stringify(currentDay().chefs) === JSON.stringify(getGtChefNamesForDay(currentDay())), 'Manual edit: redo preserves synchronized GT staffing');
   assert(resetManualCell(state, overall, 0, day.date, 'Sauce') && currentDay().assignments.some((item) => item.section === 'Sauce' && item.chef === originalSauce), 'Manual edit: reset cell restores the generated chef');
 
   const duplicate = findDuplicateCoreAssignment(overall.weeks[0], day.date, 'Sauce', garnish.chef);

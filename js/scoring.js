@@ -1,5 +1,6 @@
 import { DAY_FAIRNESS_WEIGHTS, SCORING_WEIGHTS, SHIFT_LENGTHS } from './constants.js';
 import { getSectionLevel, getSectionLevelLabel, SECTION_LEVELS } from './section-levels.js';
+import { getGtChefNamesForDay } from './rota-model.js';
 
 export function getSectionScore(staff, section, ruleOverrides) {
   return getSectionLevel(staff, section);
@@ -37,7 +38,7 @@ export function getHoursForAssignment(dayName, section) {
 function getWorkedDaysByChef(state, rota) {
   const workedDaysByChef = Object.fromEntries(state.staff.map((chef) => [chef.name, new Set()]));
   rota.forEach((day) => {
-    day.chefs.forEach((chefName) => workedDaysByChef[chefName]?.add(day.dayName));
+    getGtChefNamesForDay(day).forEach((chefName) => workedDaysByChef[chefName]?.add(day.dayName));
   });
   return workedDaysByChef;
 }
@@ -88,7 +89,7 @@ export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnes
 
   const breakfastCounts = {};
   rota.forEach((day) => {
-    day.chefs.forEach((chefName) => {
+    getGtChefNamesForDay(day).forEach((chefName) => {
       const chef = state.staff.find((candidate) => candidate.name === chefName);
       if (!chef?.preferredDaysOff?.includes(day.dayName)) return;
       score -= preferredDayOffWeight;
@@ -124,7 +125,7 @@ export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnes
       } else if (quality === 1) {
         score += SCORING_WEIGHTS.trainingSection;
         if (assignment.section !== 'Breakfast' && assignment.section !== 'MIO') {
-          const supportedBySenior = day.chefs
+          const supportedBySenior = getGtChefNamesForDay(day)
             .map((name) => state.staff.find((s) => s.name === name))
             .some((candidate) => candidate && candidate.name !== chef.name && isSenior(candidate));
           if (supportedBySenior) {
@@ -166,7 +167,7 @@ export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnes
   rota
     .filter((day) => ['Friday', 'Saturday', 'Sunday'].includes(day.dayName))
     .forEach((day) => {
-      day.chefs.forEach((name) => {
+      getGtChefNamesForDay(day).forEach((name) => {
         weekendLoads[name] = (weekendLoads[name] || 0) + 1;
       });
     });
@@ -186,7 +187,7 @@ export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnes
   ['Friday', 'Saturday', 'Sunday'].forEach((dayName) => {
     const day = rota.find((candidate) => candidate.dayName === dayName);
     if (!day) return;
-    const seniorCount = day.chefs
+    const seniorCount = getGtChefNamesForDay(day)
       .map((name) => state.staff.find((chef) => chef.name === name))
       .filter((chef) => isSenior(chef)).length;
     if (seniorCount >= 2) score += seniorDistributionWeight;
@@ -267,7 +268,7 @@ export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnes
       const passAssignment = passAssignments[0];
       const passChef = state.staff.find((chef) => chef.name === passAssignment.chef);
       const passChefIsSenior = isSenior(passChef);
-      const seniorChefsOnDay = day.chefs
+      const seniorChefsOnDay = getGtChefNamesForDay(day)
         .map((name) => state.staff.find((chef) => chef.name === name))
         .filter((chef) => chef && isSenior(chef));
 

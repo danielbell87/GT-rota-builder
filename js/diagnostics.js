@@ -3,6 +3,7 @@ import { parseLocalDate, toDateString, normalizeWeekStart, getWeekStartAtOffset 
 import { canCoverSection, getSectionLevel } from './section-levels.js';
 import { getCoreSections, getRequiredChefCount, getAdjustedGtTargetsByChef, isUnavailable } from './validation.js';
 import { isSenior } from './scoring.js';
+import { getGtChefNamesForDay, hasGtAssignment } from './rota-model.js';
 
 export const DIAGNOSTIC_CODES = Object.freeze({
   PREFERRED_DAY_OFF_SATISFIED: 'preferred-day-off-satisfied',
@@ -104,7 +105,7 @@ export function buildRotaDiagnostics({ state, week, hardValidation = [], softSco
     (chef.preferredDaysOff || []).forEach((dayName) => {
       const day = rota.find((entry) => entry.dayName === dayName);
       if (!day) return;
-      const worked = day.chefs.includes(chef.name);
+      const worked = hasGtAssignment(day, chef.name);
       if (!worked) {
         if (!isUnavailable(chef, day.date, dayName, { _availability: inputs.availability || [] })) {
           items.push(diagnostic(DIAGNOSTIC_CODES.PREFERRED_DAY_OFF_SATISFIED, 'satisfied', 35,
@@ -140,7 +141,7 @@ export function buildRotaDiagnostics({ state, week, hardValidation = [], softSco
       }
     }
 
-    const worked = new Set(rota.filter((day) => day.chefs.includes(chef.name)).map((day) => day.dayName));
+    const worked = new Set(rota.filter((day) => hasGtAssignment(day, chef.name)).map((day) => day.dayName));
     if (!worked.has('Saturday') && !worked.has('Sunday')) {
       const weekendDates = rota.filter((day) => ['Saturday', 'Sunday'].includes(day.dayName));
       const genuinelyFree = weekendDates.length === 2 && weekendDates.every((day) => !isUnavailable(chef, day.date, day.dayName, { _availability: inputs.availability || [] }));
