@@ -2,6 +2,7 @@ import { CACHE_BUST_VERSION } from '../js/constants.js';
 import { buildMultiWeekRota } from '../js/solver.js';
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { getWeekValidationView, renderWeekPanel } from '../js/render.js';
+import { getChefSoftPreferenceDetails } from '../js/staff.js';
 
 function wait(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -160,9 +161,29 @@ async function clickElement(element) {
 }
 
 async function openChefEditorByName(doc, chefName) {
-  const row = [...doc.querySelectorAll('[data-open-chef-id]')].find((button) => normalizeText(button.textContent).includes(chefName));
+  const row = getChefRowByName(doc, chefName);
   if (!row) throw new Error(`Chef row not found for ${chefName}`);
   row.click();
+  await waitFor(() => doc.getElementById('chefModal').classList.contains('open'));
+  return row;
+}
+
+function getChefRowByName(doc, chefName) {
+  return [...doc.querySelectorAll('[data-open-chef-id]')]
+    .find((button) => normalizeText(button.textContent).includes(chefName));
+}
+
+function getChefBadgeLabels(doc, chefName) {
+  const row = getChefRowByName(doc, chefName);
+  return [...(row?.querySelectorAll('.chef-list-badge') || [])]
+    .map((badge) => normalizeText(badge.textContent));
+}
+
+async function openChefEditorWithKeyboard(frameWindow, doc, chefName, key = 'Enter') {
+  const row = getChefRowByName(doc, chefName);
+  if (!row) throw new Error(`Chef row not found for ${chefName}`);
+  row.focus();
+  row.dispatchEvent(new frameWindow.KeyboardEvent('keydown', { key, bubbles: true }));
   await waitFor(() => doc.getElementById('chefModal').classList.contains('open'));
   return row;
 }
@@ -194,6 +215,11 @@ export async function runUiTests(assert) {
   const stylesText = await fetch('../styles.css').then((response) => response.text());
   assert(stylesText.includes('.technical-details') && stylesText.includes('@media print'), 'UI: stylesheet includes technical-details and print rules for validation cleanup');
   assert(stylesText.includes('.week-panels .week-panel.hidden') && stylesText.includes('display: grid;'), 'UI: print stylesheet restores hidden week panels for printing');
+  const filteredPreferenceDetails = getChefSoftPreferenceDetails({
+    preferredDaysOff: ['Tuesday', '', 'Tuesday', 'Not a day'],
+    preferredBreakfast: 'No preference'
+  });
+  assert(filteredPreferenceDetails.count === 1 && JSON.stringify(filteredPreferenceDetails.preferredDaysOff) === JSON.stringify(['Tuesday']) && filteredPreferenceDetails.preferredBreakfast === '', 'UI: preference helper ignores duplicate, empty, invalid, and No preference values');
 
   const syntheticPanel = buildSyntheticWeekPanel();
   assert(!!syntheticPanel.querySelector('.week-panel'), 'UI: synthetic validation panel renders a week-panel wrapper');
@@ -415,6 +441,26 @@ export async function runUiTests(assert) {
     assert(!staffPanelText.includes('Weekend rule') && !staffPanelText.includes('Fixed unavailable day'), 'UI: chef rows do not permanently show weekend or fixed-day rules');
     assert(!staffPanelText.includes('Pass 0') && !staffPanelText.includes('Section skills'), 'UI: chef rows do not permanently show skill scores');
     assert(doc.querySelectorAll('#staffList .danger').length === 0, 'UI: remove buttons are hidden from the main chef list');
+    assert(JSON.stringify(getChefBadgeLabels(doc, 'Aled')) === JSON.stringify(['Senior', 'Breakfast', 'Preferences · 2']), 'UI: Senior, Breakfast, and Preferences badges display independently in the required order');
+    assert(JSON.stringify(getChefBadgeLabels(doc, 'Dan')) === JSON.stringify(['MIO', 'Breakfast']), 'UI: MIO and Breakfast badges display together without mutually exclusive status logic');
+    assert(JSON.stringify(getChefBadgeLabels(doc, 'Adam')) === JSON.stringify(['Senior', 'Breakfast']), 'UI: chefs with zero soft preferences do not display a Preferences badge');
+    const aledPreferencesBadge = getChefRowByName(doc, 'Aled').querySelector('.chef-list-badge-preferences');
+    assert(aledPreferencesBadge?.title === 'Preferred days off: Saturday, Sunday', 'UI: Preferences badge includes a concise safe preference summary');
+
+    const stateBeforeBadgeClick = cloneData(getPersistedAppState(frameWindow));
+    const solverBeforeBadgeClick = serializeWeek(buildResultFromPersistedState(stateBeforeBadgeClick).weeks[0]);
+    await clickElement(aledPreferencesBadge);
+    await waitFor(() => getModal(doc).classList.contains('open'));
+    assert(doc.getElementById('chefNameInput').value === 'Aled', 'UI: clicking a badge opens the same chef editor as clicking the card');
+    await clickElement(doc.getElementById('cancelChefBtn'));
+    await waitFor(() => !getModal(doc).classList.contains('open'));
+    const solverAfterBadgeClick = serializeWeek(buildResultFromPersistedState(getPersistedAppState(frameWindow)).weeks[0]);
+    assert(solverAfterBadgeClick === solverBeforeBadgeClick, 'UI: badge rendering and activation do not change solver output for unchanged inputs');
+
+    await openChefEditorWithKeyboard(frameWindow, doc, 'Dan');
+    assert(doc.getElementById('chefNameInput').value === 'Dan', 'UI: keyboard activation opens the existing chef editor');
+    await clickElement(doc.getElementById('cancelChefBtn'));
+    await waitFor(() => !getModal(doc).classList.contains('open'));
 
     for (const chef of getPersistedAppState(frameWindow).staff) {
       await openChefEditorByName(doc, chef.name);
@@ -453,11 +499,14 @@ export async function runUiTests(assert) {
     assert(afterDanSave.staff.filter((chef) => chef.name === 'Dan').length === 1, 'UI: saving a chef edit updates the existing chef record once');
     assert(afterDanSave.staff.find((chef) => chef.name === 'Dan')?.skills?.Pass === 3, 'UI: saving a chef edit persists the changed skill value');
     assert(afterDanSave.staff.find((chef) => chef.name === 'Dan')?.preferredBreakfast === 'Tuesday', 'UI: saving a chef edit persists Preferred breakfast day');
+    assert(JSON.stringify(getChefBadgeLabels(doc, 'Dan')) === JSON.stringify(['MIO', 'Breakfast', 'Preferences · 1']), 'UI: one Preferred breakfast day adds one ordered Preferences badge count');
+    assert(getChefRowByName(doc, 'Dan').querySelector('.chef-list-badge-preferences')?.title === 'Preferred breakfast: Tuesday', 'UI: Preferred breakfast is included in the Preferences badge summary');
 
     let danReloadFrame = null;
     try {
       danReloadFrame = await loadFrame('../index.html');
       assert(danReloadFrame.contentWindow.localStorage.getItem('gtRota.state.v2').includes('"Pass":3'), 'UI: edited chef skill values persist after reload');
+      assert(JSON.stringify(getChefBadgeLabels(danReloadFrame.contentDocument, 'Dan')) === JSON.stringify(['MIO', 'Breakfast', 'Preferences · 1']), 'UI: status and preference badges persist after save and reload');
       await openChefEditorByName(danReloadFrame.contentDocument, 'Dan');
       assert(danReloadFrame.contentDocument.getElementById('chefPreferredBreakfastInput').value === 'Tuesday', 'UI: Preferred breakfast day is restored when reopening a saved chef');
     } finally {
@@ -477,6 +526,12 @@ export async function runUiTests(assert) {
     } finally {
       destroyFrame(camillaReloadFrame);
     }
+
+    await openChefEditorByName(doc, 'Myles');
+    await setCheckboxValue(frameWindow, doc.getElementById('chefBreakfastEligibleInput'), false);
+    await clickElement(doc.getElementById('saveChefBtn'));
+    await waitFor(() => !getModal(doc).classList.contains('open'));
+    assert(getChefBadgeLabels(doc, 'Myles').length === 0 && normalizeText(getChefRowByName(doc, 'Myles').querySelector('.chef-list-role').textContent) === 'Commis Chef', 'UI: a chef with no applicable statuses still renders correctly');
 
     await clickElement(doc.getElementById('addChefBtn'));
     await waitFor(() => getModal(doc).classList.contains('open'));
@@ -501,11 +556,14 @@ export async function runUiTests(assert) {
     for (const dayName of ['Friday', 'Saturday', 'Sunday']) {
       await setCheckboxValue(frameWindow, doc.querySelector(`input[data-preferred-day-off="${dayName}"]`), true);
     }
+    await setCheckboxValue(frameWindow, doc.getElementById('chefSeniorInput'), true);
     await setCheckboxValue(frameWindow, doc.getElementById('chefMioEligibleInput'), true);
     doc.getElementById('chefAdvancedSection').open = true;
     await clickElement(doc.getElementById('saveChefBtn'));
     await waitFor(() => !getModal(doc).classList.contains('open'));
     assert(getPersistedAppState(frameWindow).staff.filter((chef) => chef.name === 'Test Chef').length === 1, 'UI: adding a valid chef creates one staff record');
+    assert(JSON.stringify(getChefBadgeLabels(doc, 'Test Chef')) === JSON.stringify(['Senior', 'MIO', 'Breakfast', 'Preferences · 4']), 'UI: Senior, MIO, Breakfast, and Preferences badges all display together in the required order');
+    assert(getChefRowByName(doc, 'Test Chef').querySelector('.chef-list-badge-preferences')?.title === 'Preferred days off: Friday, Saturday, Sunday. Preferred breakfast: Friday', 'UI: multiple days off and a breakfast preference produce the correct summary and total');
 
     let testChefReloadFrame = null;
     try {
@@ -514,6 +572,7 @@ export async function runUiTests(assert) {
       const testChef = persisted.staff.find((chef) => chef.name === 'Test Chef');
       assert(['Friday', 'Saturday', 'Sunday'].every((dayName) => testChef?.preferredDaysOff?.includes(dayName)) && testChef?.skills?.Sauce === 3, 'UI: Friday, Saturday, and Sunday Preferred Days Off persist after reload');
       assert(testChef?.preferredBreakfast === 'Friday', 'UI: a new chef Preferred breakfast day persists after reload');
+      assert(JSON.stringify(getChefBadgeLabels(testChefReloadFrame.contentDocument, 'Test Chef')) === JSON.stringify(['Senior', 'MIO', 'Breakfast', 'Preferences · 4']), 'UI: all simultaneous badges and the preference count survive reload');
       assert(!['seniorStatus', 'seniorityRank', 'weekendRule', 'preferredSections', 'hierarchy', 'servicePace'].some((field) => Object.prototype.hasOwnProperty.call(testChef || {}, field)) && !Object.prototype.hasOwnProperty.call(testChef?.skills || {}, 'Breakfast'), 'UI: saved chefs contain canonical profile fields without Breakfast competency');
     } finally {
       destroyFrame(testChefReloadFrame);
@@ -528,14 +587,17 @@ export async function runUiTests(assert) {
     await setFieldValue(tempAvailabilityRow.querySelector('.entry-start-date'), '2026-07-13');
     await setFieldValue(tempAvailabilityRow.querySelector('.entry-finish-date'), '2026-07-13');
 
+    const unsafeLongChefName = 'Test Chef <script>alert("badge")</script> With an Exceptionally Long Display Name';
     await openChefEditorByName(doc, 'Test Chef');
-    await setFieldValue(doc.getElementById('chefNameInput'), 'Test Chef Renamed');
+    await setFieldValue(doc.getElementById('chefNameInput'), unsafeLongChefName);
     await clickElement(doc.getElementById('saveChefBtn'));
     await waitFor(() => !getModal(doc).classList.contains('open'));
     const renamedState = getPersistedAppState(frameWindow);
-    assert(renamedState.staff.filter((chef) => chef.name === 'Test Chef Renamed').length === 1, 'UI: renaming a chef does not create a duplicate record');
-    assert(renamedState.weeklyInputs.mioChef === 'Test Chef Renamed', 'UI: renaming a chef safely updates current MIO references');
-    assert((renamedState.weeklyInputs.availability || []).some((entry) => entry.chef === 'Test Chef Renamed'), 'UI: renaming a chef safely updates current availability references');
+    assert(renamedState.staff.filter((chef) => chef.name === unsafeLongChefName).length === 1, 'UI: renaming a chef does not create a duplicate record');
+    assert(renamedState.weeklyInputs.mioChef === unsafeLongChefName, 'UI: renaming a chef safely updates current MIO references');
+    assert((renamedState.weeklyInputs.availability || []).some((entry) => entry.chef === unsafeLongChefName), 'UI: renaming a chef safely updates current availability references');
+    const unsafeLongChefRow = getChefRowByName(doc, unsafeLongChefName);
+    assert(!!unsafeLongChefRow && !unsafeLongChefRow.querySelector('script') && normalizeText(unsafeLongChefRow.querySelector('.chef-list-name').textContent) === unsafeLongChefName, 'UI: long user-editable chef names render as safe text rather than HTML');
 
     await openChefEditorByName(doc, 'Aled');
     const aledRowSelector = '[data-open-chef-id="chef-aled-1"]';
@@ -549,26 +611,30 @@ export async function runUiTests(assert) {
     await waitFor(() => doc.activeElement === doc.querySelector(aledRowSelector));
     assert(doc.activeElement === doc.querySelector(aledRowSelector), 'UI: focus returns to the triggering chef row after closing the popup');
 
-    await openChefEditorByName(doc, 'Test Chef Renamed');
-    assert(!doc.getElementById('chefDangerZone').classList.contains('hidden') && !!doc.getElementById('removeChefBtn'), 'UI: remove chef is available only inside the chef popup');
-    await clickElement(doc.getElementById('removeChefBtn'));
-    await waitFor(() => !doc.getElementById('chefRemoveConfirmation').classList.contains('hidden'));
-    assert(getModalText(doc).includes('Remove Test Chef Renamed from the staff list?'), 'UI: the first remove click opens a named confirmation step');
-    await clickElement(doc.getElementById('cancelRemoveChefBtn'));
-    await waitFor(() => doc.getElementById('chefRemoveConfirmation').classList.contains('hidden'));
-    assert(!![...doc.querySelectorAll('#staffList [data-open-chef-id]')].find((button) => normalizeText(button.textContent).includes('Test Chef Renamed')), 'UI: cancelling chef removal keeps the chef in the list');
-    await clickElement(doc.getElementById('removeChefBtn'));
-    await waitFor(() => !doc.getElementById('chefRemoveConfirmation').classList.contains('hidden'));
-    await clickElement(doc.getElementById('confirmRemoveChefBtn'));
-    await waitFor(() => ![...doc.querySelectorAll('#staffList [data-open-chef-id]')].find((button) => normalizeText(button.textContent).includes('Test Chef Renamed')));
-    const afterRemovalState = getPersistedAppState(frameWindow);
-    assert(afterRemovalState.staff.filter((chef) => chef.name === 'Test Chef Renamed').length === 0, 'UI: confirming removal deletes only the selected chef');
-    assert(afterRemovalState.weeklyInputs.mioChef !== 'Test Chef Renamed', 'UI: removing the selected MIO chef clears or safely replaces the invalid MIO selection');
-    assert(!(afterRemovalState.weeklyInputs.availability || []).some((entry) => entry.chef === 'Test Chef Renamed'), 'UI: removing a chef cleans up current availability references without crashing rendering');
-
     staffFrame.style.width = '390px';
     staffFrame.style.height = '900px';
     await wait(200);
+    const mobileChefRow = getChefRowByName(doc, unsafeLongChefName);
+    assert(mobileChefRow.scrollWidth <= mobileChefRow.clientWidth && doc.getElementById('staffList').scrollWidth <= doc.getElementById('staffList').clientWidth, 'UI: long names and multiple badges wrap without horizontal overflow on mobile');
+    assert(frameWindow.getComputedStyle(mobileChefRow.querySelector('.chef-list-badges')).flexWrap === 'wrap', 'UI: compact badges retain responsive wrapping on narrow layouts');
+
+    await openChefEditorByName(doc, unsafeLongChefName);
+    assert(!doc.getElementById('chefDangerZone').classList.contains('hidden') && !!doc.getElementById('removeChefBtn'), 'UI: remove chef is available only inside the chef popup');
+    await clickElement(doc.getElementById('removeChefBtn'));
+    await waitFor(() => !doc.getElementById('chefRemoveConfirmation').classList.contains('hidden'));
+    assert(getModalText(doc).includes(`Remove ${unsafeLongChefName} from the staff list?`), 'UI: the first remove click opens a named confirmation step');
+    await clickElement(doc.getElementById('cancelRemoveChefBtn'));
+    await waitFor(() => doc.getElementById('chefRemoveConfirmation').classList.contains('hidden'));
+    assert(!!getChefRowByName(doc, unsafeLongChefName), 'UI: cancelling chef removal keeps the chef in the list');
+    await clickElement(doc.getElementById('removeChefBtn'));
+    await waitFor(() => !doc.getElementById('chefRemoveConfirmation').classList.contains('hidden'));
+    await clickElement(doc.getElementById('confirmRemoveChefBtn'));
+    await waitFor(() => !getChefRowByName(doc, unsafeLongChefName));
+    const afterRemovalState = getPersistedAppState(frameWindow);
+    assert(afterRemovalState.staff.filter((chef) => chef.name === unsafeLongChefName).length === 0, 'UI: confirming removal deletes only the selected chef');
+    assert(afterRemovalState.weeklyInputs.mioChef !== unsafeLongChefName, 'UI: removing the selected MIO chef clears or safely replaces the invalid MIO selection');
+    assert(!(afterRemovalState.weeklyInputs.availability || []).some((entry) => entry.chef === unsafeLongChefName), 'UI: removing a chef cleans up current availability references without crashing rendering');
+
     await openChefEditorByName(doc, 'Dan');
     const modalCard = doc.querySelector('.chef-modal-card');
     assert(modalCard.scrollWidth <= modalCard.clientWidth, 'UI: mobile chef modal layout avoids horizontal overflow');

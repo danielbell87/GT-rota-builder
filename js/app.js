@@ -1,7 +1,7 @@
 import { APP_BUILD_VERSION, CACHE_BUST_VERSION } from './constants.js';
 import { getState, getDefaultWeek, syncCompatibilityViews, setWeekStart, setMioChef, setNumWeeks, setWeeklyMioChef } from './state.js';
 import { normalizeWeekStart, getPlanningHorizon } from './utils.js';
-import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260718a';
+import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260718b';
 import { addChef, createBlankChefDraft, createChefDraft, getChefById, removeChef, updateChef } from './staff.js';
 import { addAvailabilityEntry, removeAvailabilityEntry, updateAvailabilityField, addAdditionalChefRequest, updateAdditionalChefRequest, removeAdditionalChefRequest, validateAdditionalChefDate, validateAdditionalChefCount } from './weekly-inputs.js';
 import {
@@ -377,6 +377,13 @@ function attachEvents() {
   });
 
   document.addEventListener('keydown', (event) => {
+    const chefCard = event.target.closest?.('[data-open-chef-id]');
+    if (chefCard && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      chefCard.click();
+      return;
+    }
+
     const chefModal = document.getElementById('chefModal');
     if (chefModal?.classList.contains('open') && event.key === 'Tab') {
       const focusables = getFocusableElements(chefModal);

@@ -1,6 +1,6 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota } from '../js/solver.js';
-import { validateRotaHardRules, validateRotaSoftRules, isRotaValid, getStaffConfigurationWarnings } from '../js/validation.js?v=20260718a';
+import { validateRotaHardRules, validateRotaSoftRules, isRotaValid, getStaffConfigurationWarnings } from '../js/validation.js?v=20260718b';
 
 function createSummary(state, annualLeaveHoursByChef = {}) {
   return state.staff.map((chef) => {

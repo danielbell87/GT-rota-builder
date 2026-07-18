@@ -1,8 +1,8 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota } from '../js/solver.js';
-import { validateRotaHardRules } from '../js/validation.js?v=20260718a';
+import { validateRotaHardRules } from '../js/validation.js?v=20260718b';
 import { scoreSoftPreferences } from '../js/scoring.js';
-import { saveAppState, loadAppState } from '../js/storage.js?v=20260718a';
+import { saveAppState, loadAppState } from '../js/storage.js?v=20260718b';
 import { upsertPublishedHistory } from '../js/history.js';
 
 function baseState() {
