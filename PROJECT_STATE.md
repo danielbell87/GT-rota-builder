@@ -30,16 +30,17 @@
 - Free-text rule parser is intentionally narrow and pattern-based
 
 ## localStorage Keys
-- `gtRota.schemaVersion`: schema/migration marker (current: 6)
+- `gtRota.schemaVersion`: schema/migration marker (current: 10)
 - `gtRota.state.v2`: primary persisted application state snapshot
 - `gtRota.history.v1`: published history records
-- Legacy per-chef MIO and profile maps are imported once by schema migration 9 and then deleted.
+- Legacy per-chef MIO and profile maps are imported once by schema migration 9 and then deleted. Schema migration 10 preserves Preferred breakfast day and removes obsolete Breakfast competency values.
 
 ## Current Staff UX Notes
 - The main chefs panel is intentionally compact and hides technical rule data until a chef popup is opened.
 - Staff edits are draft-based inside the modal and apply only when the user clicks **Save changes**.
 - Chef renames update active weekly references (for example MIO selection and persistent availability entries) while published history snapshots keep their original names.
 - Staff section selectors use descriptive levels only: Should not cover, In training, Competent, Preferred.
+- Preferred breakfast day is an optional soft preference; Breakfast eligible is the only breakfast qualification.
 - Hierarchy, service pace, and separate preferred sections have been removed from the active staff model and storage schema.
 
 ## Deployment Method

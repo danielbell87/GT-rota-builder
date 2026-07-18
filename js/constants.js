@@ -1,10 +1,10 @@
 export const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 export const CORE_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry'];
 export const DISPLAY_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry', 'Float', 'Breakfast', 'MIO'];
-export const EDITABLE_SKILL_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry', 'Breakfast'];
+export const EDITABLE_SKILL_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry'];
 
-export const APP_BUILD_VERSION = '2026.07.17.7';
-export const CACHE_BUST_VERSION = '20260717h';
+export const APP_BUILD_VERSION = '2026.07.17.8';
+export const CACHE_BUST_VERSION = '20260717i';
 export const DAY_FAIRNESS_WEIGHTS = {
   Monday: 0,
   Tuesday: 0,
@@ -49,6 +49,7 @@ export const SCORING_WEIGHTS = {
   avoidedSectionPenalty: -5,
   weekendFairnessPenalty: -2,
   breakfastFairnessPenalty: -2,
+  preferredBreakfastDayBonus: 2,
   twoConsecutiveDaysOffBonus: 2,
   seniorDistributionBonus: 2
 };
