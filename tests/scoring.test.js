@@ -1,5 +1,5 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
-import { buildRota } from '../js/solver.js';
+import { buildRota } from '../js/solver.js?v=20260718k';
 import { validateRotaHardRules } from '../js/validation.js?v=20260718h';
 import { scoreSoftPreferences } from '../js/scoring.js';
 import { saveAppState, loadAppState } from '../js/storage.js?v=20260718h';
@@ -31,6 +31,62 @@ export async function runScoringTests(assert) {
   assert(typeof score.score === 'number', 'Scoring returns numeric soft score');
   assert(score.explanation.some((line) => line.includes('Senior chef') && line.includes('Pass')), 'Scoring explanation includes senior-on-Pass preference details');
   assert(score.explanation.every((line) => !/\bskill\s*[0-3]\b/i.test(line) && !/\bscore\s*[0-3]\b/i.test(line)), 'Scoring explanations avoid raw skill numbers in normal text');
+
+  const blockFairnessContext = {
+    stats: Object.fromEntries(state.staff.map((chef) => [chef.name, {
+      friSatBlocksOff: 0,
+      satSunBlocksOff: 0,
+      weeksSinceWeekendBlock: 0,
+      compatibleColleagues: []
+    }])),
+    previousWeekPatterns: {},
+    currentUnavailableWeekendDays: {}
+  };
+  const rotaWithDanWorking = (workedWeekendDays) => (
+    ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((dayName, index) => ({
+      dayName,
+      date: `2026-07-${String(13 + index).padStart(2, '0')}`,
+      chefs: (!['Friday', 'Saturday', 'Sunday'].includes(dayName) || workedWeekendDays.includes(dayName)) ? ['Dan'] : [],
+      assignments: []
+    }))
+  );
+  const satSunOffScore = scoreSoftPreferences({
+    state,
+    rota: rotaWithDanWorking(['Friday']),
+    hardValidation: [],
+    fairnessContext: blockFairnessContext
+  });
+  const friSunIsolatedOffScore = scoreSoftPreferences({
+    state,
+    rota: rotaWithDanWorking(['Saturday']),
+    hardValidation: [],
+    fairnessContext: blockFairnessContext
+  });
+  const friSatOffScore = scoreSoftPreferences({
+    state,
+    rota: rotaWithDanWorking(['Sunday']),
+    hardValidation: [],
+    fairnessContext: blockFairnessContext
+  });
+  assert(
+    satSunOffScore.weekendBlockFairnessPenalty < friSunIsolatedOffScore.weekendBlockFairnessPenalty,
+    'Weekend blocks: Saturday + Sunday off scores substantially better than isolated Friday + Sunday off'
+  );
+  assert(
+    friSatOffScore.weekendBlockFairnessPenalty < friSunIsolatedOffScore.weekendBlockFairnessPenalty,
+    'Weekend blocks: Friday + Saturday off is preferred when Saturday + Sunday is unavailable'
+  );
+  blockFairnessContext.currentUnavailableWeekendDays.Dan = new Set(['Saturday', 'Sunday']);
+  const leaveWeekendScore = scoreSoftPreferences({
+    state,
+    rota: rotaWithDanWorking(['Friday']),
+    hardValidation: [],
+    fairnessContext: blockFairnessContext
+  });
+  assert(
+    leaveWeekendScore.weekendBlockFairnessPenalty > satSunOffScore.weekendBlockFairnessPenalty,
+    'Weekend blocks: annual leave or unavailability is not counted as an earned consecutive block'
+  );
 
   const forcedNonSeniorPass = JSON.parse(JSON.stringify(solve.rota));
   const friday = forcedNonSeniorPass.find((day) => day.dayName === 'Friday');

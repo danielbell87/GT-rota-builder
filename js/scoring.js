@@ -54,12 +54,30 @@ function getWeekendPattern(workedDays) {
   };
 }
 
+function getWeekendOffBlock(workedDays, unavailableDays = new Set()) {
+  const off = (dayName) => !workedDays.has(dayName) && !unavailableDays.has(dayName);
+  const fridayOff = off('Friday');
+  const saturdayOff = off('Saturday');
+  const sundayOff = off('Sunday');
+  const fullWeekendOff = fridayOff && saturdayOff && sundayOff;
+  return {
+    fridayOff,
+    saturdayOff,
+    sundayOff,
+    fullWeekendOff,
+    satSunBlock: saturdayOff && sundayOff,
+    friSatBlock: fridayOff && saturdayOff && !sundayOff,
+    isolatedDays: [fridayOff, saturdayOff, sundayOff].filter(Boolean).length
+  };
+}
+
 export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnessContext = null }) {
   const hardFailed = hardValidation.some((result) => !result.passed);
   let score = 100;
   let preferredDayOffViolationCount = 0;
   let preferredDayOffPenalty = 0;
   let weekendFairnessPenalty = 0;
+  let weekendBlockFairnessPenalty = 0;
   const explanations = [];
   const seniorOnPassWeight = getSoftRuleWeight(state, 'prefer-senior-on-pass', 12);
   const preferredDayOffWeight = getSoftRuleWeight(state, 'S002', 8);
@@ -175,11 +193,25 @@ export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnes
 
   if (fairnessContext) {
     const projectedBurdens = [];
+    const projectedBlocks = {};
     Object.entries(workedDaysByChef).forEach(([name, workedDays]) => {
       const pattern = getWeekendPattern(workedDays);
       const historicStats = fairnessContext.stats?.[name] || {};
       const previous = fairnessContext.previousWeekPatterns?.[name];
       projectedBurdens.push((historicStats.weightedBurden || 0) + pattern.weightedBurden);
+      const block = getWeekendOffBlock(
+        workedDays,
+        fairnessContext.currentUnavailableWeekendDays?.[name] || new Set()
+      );
+      const preferred = state.staff.find((chef) => chef.name === name)?.preferredDaysOff || [];
+      const naturalFullWeekend = ['Friday', 'Saturday', 'Sunday'].every((day) => preferred.includes(day));
+      const blockCredit = block.satSunBlock ? 12 : (block.friSatBlock ? 10 : block.isolatedDays);
+      const fullWeekendPenalty = block.fullWeekendOff && !naturalFullWeekend ? 7 : 0;
+      projectedBlocks[name] = {
+        credit: blockCredit - fullWeekendPenalty,
+        receivesBlock: block.satSunBlock || block.friSatBlock
+      };
+      weekendBlockFairnessPenalty -= blockCredit - fullWeekendPenalty;
 
       if (previous?.saturdaySundayPair && pattern.saturdaySundayPair) {
         score -= weekendFairnessWeight;
@@ -192,6 +224,23 @@ export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnes
       if (previous?.signature && previous.signature === pattern.signature) {
         score -= weekendFairnessWeight / 2;
         weekendFairnessPenalty += weekendFairnessWeight / 2;
+      }
+    });
+
+    Object.entries(projectedBlocks).forEach(([name, projected]) => {
+      const stats = fairnessContext.stats?.[name] || {};
+      const peers = (stats.compatibleColleagues || [])
+        .map((peerName) => ({ name: peerName, stats: fairnessContext.stats?.[peerName], projected: projectedBlocks[peerName] }))
+        .filter((peer) => peer.stats);
+      if (!peers.length || !projected.receivesBlock) return;
+      const ownTotal = (stats.friSatBlocksOff || 0) + (stats.satSunBlocksOff || 0);
+      const mostDuePeer = peers.reduce((best, peer) => (
+        !best || (peer.stats.weeksSinceWeekendBlock || 0) > (best.stats.weeksSinceWeekendBlock || 0) ? peer : best
+      ), null);
+      const peerTotal = (mostDuePeer.stats.friSatBlocksOff || 0) + (mostDuePeer.stats.satSunBlocksOff || 0);
+      if ((mostDuePeer.stats.weeksSinceWeekendBlock || 0) > (stats.weeksSinceWeekendBlock || 0)
+        || (ownTotal > peerTotal && !mostDuePeer.projected?.receivesBlock)) {
+        weekendBlockFairnessPenalty += weekendFairnessWeight * 6;
       }
     });
 
@@ -248,6 +297,7 @@ export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnes
       preferredDayOffViolationCount,
       preferredDayOffPenalty,
       weekendFairnessPenalty,
+      weekendBlockFairnessPenalty,
       explanation: ['Hard-rule failure detected; score capped.', ...explanations]
     };
   }
@@ -259,6 +309,7 @@ export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnes
     preferredDayOffViolationCount,
     preferredDayOffPenalty,
     weekendFairnessPenalty,
+    weekendBlockFairnessPenalty,
     explanation: explanations
   };
 }

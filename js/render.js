@@ -753,14 +753,22 @@ function renderFairnessSummary(summary = []) {
   const spread = weightedBurdenValues.length > 1 ? Math.max(...weightedBurdenValues) - Math.min(...weightedBurdenValues) : 0;
   const rows = summary
     .filter(hasFairnessActivity)
-    .map((entry) => `<tr><th scope="row">${escapeHtml(entry.name)}</th><td>${entry.fridayCount}</td><td>${entry.saturdayCount}</td><td>${entry.sundayCount}</td><td>${entry.weightedBurden}</td></tr>`)
+    .map((entry) => {
+      const latest = entry.latestWeekendBlock === 'sat-sun'
+        ? 'Sat–Sun off, consecutive weekend block'
+        : (entry.latestWeekendBlock === 'fri-sat'
+          ? 'Fri–Sat off, consecutive weekend block'
+          : 'No consecutive weekend block this rota');
+      const priority = entry.duePriority ? ' · Next priority' : '';
+      return `<tr><th scope="row">${escapeHtml(entry.name)}</th><td>${entry.fridayCount}</td><td>${entry.saturdayCount}</td><td>${entry.sundayCount}</td><td>${entry.friSatBlocksOff || 0}</td><td>${entry.satSunBlocksOff || 0}</td><td>${escapeHtml(latest + priority)}</td></tr>`;
+    })
     .join('');
   return `
     <section class="results-section">
       <h4>Fairness summary</h4>
       <p class="section-note">Weekend fairness is applied only after Preferred Days Off have been satisfied as far as hard constraints allow.</p>
       <table class="summary-table fairness-table">
-        <thead><tr><th>Chef</th><th>Fridays</th><th>Saturdays</th><th>Sundays</th><th>Weighted burden</th></tr></thead>
+        <thead><tr><th>Chef</th><th>Friday duties</th><th>Saturday duties</th><th>Sunday duties</th><th>Fri–Sat off</th><th>Sat–Sun off</th><th>Current block status</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
       ${spread > 2 ? '<p class="section-note">Weekend coverage is meaningfully uneven across the selected weeks.</p>' : ''}

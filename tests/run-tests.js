@@ -1,6 +1,6 @@
-import { runSolverTests } from './solver.test.js';
+import { runSolverTests } from './solver.test.js?v=20260718l';
 import { runValidationTests } from './validation.test.js';
-import { runScoringTests } from './scoring.test.js';
+import { runScoringTests } from './scoring.test.js?v=20260718k';
 import { runAdditionalChefTests } from './additional-chef.test.js';
 import { runUiTests } from './ui.test.js';
 import { runPrintTests } from './print.test.js';

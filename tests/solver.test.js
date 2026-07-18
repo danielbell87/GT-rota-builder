@@ -12,7 +12,7 @@ import {
   optimizeBreakfastAssignments,
   optimizeRotaCandidate,
   selectBreakfastChef
-} from '../js/solver.js';
+} from '../js/solver.js?v=20260718k';
 import { isSenior, getHoursForDay, getHoursForAssignment, scoreSoftPreferences } from '../js/scoring.js';
 import { isUnavailable, validateRotaHardRules, validateRotaSoftRules } from '../js/validation.js?v=20260718h';
 import { canCoverSection, sectionCandidateScore } from '../js/section-levels.js';
@@ -801,6 +801,55 @@ export async function runSolverTests(assert) {
   assert(fourWeekResult.weeks.length === 4, 'Multi-week: 4-week generation returns exactly 4 results');
   const feasibleWeeks = fourWeekResult.weeks.filter((week) => week.status === 'ok').length;
   assert(feasibleWeeks >= 3, 'Multi-week: at least 3 of 4 weeks are feasible');
+
+  const eightWeekState = setupBaseState();
+  const eightWeekResult = buildMultiWeekRota({
+    weekStart: eightWeekState.weeklyInputs.weekStart,
+    numWeeks: 8,
+    mioChef: '',
+    weeklyMioSelections: {},
+    additionalChefRequirements: [],
+    availability: []
+  });
+  assert(eightWeekResult.status === 'ok' && eightWeekResult.weeks.length === 8, 'Weekend blocks: representative 8-week rota remains fully feasible');
+  assert(
+    eightWeekResult.weeks.every((week) => validateRotaHardRules({
+      rota: week.rota,
+      state: eightWeekState,
+      inputs: week.inputs,
+      summary: week.summary,
+      fullWeekDates: week.fullWeekDates
+    }).every((result) => result.passed)),
+    'Weekend blocks: representative 8-week rota preserves all hard coverage constraints'
+  );
+  const blockCounts = Object.fromEntries(eightWeekResult.fairnessSummary.map((entry) => [
+    entry.name,
+    (entry.friSatBlocksOff || 0) + (entry.satSunBlocksOff || 0)
+  ]));
+  assert(
+    blockCounts.Dan > 0 && blockCounts.Fred > 0,
+    'Weekend blocks: Dan and Fred both receive useful blocks during an 8-week Garnish-cover rotation'
+  );
+  assert(
+    blockCounts.Joel > 0 && blockCounts.Connor > 0,
+    'Weekend blocks: Joel and Connor both receive useful blocks during an 8-week Sauce-cover rotation'
+  );
+  assert(
+    Math.abs(blockCounts.Dan - blockCounts.Fred) <= 1
+      && Math.abs(blockCounts.Joel - blockCounts.Connor) <= 1,
+    'Weekend blocks: compatible Garnish and Sauce colleagues receive comparable 8-week block totals'
+  );
+  assert(
+    eightWeekResult.fairnessSummary.every((entry) => (
+      Number.isFinite(entry.fridayCount)
+      && Number.isFinite(entry.saturdayCount)
+      && Number.isFinite(entry.sundayCount)
+      && Number.isFinite(entry.friSatBlocksOff)
+      && Number.isFinite(entry.satSunBlocksOff)
+      && typeof entry.duePriority === 'boolean'
+    )),
+    'Weekend blocks: multi-week fairness summary exposes duties, both block types, and next-priority status'
+  );
 
   const singleWeekResult = buildMultiWeekRota({ ...multiWeekInputs, numWeeks: 1 });
   assert(singleWeekResult.weeks.length === 1, 'Multi-week: 1-week generation returns exactly 1 result');

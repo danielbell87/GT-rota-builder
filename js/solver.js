@@ -28,7 +28,7 @@ const MIO_GT_PRIMARY_DAYS = ['Saturday', 'Sunday'];
 const MIO_GT_FALLBACK_DAYS = ['Thursday', 'Friday', 'Monday', 'Tuesday', 'Wednesday'];
 const FLOAT_PRIORITY_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-export const SOLVER_ENGINE_VERSION = '2026-07-18-preferred-days-before-weekend-fairness';
+export const SOLVER_ENGINE_VERSION = '2026-07-18-consecutive-weekend-block-fairness';
 
 export const SOLVER_SEARCH_LIMITS = Object.freeze({
   singleWeek: Object.freeze({
@@ -38,8 +38,8 @@ export const SOLVER_SEARCH_LIMITS = Object.freeze({
   }),
   multiWeek: Object.freeze({
     initialCandidateCount: 2,
-    maxOptimizationIterations: 4,
-    maxNeighborEvaluationsPerIteration: 72
+    maxOptimizationIterations: 6,
+    maxNeighborEvaluationsPerIteration: 120
   })
 });
 
@@ -168,7 +168,20 @@ function chooseSeniorPassPlan({ state, dates, ruleOverrides, mioChefName, mioDay
   return forcedByDay;
 }
 
-function createFairnessContext(staff) {
+function getCompatibleColleagues(staff, member) {
+  return staff
+    .filter((candidate) => candidate.name !== member.name)
+    .filter((candidate) => CORE_SECTIONS.some((section) => (
+      getSectionScore(member, section, {}) >= 3
+      && getSectionScore(candidate, section, {}) >= 3
+    )))
+    .map((candidate) => candidate.name);
+}
+
+function createFairnessContext(staff, history = []) {
+  const explicitHistory = history
+    .filter((entry) => entry?.earnedWeekendBlock === true)
+    .sort((a, b) => String(a.weekStart).localeCompare(String(b.weekStart)));
   return {
     stats: Object.fromEntries(staff.map((member) => [member.name, {
       name: member.name,
@@ -178,9 +191,17 @@ function createFairnessContext(staff) {
       weightedBurden: 0,
       repeatedSaturdaySundayPairCount: 0,
       repeatedFullWeekendCount: 0,
-      repeatedExactPatternCount: 0
+      repeatedExactPatternCount: 0,
+      friSatBlocksOff: explicitHistory.filter((entry) => entry.chef === member.name && entry.weekendBlockType === 'fri-sat').length,
+      satSunBlocksOff: explicitHistory.filter((entry) => entry.chef === member.name && entry.weekendBlockType === 'sat-sun').length,
+      weeksSinceWeekendBlock: 0,
+      compatibleColleagues: getCompatibleColleagues(staff, member),
+      duePriority: false,
+      latestWeekendBlock: ''
     }])),
-    previousWeekPatterns: {}
+    previousWeekPatterns: {},
+    generatedWeeks: 0,
+    currentUnavailableWeekendDays: {}
   };
 }
 
@@ -194,7 +215,9 @@ function getFairnessProfile(name, dayName, fairnessContext, currentWeekDaysByChe
       repeatedSaturdaySundayPair: 0,
       repeatedFullWeekend: 0,
       repeatedExactPattern: 0,
-      overlapCount: 0
+      overlapCount: 0,
+      weekendBlockCount: 0,
+      weeksSinceWeekendBlock: 0
     };
   }
 
@@ -224,7 +247,9 @@ function getFairnessProfile(name, dayName, fairnessContext, currentWeekDaysByChe
     repeatedSaturdaySundayPair,
     repeatedFullWeekend,
     repeatedExactPattern,
-    overlapCount
+    overlapCount,
+    weekendBlockCount: (stats.friSatBlocksOff || 0) + (stats.satSunBlocksOff || 0),
+    weeksSinceWeekendBlock: stats.weeksSinceWeekendBlock || 0
   };
 }
 
@@ -244,9 +269,24 @@ export function compareFairnessTieBreak(a, b, dayName, fairnessContext, currentW
     fairnessA.overlapCount - fairnessB.overlapCount
   ];
 
-  if (dayName === 'Friday') comparisons.unshift(fairnessA.fridayCount - fairnessB.fridayCount);
-  if (dayName === 'Saturday') comparisons.unshift(fairnessA.saturdayCount - fairnessB.saturdayCount);
-  if (dayName === 'Sunday') comparisons.unshift(fairnessA.sundayCount - fairnessB.sundayCount);
+  if (['Friday', 'Saturday', 'Sunday'].includes(dayName)) {
+    const adjacentDays = dayName === 'Friday'
+      ? ['Saturday']
+      : (dayName === 'Saturday' ? ['Friday', 'Sunday'] : ['Saturday']);
+    const continuityA = adjacentDays.some((day) => currentWeekDaysByChef?.[a.name || a]?.has?.(day)) ? 1 : 0;
+    const continuityB = adjacentDays.some((day) => currentWeekDaysByChef?.[b.name || b]?.has?.(day)) ? 1 : 0;
+    // Consolidate weekend duties on chefs already working an adjacent window
+    // day, leaving useful two-day blocks for colleagues. Among equally suitable
+    // candidates, protect the chef who is most overdue for a block.
+    comparisons.unshift(
+      -continuityA + continuityB,
+      fairnessA.weeksSinceWeekendBlock - fairnessB.weeksSinceWeekendBlock,
+      fairnessB.weekendBlockCount - fairnessA.weekendBlockCount
+    );
+  }
+  if (dayName === 'Friday') comparisons.push(fairnessA.fridayCount - fairnessB.fridayCount);
+  if (dayName === 'Saturday') comparisons.push(fairnessA.saturdayCount - fairnessB.saturdayCount);
+  if (dayName === 'Sunday') comparisons.push(fairnessA.sundayCount - fairnessB.sundayCount);
 
   for (const comparison of comparisons) {
     if (comparison !== 0) return comparison;
@@ -272,6 +312,21 @@ function updateFairnessContext(fairnessContext, rota) {
     if (dayNames.includes('Saturday')) stats.saturdayCount += 1;
     if (dayNames.includes('Sunday')) stats.sundayCount += 1;
     stats.weightedBurden += dayNames.reduce((total, dayName) => total + (DAY_FAIRNESS_WEIGHTS[dayName] || 0), 0);
+    const unavailable = fairnessContext.currentUnavailableWeekendDays?.[name] || new Set();
+    const fridayOff = !dayNames.includes('Friday') && !unavailable.has('Friday');
+    const saturdayOff = !dayNames.includes('Saturday') && !unavailable.has('Saturday');
+    const sundayOff = !dayNames.includes('Sunday') && !unavailable.has('Sunday');
+    const satSunBlock = saturdayOff && sundayOff;
+    const friSatBlock = fridayOff && saturdayOff && !satSunBlock;
+    if (satSunBlock) stats.satSunBlocksOff += 1;
+    if (friSatBlock) stats.friSatBlocksOff += 1;
+    if (satSunBlock || friSatBlock) {
+      stats.weeksSinceWeekendBlock = 0;
+      stats.latestWeekendBlock = satSunBlock ? 'sat-sun' : 'fri-sat';
+    } else {
+      stats.weeksSinceWeekendBlock += 1;
+      stats.latestWeekendBlock = '';
+    }
 
     const previous = fairnessContext.previousWeekPatterns[name];
     const saturdaySundayPair = dayNames.includes('Saturday') && dayNames.includes('Sunday');
@@ -288,6 +343,20 @@ function updateFairnessContext(fairnessContext, rota) {
       fullWeekend,
       signature
     };
+  });
+
+  fairnessContext.generatedWeeks += 1;
+  Object.values(fairnessContext.stats).forEach((stats) => {
+    const peers = stats.compatibleColleagues
+      .map((name) => fairnessContext.stats[name])
+      .filter(Boolean);
+    const ownBlocks = stats.friSatBlocksOff + stats.satSunBlocksOff;
+    const minimumPeerBlocks = peers.length
+      ? Math.min(...peers.map((peer) => peer.friSatBlocksOff + peer.satSunBlocksOff))
+      : ownBlocks;
+    const maximumWait = Math.max(stats.weeksSinceWeekendBlock, ...peers.map((peer) => peer.weeksSinceWeekendBlock));
+    stats.duePriority = stats.weeksSinceWeekendBlock === maximumWait
+      && (ownBlocks <= minimumPeerBlocks || stats.weeksSinceWeekendBlock > 0);
   });
 
   return Object.values(fairnessContext.stats).map((entry) => ({ ...entry }));
@@ -1093,6 +1162,7 @@ export function generateNeighborCandidates({
   rota,
   state,
   inputs,
+  fairnessContext = null,
   limit = SOLVER_SEARCH_LIMITS.singleWeek.maxNeighborEvaluationsPerIteration
 }) {
   const neighbors = [];
@@ -1135,6 +1205,61 @@ export function generateNeighborCandidates({
       });
     });
   });
+
+  // Explore useful weekend-block repairs before the general bounded swap
+  // space. A single reciprocal day swap can turn an isolated Saturday or
+  // Sunday off into a valid consecutive block without changing either chef's
+  // exact weekly GT total.
+  const fridayIndex = rota.findIndex((day) => day.dayName === 'Friday');
+  const saturdayIndex = rota.findIndex((day) => day.dayName === 'Saturday');
+  const sundayIndex = rota.findIndex((day) => day.dayName === 'Sunday');
+  state.staff
+    .map((chef) => chef.name)
+    .sort((a, b) => {
+      const statsA = fairnessContext?.stats?.[a] || {};
+      const statsB = fairnessContext?.stats?.[b] || {};
+      const blocksA = (statsA.friSatBlocksOff || 0) + (statsA.satSunBlocksOff || 0);
+      const blocksB = (statsB.friSatBlocksOff || 0) + (statsB.satSunBlocksOff || 0);
+      if (blocksA !== blocksB) return blocksA - blocksB;
+      const waitA = statsA.weeksSinceWeekendBlock || 0;
+      const waitB = statsB.weeksSinceWeekendBlock || 0;
+      if (waitA !== waitB) return waitB - waitA;
+      return a.localeCompare(b);
+    })
+    .forEach((chefName) => {
+      if (chefName === inputs.mioChef || neighbors.length >= limit) return;
+      const worksFriday = fridayIndex >= 0 && rota[fridayIndex].chefs.includes(chefName);
+      const worksSaturday = saturdayIndex >= 0 && rota[saturdayIndex].chefs.includes(chefName);
+      const worksSunday = sundayIndex >= 0 && rota[sundayIndex].chefs.includes(chefName);
+      const sourceIndexes = [];
+      if (worksSaturday && !worksSunday) sourceIndexes.push(saturdayIndex);
+      if (worksFriday && !worksSaturday) sourceIndexes.push(fridayIndex);
+      sourceIndexes.forEach((sourceIndex) => {
+        orderedDayIndexes
+          .filter((targetIndex) => ['Monday', 'Tuesday', 'Wednesday', 'Thursday'].includes(rota[targetIndex].dayName))
+          .forEach((targetIndex) => {
+            if (neighbors.length >= limit || rota[targetIndex].chefs.includes(chefName)) return;
+            rota[targetIndex].chefs.slice().sort().forEach((targetChef) => {
+              if (neighbors.length >= limit || targetChef === inputs.mioChef || rota[sourceIndex].chefs.includes(targetChef)) return;
+              addUniqueNeighbor({
+                neighbors,
+                seen,
+                rota: buildChefDaySwap({
+                  rota,
+                  sourceIndex,
+                  targetIndex,
+                  sourceChef: chefName,
+                  targetChef,
+                  state,
+                  inputs
+                }),
+                move: `create-weekend-block:${chefName}:${rota[sourceIndex].dayName}<->${targetChef}:${rota[targetIndex].dayName}`,
+                limit
+              });
+            });
+          });
+      });
+    });
 
   orderedDayIndexes.forEach((dayIndex) => {
     if (neighbors.length >= limit) return;
@@ -1247,6 +1372,9 @@ export function compareCompleteRotaCandidates(a, b) {
   const preferredPenaltyA = a.softScore.preferredDayOffPenalty || 0;
   const preferredPenaltyB = b.softScore.preferredDayOffPenalty || 0;
   if (preferredPenaltyA !== preferredPenaltyB) return preferredPenaltyA - preferredPenaltyB;
+  const blockFairnessPenaltyA = a.softScore.weekendBlockFairnessPenalty || 0;
+  const blockFairnessPenaltyB = b.softScore.weekendBlockFairnessPenalty || 0;
+  if (blockFairnessPenaltyA !== blockFairnessPenaltyB) return blockFairnessPenaltyA - blockFairnessPenaltyB;
   const fairnessPenaltyA = a.softScore.weekendFairnessPenalty || 0;
   const fairnessPenaltyB = b.softScore.weekendFairnessPenalty || 0;
   if (fairnessPenaltyA !== fairnessPenaltyB) return fairnessPenaltyA - fairnessPenaltyB;
@@ -1274,6 +1402,7 @@ export function optimizeRotaCandidate({
       rota: current.rota,
       state,
       inputs,
+      fairnessContext,
       limit: limits.maxNeighborEvaluationsPerIteration
     });
     let bestImprovement = null;
@@ -1634,7 +1763,7 @@ export function buildMultiWeekRota(inputs, legacyNumWeeks) {
   const allAvailability = getAvailabilityEntries(inputs, state);
   const allAdditionalChefRequirements = inputs?.additionalChefRequirements || state.weeklyInputs.additionalChefRequirements || [];
   const fairnessApplied = numberOfWeeks > 1;
-  const fairnessContext = fairnessApplied ? createFairnessContext(state.staff) : null;
+  const fairnessContext = fairnessApplied ? createFairnessContext(state.staff, state.history || []) : null;
   const weeks = [];
 
   for (let weekIndex = 0; weekIndex < numberOfWeeks; weekIndex += 1) {
@@ -1650,6 +1779,17 @@ export function buildMultiWeekRota(inputs, legacyNumWeeks) {
       availability: filterAvailabilityForWeek(allAvailability, weekStart),
       additionalChefRequirements: filterAdditionalChefRequirementsForWeek(allAdditionalChefRequirements, weekStart)
     };
+    if (fairnessContext) {
+      fairnessContext.currentUnavailableWeekendDays = Object.fromEntries(state.staff.map((chef) => {
+        const unavailable = new Set();
+        buildWeekDates(weekStart)
+          .filter((day) => ['Friday', 'Saturday', 'Sunday'].includes(day.dayName))
+          .forEach((day) => {
+            if (isUnavailable(chef, day.date, day.dayName, { _availability: weekInputs.availability })) unavailable.add(day.dayName);
+          });
+        return [chef.name, unavailable];
+      }));
+    }
     const weekResult = buildRota(weekInputs, {
       fairnessContext,
       multiWeekMode: numberOfWeeks > 1

@@ -2,6 +2,12 @@ export function normalizeHistoryKey(weekStart, chef) {
   return `${weekStart}__${chef}`;
 }
 
+function getWeekendDate(weekStart, offset) {
+  const date = new Date(`${weekStart}T00:00:00`);
+  date.setDate(date.getDate() + offset);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 export function upsertPublishedHistory(state, weekStart, rota, summary) {
   if (state.weeklyInputs.status !== 'Published') return { updated: 0, inserted: 0 };
 
@@ -22,6 +28,24 @@ export function upsertPublishedHistory(state, weekStart, rota, summary) {
       if (day.assignments.some((a) => a.chef === item.name && a.section === 'Breakfast')) breakfasts += 1;
       if (day.assignments.some((a) => a.chef === item.name && a.section === 'MIO')) mioDays += 1;
     });
+    const weekendDates = {
+      Friday: getWeekendDate(weekStart, 4),
+      Saturday: getWeekendDate(weekStart, 5),
+      Sunday: getWeekendDate(weekStart, 6)
+    };
+    const unavailableWeekendDays = new Set();
+    (state.weeklyInputs.availability || [])
+      .filter((entry) => entry.chef === item.name)
+      .forEach((entry) => {
+        Object.entries(weekendDates).forEach(([dayName, date]) => {
+          if (entry.startDate <= date && entry.finishDate >= date) unavailableWeekendDays.add(dayName);
+        });
+      });
+    const satSunBlock = !weekends.Saturday && !weekends.Sunday
+      && !unavailableWeekendDays.has('Saturday') && !unavailableWeekendDays.has('Sunday');
+    const friSatBlock = !weekends.Friday && !weekends.Saturday
+      && !unavailableWeekendDays.has('Friday') && !unavailableWeekendDays.has('Saturday')
+      && !satSunBlock;
 
     const record = {
       key,
@@ -34,6 +58,8 @@ export function upsertPublishedHistory(state, weekStart, rota, summary) {
       fridayWorked: weekends.Friday,
       saturdayWorked: weekends.Saturday,
       sundayWorked: weekends.Sunday,
+      earnedWeekendBlock: satSunBlock || friSatBlock,
+      weekendBlockType: satSunBlock ? 'sat-sun' : (friSatBlock ? 'fri-sat' : ''),
       publishedAt: new Date().toISOString()
     };
 
