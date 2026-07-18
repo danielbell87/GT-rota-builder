@@ -17,7 +17,7 @@ import {
   validateRotaHardRules,
   getAdjustedGtTargetsByChef,
   getAnnualLeaveDatesByChef
-} from './validation.js?v=20260718b';
+} from './validation.js?v=20260718c';
 import { filterAvailabilityForWeek, filterAdditionalChefRequirementsForWeek } from './weekly-inputs.js';
 
 const PASS_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -1284,6 +1284,28 @@ export function buildRota(inputs, options = {}) {
 
   const mioChefName = inputs.mioChef;
   const mioChef = state.staff.find((staff) => staff.name === mioChefName);
+  if (mioChefName && !mioChef) {
+    const message = `${mioChefName}: selected MIO chef is not in the current staff list.`;
+    return {
+      status: 'infeasible',
+      rota: [],
+      validation: [{ day: 'Overall', message, severity: 'bad' }],
+      hardValidation: [{ ruleId: 'H032', passed: false, severity: 'hard', message }],
+      summary: [],
+      fullWeekDates
+    };
+  }
+  if (mioChefName && !mioChef.mioEligible) {
+    const message = `${mioChefName}: selected MIO chef is not eligible for MIO duty.`;
+    return {
+      status: 'infeasible',
+      rota: [],
+      validation: [{ day: 'Overall', message, severity: 'bad' }],
+      hardValidation: [{ ruleId: 'H032', passed: false, severity: 'hard', message }],
+      summary: [],
+      fullWeekDates
+    };
+  }
   const mioDays = getMioDayPlan(state, dates, mioChefName, ruleOverrides);
   if (mioChefName && mioChef?.mioEligible && mioDays.size !== 3) {
     return {
@@ -1410,9 +1432,10 @@ export function buildMultiWeekRota(inputs, legacyNumWeeks) {
 
   for (let weekIndex = 0; weekIndex < numberOfWeeks; weekIndex += 1) {
     const weekStart = getWeekStartAtOffset(inputs.weekStart, weekIndex);
-    const mioChef = numberOfWeeks === 1
-      ? (inputs.mioChef || weeklyMioSelections[weekStart] || '')
-      : (weeklyMioSelections[weekStart] || inputs.mioChef || '');
+    const hasWeeklySelection = Object.prototype.hasOwnProperty.call(weeklyMioSelections, weekStart);
+    const mioChef = hasWeeklySelection
+      ? (weeklyMioSelections[weekStart] || '')
+      : (inputs.mioChef || '');
     const weekInputs = {
       ...inputs,
       weekStart,

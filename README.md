@@ -21,7 +21,7 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 1. Open `index.html` in a web browser (or use the legacy `GT Rota builder.html` bookmark, which redirects to `index.html`)
 2. Enter the week commencing date
 3. Use the **Chefs** list to add staff or open a chef popup for profile, section-level, and preference edits
-4. Select a MIO (Management Improvement Officer) chef if needed
+4. Select a MIO (Management Improvement Officer) chef, or choose **No MIO chef**
 5. Add any additional chef requests (e.g., private events) using the **Add additional chef** button
 6. Review the generated rota, chef-hours summary, and any failed checks
 
@@ -74,6 +74,7 @@ Preferred Day Off compromises are calculated only from the final optimized rota.
 ### Core Constraints
 - Normal chefs work exactly 4 GT days per week unless credited annual leave reduces the target
 - Selected MIO chef works exactly 3 MIO days and exactly 2 GT days
+- A week set to **No MIO chef** has no MIO assignments and every chef uses their normal leave-adjusted GT target
 - Monday-Wednesday require exactly 4 GT chefs unless an explicit extra-chef request exists
 - Thursday-Sunday require at least 5 GT chefs and may include multiple Float chefs
 - Breakfast coverage every day
@@ -210,7 +211,7 @@ Saved browser data is persisted with migration-safe localStorage keys.
 
 - Primary state: `gtRota.state.v2`
 - History: `gtRota.history.v1`
-Schema version `10` preserves Preferred breakfast day while discarding obsolete Breakfast competency values. It also retains the version 9 consolidation of legacy senior status, Fixed Day Off, MIO eligibility, and staff-profile data. Existing notes, core section levels, Preferred Days Off, dated availability, weekly inputs, generated rotas, and published history are preserved.
+Schema version `11` preserves explicit per-week **No MIO chef** selections, normalizes the active multi-week selection map, and removes stale out-of-horizon entries. It retains version 10's Preferred breakfast migration and the version 9 consolidation of legacy senior status, Fixed Day Off, MIO eligibility, and staff-profile data. Existing notes, core section levels, Preferred Days Off, dated availability, other weekly inputs, generated rotas, and published history are preserved.
 
 No external API keys or secrets are required.
 

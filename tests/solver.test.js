@@ -12,7 +12,7 @@ import {
   selectBreakfastChef
 } from '../js/solver.js';
 import { isSenior, getHoursForDay, getHoursForAssignment, scoreSoftPreferences } from '../js/scoring.js';
-import { isUnavailable, validateRotaHardRules, validateRotaSoftRules } from '../js/validation.js?v=20260718b';
+import { isUnavailable, validateRotaHardRules, validateRotaSoftRules } from '../js/validation.js?v=20260718c';
 import { canCoverSection, sectionCandidateScore } from '../js/section-levels.js';
 import { normalizeChefRecord } from '../js/staff.js';
 
@@ -124,6 +124,36 @@ export async function runSolverTests(assert) {
     .filter((day) => ['Saturday', 'Sunday'].includes(day.dayName))
     .every((day) => day.chefs.includes('Dan'));
   assert(danWeekendGt, 'Selected MIO chef is preferentially assigned to weekend GT days when available');
+
+  const noMioInputs = {
+    weekStart: state.weeklyInputs.weekStart,
+    mioChef: '',
+    additionalChefRequirements: [],
+    availability: []
+  };
+  const noMioResult = buildRota(noMioInputs);
+  const noMioHardValidation = validateRotaHardRules({
+    rota: noMioResult.rota,
+    state,
+    inputs: noMioInputs,
+    summary: noMioResult.summary,
+    fullWeekDates: noMioResult.fullWeekDates
+  });
+  assert(noMioResult.status === 'ok', 'No MIO chef: a one-week rota remains feasible');
+  assert(!noMioResult.rota.some((day) => day.assignments.some((assignment) => assignment.section === 'MIO')), 'No MIO chef: no MIO assignments or placeholders are created');
+  assert(noMioResult.summary.every((item) => item.gtDays === 4 && item.adjustedGtTarget === 4), 'No MIO chef: every chef uses the normal four-day GT target when there is no leave');
+  assert(noMioHardValidation.every((result) => result.passed), 'No MIO chef: ordinary GT and exact-target hard rules remain valid');
+  assert(noMioHardValidation.some((result) => result.ruleId === 'H032' && result.message.includes('MIO chef: None')), 'No MIO chef: technical validation records the intentional None configuration');
+  assert(!noMioHardValidation.some((result) => ['H015', 'H021', 'H022', 'H023'].includes(result.ruleId) && result.passed === false), 'No MIO chef: selected-MIO pattern checks do not fail');
+
+  const noMioLeaveInputs = {
+    ...noMioInputs,
+    availability: [{ chef: 'Fred', type: 'Annual Leave', startDate: '2026-07-14', finishDate: '2026-07-14', notes: '' }]
+  };
+  const noMioLeaveResult = buildRota(noMioLeaveInputs);
+  const noMioFredSummary = noMioLeaveResult.summary.find((item) => item.name === 'Fred');
+  assert(noMioLeaveResult.status === 'ok' && noMioFredSummary?.gtDays === 3 && noMioFredSummary?.adjustedGtTarget === 3, 'No MIO chef: annual leave still reduces the normal GT target');
+  assert(noMioLeaveResult.summary.filter((item) => item.name !== 'Fred').every((item) => item.gtDays === 4 && item.adjustedGtTarget === 4), 'No MIO chef: other chefs retain their normal GT targets alongside leave adjustments');
   ['Aled', 'Charlie', 'Connor'].forEach((name) => {
     const chef = createTestChef(name, 'Sous Chef', { Sauce: 2 });
     assert(!isUnavailable(chef, '2026-07-14', 'Tuesday', { _availability: [] }) && !isUnavailable(chef, '2026-07-19', 'Sunday', { _availability: [] }), `${name} receives no name-specific weekday or weekend exclusion`);
@@ -303,6 +333,8 @@ export async function runSolverTests(assert) {
   const mylesMioAttempt = runScenario(state, { mioChef: 'Myles' });
   const mylesMioAssigned = mylesMioAttempt.rota.some((day) => day.assignments.some((assignment) => assignment.section === 'MIO' && assignment.chef === 'Myles'));
   assert(!mylesMioAssigned, 'Myles cannot be assigned to MIO');
+  assert(mylesMioAttempt.status === 'infeasible' && mylesMioAttempt.validation.some((item) => item.message.includes('not eligible for MIO duty')), 'Ineligible selected MIO chef receives a distinct configuration failure');
+  assert(mylesMioAttempt.hardValidation?.some((item) => item.ruleId === 'H032' && item.passed === false), 'Ineligible selected MIO chef is distinguished by hard validation');
 
   const mondayExtraState = setupBaseState();
   mondayExtraState.weeklyInputs.additionalChefRequirements = [{ date: '2026-07-13', count: 1 }];
@@ -556,6 +588,24 @@ export async function runSolverTests(assert) {
     }).filter((r) => !r.passed);
     assert(hardFails.length === 0, `Multi-week: week ${wi + 1} has no hard-rule failures`);
     assert(weekResult.summary.every((item) => item.gtDays === item.adjustedGtTarget), `Multi-week: week ${wi + 1} satisfies exact weekly GT targets`);
+  });
+
+  const mixedMioResult = buildMultiWeekRota({
+    ...multiWeekInputs,
+    numWeeks: 3,
+    weeklyMioSelections: {
+      '2026-07-13': 'Dan',
+      '2026-07-20': '',
+      '2026-07-27': 'Fred'
+    }
+  });
+  assert(mixedMioResult.weeks.length === 3 && mixedMioResult.weeks.every((week) => week.status === 'ok'), 'Multi-week: selected-chef and no-MIO weeks can be mixed independently');
+  assert(JSON.stringify(mixedMioResult.weeks.map((week) => week.mioChef)) === JSON.stringify(['Dan', '', 'Fred']), 'Multi-week: an explicit empty selection does not fall back to another week\'s MIO chef');
+  assert(!mixedMioResult.weeks[1].rota.some((day) => day.assignments.some((assignment) => assignment.section === 'MIO')), 'Multi-week: the no-MIO week contains no MIO assignments');
+  assert(mixedMioResult.weeks[1].summary.every((item) => item.gtDays === item.adjustedGtTarget && item.adjustedGtTarget === 4), 'Multi-week: every chef uses normal GT targets in the no-MIO week');
+  [mixedMioResult.weeks[0], mixedMioResult.weeks[2]].forEach((week) => {
+    const selectedSummary = week.summary.find((item) => item.name === week.mioChef);
+    assert(selectedSummary?.mioDays === 3 && selectedSummary?.gtDays === 2, `Multi-week: ${week.mioChef} retains the exact 3 MIO / 2 GT pattern`);
   });
 
   const fourWeekResult = buildMultiWeekRota({ ...multiWeekInputs, numWeeks: 4 });

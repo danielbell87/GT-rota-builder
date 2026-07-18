@@ -12,7 +12,7 @@
 - Staff CRUD and section-level editing
 - Compact chefs list with modal-based staff editing and confirmed removals
 - Leave and unavailable handling
-- MIO assignment and eligibility handling
+- Independent one- and multi-week MIO selection, including explicit no-MIO weeks
 - Hard-rule validation pass/fail model
 - Soft-preference scoring with hard-failure cap
 - Strong soft preference for senior chef on Pass Thursday-Sunday, with structured soft validation
@@ -33,10 +33,10 @@
 - Free-text rule parser is intentionally narrow and pattern-based
 
 ## localStorage Keys
-- `gtRota.schemaVersion`: schema/migration marker (current: 10)
+- `gtRota.schemaVersion`: schema/migration marker (current: 11)
 - `gtRota.state.v2`: primary persisted application state snapshot
 - `gtRota.history.v1`: published history records
-- Legacy per-chef MIO and profile maps are imported once by schema migration 9 and then deleted. Schema migration 10 preserves Preferred breakfast day and removes obsolete Breakfast competency values.
+- Legacy per-chef MIO and profile maps are imported once by schema migration 9 and then deleted. Schema migration 10 preserves Preferred breakfast day and removes obsolete Breakfast competency values. Schema migration 11 normalizes per-week MIO choices and preserves explicit no-MIO selections.
 
 ## Current Staff UX Notes
 - The main chefs panel is intentionally compact and hides technical rule data until a chef popup is opened.
