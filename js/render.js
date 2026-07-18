@@ -9,15 +9,15 @@ import {
   formatPlanningHorizonLabel,
   getWeekStartAtOffset
 } from './utils.js';
-import { scoreSoftPreferences } from './scoring.js?v=20260718r';
-import { buildRota, buildMultiWeekRota, summarizeRota } from './solver.js?v=20260718r';
+import { scoreSoftPreferences } from './scoring.js?v=20260718s';
+import { buildRota, buildMultiWeekRota, summarizeRota } from './solver.js?v=20260718s';
 import { getChefSoftPreferenceDetails } from './staff.js';
-import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260718r';
+import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260718s';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
-import { cellKey, ensureManualEditState, getChefConcerns, MANUALLY_EDITABLE_SECTIONS } from './manual-edit.js?v=20260718r';
-import { buildRotaDiagnostics, checkRotaFeasibility, summarizeDiagnostics } from './diagnostics.js?v=20260718r';
-import { getGtChefNamesForDay, syncRotaGtChefs } from './rota-model.js?v=20260718r';
-import { buildContextualScore, combineContextualScores } from './score-context.js?v=20260718r';
+import { cellKey, ensureManualEditState, getChefConcerns, MANUALLY_EDITABLE_SECTIONS } from './manual-edit.js?v=20260718s';
+import { buildRotaDiagnostics, checkRotaFeasibility, summarizeDiagnostics } from './diagnostics.js?v=20260718s';
+import { getGtChefNamesForDay, syncRotaGtChefs } from './rota-model.js?v=20260718s';
+import { buildContextualScore, combineContextualScores } from './score-context.js?v=20260718s';
 
 function getRequiredElement(id) {
   const element = document.getElementById(id);
