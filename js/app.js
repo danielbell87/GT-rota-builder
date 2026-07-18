@@ -1,4 +1,4 @@
-import { APP_BUILD_VERSION, CACHE_BUST_VERSION } from './constants.js';
+import { APP_BUILD_VERSION, CACHE_BUST_VERSION } from './constants.js?v=20260718r';
 import { getState, getDefaultWeek, resetStateToDefaults, syncCompatibilityViews, setWeekStart, setMioChef, setNumWeeks, setWeeklyMioChef } from './state.js';
 import { normalizeWeekStart, getPlanningHorizon } from './utils.js';
 import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260718r';
