@@ -1,8 +1,8 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota } from '../js/solver.js';
-import { validateRotaHardRules } from '../js/validation.js?v=20260718c';
+import { validateRotaHardRules } from '../js/validation.js?v=20260718e';
 import { scoreSoftPreferences } from '../js/scoring.js';
-import { saveAppState, loadAppState } from '../js/storage.js?v=20260718c';
+import { saveAppState, loadAppState } from '../js/storage.js?v=20260718e';
 import { upsertPublishedHistory } from '../js/history.js';
 
 function baseState() {
@@ -59,6 +59,19 @@ export async function runScoringTests(assert) {
     scoreSoftPreferences({ state: breakfastPreferenceState, rota: matchingBreakfastRota, hardValidation: [] }).score
       > scoreSoftPreferences({ state: breakfastPreferenceState, rota: nonMatchingBreakfastRota, hardValidation: [] }).score,
     'Matching Preferred breakfast day improves the soft rota score'
+  );
+  const preferenceWithRepeatRota = [
+    { dayName: 'Monday', date: '2026-07-13', chefs: ['Aled'], assignments: [{ chef: 'Aled', section: 'Breakfast' }] },
+    { dayName: 'Tuesday', date: '2026-07-14', chefs: ['Aled'], assignments: [{ chef: 'Aled', section: 'Breakfast' }] }
+  ];
+  const fairButMissedPreferenceRota = [
+    { dayName: 'Monday', date: '2026-07-13', chefs: ['Joel'], assignments: [{ chef: 'Joel', section: 'Breakfast' }] },
+    { dayName: 'Tuesday', date: '2026-07-14', chefs: ['Aled'], assignments: [{ chef: 'Aled', section: 'Breakfast' }] }
+  ];
+  assert(
+    scoreSoftPreferences({ state: breakfastPreferenceState, rota: preferenceWithRepeatRota, hardValidation: [] }).score
+      > scoreSoftPreferences({ state: breakfastPreferenceState, rota: fairButMissedPreferenceRota, hardValidation: [] }).score,
+    'Breakfast scoring no longer lets one avoidable fairness repeat cancel a feasible Preferred-day match'
   );
 
   const broken = JSON.parse(JSON.stringify(hard));

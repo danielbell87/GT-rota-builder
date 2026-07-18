@@ -1,6 +1,6 @@
 export const DEFAULT_RULES = [
   { id: 'H006', title: 'Breakfast count', description: 'Exactly one breakfast chef per day.', type: 'hard', enabled: true },
-  { id: 'H007', title: 'Breakfast core coupling', description: 'Breakfast chef must also be assigned to a core section.', type: 'hard', enabled: true },
+  { id: 'H007', title: 'Breakfast GT coupling', description: 'Breakfast chef must also be assigned to a core section or Float.', type: 'hard', enabled: true },
   { id: 'H008', title: 'Senior daily coverage', description: 'At least one senior chef each day.', type: 'hard', enabled: true },
   { id: 'H009', title: 'Mon-Wed staffing', description: 'Monday to Wednesday have exactly 4 unique GT chefs.', type: 'hard', enabled: true },
   { id: 'H010', title: 'Thu-Sun staffing', description: 'Thursday to Sunday have at least 5 unique GT chefs.', type: 'hard', enabled: true },

@@ -22,6 +22,7 @@
 - Results UI now filters out successful validation checks from the main interface while preserving full validation arrays for technical details and tests
 - Deterministic bounded whole-rota optimization after greedy feasible generation, with hard validation on every neighbour
 - Complete candidate scoring includes Preferred Days Off, section fit, breakfast preferences/fairness, weekend and senior distribution, senior-on-Pass, and multi-week fairness history
+- Breakfast duties receive an exact seven-day preference-first matching pass, with rotation fairness and assignment stability used for ties
 - Technical details expose initial/final score and bounded-search diagnostics
 
 ## Unfinished Features
