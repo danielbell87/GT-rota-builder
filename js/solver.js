@@ -28,7 +28,7 @@ const MIO_GT_PRIMARY_DAYS = ['Saturday', 'Sunday'];
 const MIO_GT_FALLBACK_DAYS = ['Thursday', 'Friday', 'Monday', 'Tuesday', 'Wednesday'];
 const FLOAT_PRIORITY_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-export const SOLVER_ENGINE_VERSION = '2026-07-18-breakfast-week-optimization';
+export const SOLVER_ENGINE_VERSION = '2026-07-18-preferred-days-before-weekend-fairness';
 
 export const SOLVER_SEARCH_LIMITS = Object.freeze({
   singleWeek: Object.freeze({
@@ -230,6 +230,9 @@ function getFairnessProfile(name, dayName, fairnessContext, currentWeekDaysByChe
 
 export function compareFairnessTieBreak(a, b, dayName, fairnessContext, currentWeekDaysByChef = {}) {
   if (!fairnessContext) return 0;
+  const preferredDayOffA = Array.isArray(a?.preferredDaysOff) && a.preferredDaysOff.includes(dayName);
+  const preferredDayOffB = Array.isArray(b?.preferredDaysOff) && b.preferredDaysOff.includes(dayName);
+  if (preferredDayOffA !== preferredDayOffB) return preferredDayOffA ? 1 : -1;
   const fairnessA = getFairnessProfile(a.name || a, dayName, fairnessContext, currentWeekDaysByChef);
   const fairnessB = getFairnessProfile(b.name || b, dayName, fairnessContext, currentWeekDaysByChef);
 
@@ -1235,6 +1238,18 @@ function evaluateCompleteRotaCandidate({ rota, state, inputs, fullWeekDates, fai
 
 export function compareCompleteRotaCandidates(a, b) {
   if (a.valid !== b.valid) return a.valid ? -1 : 1;
+  // Soft preferences are compared lexicographically. This prevents any size of
+  // weekend-fairness improvement from compensating for an additional Preferred
+  // Day Off violation, while still allowing hard-valid rotas to override one.
+  const preferredViolationsA = a.softScore.preferredDayOffViolationCount || 0;
+  const preferredViolationsB = b.softScore.preferredDayOffViolationCount || 0;
+  if (preferredViolationsA !== preferredViolationsB) return preferredViolationsA - preferredViolationsB;
+  const preferredPenaltyA = a.softScore.preferredDayOffPenalty || 0;
+  const preferredPenaltyB = b.softScore.preferredDayOffPenalty || 0;
+  if (preferredPenaltyA !== preferredPenaltyB) return preferredPenaltyA - preferredPenaltyB;
+  const fairnessPenaltyA = a.softScore.weekendFairnessPenalty || 0;
+  const fairnessPenaltyB = b.softScore.weekendFairnessPenalty || 0;
+  if (fairnessPenaltyA !== fairnessPenaltyB) return fairnessPenaltyA - fairnessPenaltyB;
   if (a.softScore.score !== b.softScore.score) return b.softScore.score - a.softScore.score;
   return a.signature.localeCompare(b.signature);
 }
@@ -1273,7 +1288,7 @@ export function optimizeRotaCandidate({
         fullWeekDates,
         fairnessContext
       });
-      if (!evaluated.valid || evaluated.softScore.score <= current.softScore.score) return;
+      if (!evaluated.valid || compareCompleteRotaCandidates(evaluated, current) >= 0) return;
       if (!bestImprovement || compareCompleteRotaCandidates(evaluated, bestImprovement) < 0) {
         bestImprovement = evaluated;
         bestMove = neighbor.move;
@@ -1552,6 +1567,8 @@ export function buildRota(inputs, options = {}) {
     optimizedCandidates.push({
       ...optimized,
       initialSoftScore: initialEvaluation.softScore.score,
+      initialPreferredDayOffViolationCount: initialEvaluation.softScore.preferredDayOffViolationCount,
+      initialWeekendFairnessPenalty: initialEvaluation.softScore.weekendFairnessPenalty,
       planningVariant: variantIndex
     });
   }
@@ -1567,6 +1584,8 @@ export function buildRota(inputs, options = {}) {
   }
 
   const firstInitialSoftScore = optimizedCandidates[0].initialSoftScore;
+  const firstInitialPreferredDayOffViolationCount = optimizedCandidates[0].initialPreferredDayOffViolationCount;
+  const firstInitialWeekendFairnessPenalty = optimizedCandidates[0].initialWeekendFairnessPenalty;
   optimizedCandidates.sort(compareCompleteRotaCandidates);
   const best = optimizedCandidates[0];
   const initialSoftScore = firstInitialSoftScore;
@@ -1574,11 +1593,25 @@ export function buildRota(inputs, options = {}) {
   const optimizationDiagnostics = {
     initialSoftScore,
     finalSoftScore: best.softScore.score,
+    initialPreferredDayOffViolationCount: firstInitialPreferredDayOffViolationCount,
+    finalPreferredDayOffViolationCount: best.softScore.preferredDayOffViolationCount,
+    initialWeekendFairnessPenalty: firstInitialWeekendFairnessPenalty,
+    finalWeekendFairnessPenalty: best.softScore.weekendFairnessPenalty,
     candidateRotasEvaluated: optimizedCandidates.length,
     acceptedOptimizationMoves: best.optimization.acceptedMoves,
     winningCandidateIterations: best.optimization.iterationsRun,
     neighborCandidatesEvaluated: totalNeighborEvaluations,
-    improvedFromInitial: best.softScore.score > initialSoftScore,
+    improvedFromInitial: best.softScore.preferredDayOffViolationCount < firstInitialPreferredDayOffViolationCount
+      || (
+        best.softScore.preferredDayOffViolationCount === firstInitialPreferredDayOffViolationCount
+        && (
+          best.softScore.weekendFairnessPenalty < firstInitialWeekendFairnessPenalty
+          || (
+            best.softScore.weekendFairnessPenalty === firstInitialWeekendFairnessPenalty
+            && best.softScore.score > initialSoftScore
+          )
+        )
+      ),
     limits: { ...limits }
   };
 

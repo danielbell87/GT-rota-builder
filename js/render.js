@@ -312,10 +312,13 @@ function renderTechnicalDetails(view) {
       ${optimization ? `
         <div class="technical-block">
           <h5>Whole-rota optimisation</h5>
+          <p class="small">Priority: hard constraints → Preferred Days Off → weekend fairness → other soft preferences.</p>
           <table class="summary-table optimization-diagnostics-table">
             <tbody>
               <tr><th>Initial soft score</th><td>${optimization.initialSoftScore.toFixed(1)}</td></tr>
               <tr><th>Final soft score</th><td>${optimization.finalSoftScore.toFixed(1)}</td></tr>
+              <tr><th>Preferred-day-off violations</th><td>${optimization.initialPreferredDayOffViolationCount ?? 0} → ${optimization.finalPreferredDayOffViolationCount ?? 0}</td></tr>
+              <tr><th>Weekend-fairness penalty</th><td>${(optimization.initialWeekendFairnessPenalty ?? 0).toFixed(1)} → ${(optimization.finalWeekendFairnessPenalty ?? 0).toFixed(1)}</td></tr>
               <tr><th>Candidate rotas evaluated</th><td>${optimization.candidateRotasEvaluated}</td></tr>
               <tr><th>Accepted optimisation moves</th><td>${optimization.acceptedOptimizationMoves}</td></tr>
               <tr><th>Improved from initial valid rota</th><td>${optimization.improvedFromInitial ? 'Yes' : 'No'}</td></tr>
@@ -755,6 +758,7 @@ function renderFairnessSummary(summary = []) {
   return `
     <section class="results-section">
       <h4>Fairness summary</h4>
+      <p class="section-note">Weekend fairness is applied only after Preferred Days Off have been satisfied as far as hard constraints allow.</p>
       <table class="summary-table fairness-table">
         <thead><tr><th>Chef</th><th>Fridays</th><th>Saturdays</th><th>Sundays</th><th>Weighted burden</th></tr></thead>
         <tbody>${rows}</tbody>

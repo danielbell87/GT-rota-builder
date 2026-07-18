@@ -4,6 +4,7 @@ import {
   buildRota,
   buildMultiWeekRota,
   cloneRotaCandidate,
+  compareCompleteRotaCandidates,
   compareFairnessTieBreak,
   generateNeighborCandidates,
   getSectionCandidateBaseScore,
@@ -94,8 +95,9 @@ export async function runSolverTests(assert) {
     'Whole-rota optimization terminates within its configured iteration limit'
   );
   assert(
-    baseline.optimizationDiagnostics?.finalSoftScore >= baseline.optimizationDiagnostics?.initialSoftScore,
-    'Whole-rota optimization never returns a lower score than the initial valid rota'
+    baseline.optimizationDiagnostics?.finalPreferredDayOffViolationCount
+      <= baseline.optimizationDiagnostics?.initialPreferredDayOffViolationCount,
+    'Whole-rota optimization never accepts more Preferred Day Off violations to improve a lower-priority metric'
   );
   const clonedBaseline = cloneRotaCandidate(baseline.rota);
   clonedBaseline[0].chefs.push('Synthetic mutation');
@@ -404,6 +406,11 @@ export async function runSolverTests(assert) {
       .some((result) => result.ruleId === 'S002' && result.message.includes('Aled') && result.message.includes('Saturday')),
     'A genuinely unavoidable Preferred Day Off breach is still reported after optimization'
   );
+  assert(
+    aledWeekendRequired.softScore.preferredDayOffViolationCount > 0
+      && getHardFailures(aledWeekendRequiredState, aledWeekendRequired).length === 0,
+    'Preferred Days Off remain soft and may be broken when hard-valid senior coverage requires it'
+  );
 
   const fredAnnualLeaveState = setupBaseState();
   fredAnnualLeaveState.weeklyInputs.availability = [{ chef: 'Fred', type: 'Annual Leave', startDate: '2026-07-14', finishDate: '2026-07-14', notes: '' }];
@@ -665,14 +672,51 @@ export async function runSolverTests(assert) {
       maxNeighborEvaluationsPerIteration: 120
     }
   });
-  assert(!!weakerDayOffRepair, 'A hard-valid day-off repair with an unacceptable total section-strength loss is available for rejection testing');
+  assert(!!weakerDayOffRepair, 'A hard-valid day-off repair with a lower aggregate score is available for priority testing');
   assert(
     !weakerDayOffRepair
       || (
-        optimizedGreedy.softScore.score > weakerDayOffRepair.score
-        && JSON.stringify(optimizedGreedy.rota) !== JSON.stringify(weakerDayOffRepair.rota)
+        optimizedGreedy.softScore.preferredDayOffViolationCount < greedyBreachCount
+        && optimizedGreedy.softScore.preferredDayOffViolationCount <= weakerDayOffRepair.breachCount
       ),
-    'Optimization rejects a Preferred Day Off repair when its complete soft score is worse'
+    'Optimization accepts fewer Preferred Day Off violations even when weekend fairness or other soft scoring makes the aggregate score lower'
+  );
+
+  const fewerPreferredViolations = {
+    valid: true,
+    signature: 'fewer-preferred-violations',
+    softScore: { preferredDayOffViolationCount: 0, preferredDayOffPenalty: 0, weekendFairnessPenalty: 100, score: 0 }
+  };
+  const fairerButMorePreferredViolations = {
+    valid: true,
+    signature: 'fairer-but-more-preferred-violations',
+    softScore: { preferredDayOffViolationCount: 1, preferredDayOffPenalty: 2, weekendFairnessPenalty: 0, score: 1000 }
+  };
+  assert(
+    compareCompleteRotaCandidates(fewerPreferredViolations, fairerButMorePreferredViolations) < 0,
+    'Weekend fairness cannot beat a hard-valid candidate with fewer Preferred Day Off violations'
+  );
+
+  const equallyPreferredFairCandidate = {
+    valid: true,
+    signature: 'equally-preferred-fair',
+    softScore: { preferredDayOffViolationCount: 1, preferredDayOffPenalty: 2, weekendFairnessPenalty: 2, score: 10 }
+  };
+  const equallyPreferredUnfairCandidate = {
+    valid: true,
+    signature: 'equally-preferred-unfair',
+    softScore: { preferredDayOffViolationCount: 1, preferredDayOffPenalty: 2, weekendFairnessPenalty: 8, score: 100 }
+  };
+  assert(
+    compareCompleteRotaCandidates(equallyPreferredFairCandidate, equallyPreferredUnfairCandidate) < 0,
+    'Weekend fairness still decides between candidates with equal Preferred Day Off violations before lower-priority preferences'
+  );
+  assert(
+    compareCompleteRotaCandidates(
+      { ...fairerButMorePreferredViolations, valid: true },
+      { ...fewerPreferredViolations, valid: false }
+    ) < 0,
+    'Hard validity remains above Preferred Day Off satisfaction'
   );
 
   // ─── Multi-week rota generation ────────────────────────────────────────────
@@ -700,6 +744,17 @@ export async function runSolverTests(assert) {
   assert(
     twoWeekResult.weeks.every((week) => week.softScore?.explanation?.some((line) => line.includes('Multi-week fairness burden spread'))),
     'Multi-week fairness history is included in complete candidate scoring and comparison'
+  );
+  assert(
+    twoWeekResult.weeks.every((week) => Number.isFinite(week.softScore?.preferredDayOffViolationCount)
+      && Number.isFinite(week.softScore?.weekendFairnessPenalty)),
+    'Multi-week: every week is compared using explicit Preferred Day Off and weekend-fairness priority metrics'
+  );
+  assert(
+    twoWeekResult.weeks.every((week) => !week.rota.some((day) => (
+      ['Saturday', 'Sunday'].includes(day.dayName) && day.chefs.includes('Aled')
+    ))),
+    'Multi-week: weekend rotation does not schedule Aled on a Preferred Day Off when hard-valid alternatives exist'
   );
 
   const week1Start = multiWeekInputs.weekStart;

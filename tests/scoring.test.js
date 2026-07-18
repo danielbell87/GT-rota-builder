@@ -49,7 +49,8 @@ export async function runScoringTests(assert) {
   preferredOverrideState.staff.find((chef) => chef.name === 'Aled').preferredDaysOff = [];
   const noPreferenceScore = scoreSoftPreferences({ state: preferredOverrideState, rota: preferredOverrideRota, hardValidation: [] });
   assert(preferredOverrideScore.score < noPreferenceScore.score, 'Working a Preferred Day Off incurs a soft score penalty');
-  assert(preferredOverrideScore.explanation.some((line) => line.includes('Preferred Day Off') && line.includes('operational requirements')), 'Preferred Day Off override is explained in rota diagnostics');
+  assert(preferredOverrideScore.preferredDayOffViolationCount === 1 && noPreferenceScore.preferredDayOffViolationCount === 0, 'Scoring exposes Preferred Day Off violations as a separate priority metric');
+  assert(preferredOverrideScore.explanation.some((line) => line.includes('Preferred Day Off') && line.includes('hard constraints')), 'Preferred Day Off override is explained in rota diagnostics');
 
   const breakfastPreferenceState = baseState();
   breakfastPreferenceState.staff.find((chef) => chef.name === 'Aled').preferredBreakfast = 'Monday';

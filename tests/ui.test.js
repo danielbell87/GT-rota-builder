@@ -283,6 +283,10 @@ export async function runUiTests(assert) {
         && normalizeText(optimizationDiagnosticsTable?.textContent || '').includes('Accepted optimisation moves'),
       'UI: technical details show whole-rota optimization diagnostics'
     );
+    assert(
+      normalizeText(singleWeekDetails?.textContent || '').includes('hard constraints → Preferred Days Off → weekend fairness → other soft preferences'),
+      'UI: optimisation diagnostics explain that Preferred Days Off outrank weekend fairness'
+    );
     assert(singleWeekHardTable.querySelectorAll('tbody tr').length === singleWeekRender.validationByWeek[0].hardValidation.length, 'UI: technical details include the full hard-validation dataset');
     assert(singleWeekSoftTable.querySelectorAll('tbody tr').length === singleWeekRender.validationByWeek[0].softValidation.length, 'UI: technical details include the full soft-validation dataset');
     assert(singleWeekRender.validationByWeek[0].hardValidation.some((result) => result.passed), 'UI: complete hard-validation arrays remain available in application state data');

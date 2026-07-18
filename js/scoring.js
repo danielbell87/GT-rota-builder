@@ -57,6 +57,9 @@ function getWeekendPattern(workedDays) {
 export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnessContext = null }) {
   const hardFailed = hardValidation.some((result) => !result.passed);
   let score = 100;
+  let preferredDayOffViolationCount = 0;
+  let preferredDayOffPenalty = 0;
+  let weekendFairnessPenalty = 0;
   const explanations = [];
   const seniorOnPassWeight = getSoftRuleWeight(state, 'prefer-senior-on-pass', 12);
   const preferredDayOffWeight = getSoftRuleWeight(state, 'S002', 8);
@@ -70,7 +73,9 @@ export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnes
       const chef = state.staff.find((candidate) => candidate.name === chefName);
       if (!chef?.preferredDaysOff?.includes(day.dayName)) return;
       score -= preferredDayOffWeight;
-      explanations.push(`${chefName} worked ${day.dayName} despite a Preferred Day Off because operational requirements took priority.`);
+      preferredDayOffViolationCount += 1;
+      preferredDayOffPenalty += preferredDayOffWeight;
+      explanations.push(`${chefName} worked ${day.dayName} despite a Preferred Day Off because satisfying hard constraints required the compromise.`);
     });
 
     day.assignments.forEach((assignment) => {
@@ -152,7 +157,9 @@ export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnes
     const min = Math.min(...weekendValues);
     const spread = max - min;
     if (spread > 1) {
-      score -= weekendFairnessWeight * (spread - 1);
+      const penalty = weekendFairnessWeight * (spread - 1);
+      score -= penalty;
+      weekendFairnessPenalty += penalty;
       explanations.push('Weekend load distribution is uneven.');
     }
   }
@@ -174,14 +181,25 @@ export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnes
       const previous = fairnessContext.previousWeekPatterns?.[name];
       projectedBurdens.push((historicStats.weightedBurden || 0) + pattern.weightedBurden);
 
-      if (previous?.saturdaySundayPair && pattern.saturdaySundayPair) score -= weekendFairnessWeight;
-      if (previous?.fullWeekend && pattern.fullWeekend) score -= weekendFairnessWeight;
-      if (previous?.signature && previous.signature === pattern.signature) score -= weekendFairnessWeight / 2;
+      if (previous?.saturdaySundayPair && pattern.saturdaySundayPair) {
+        score -= weekendFairnessWeight;
+        weekendFairnessPenalty += weekendFairnessWeight;
+      }
+      if (previous?.fullWeekend && pattern.fullWeekend) {
+        score -= weekendFairnessWeight;
+        weekendFairnessPenalty += weekendFairnessWeight;
+      }
+      if (previous?.signature && previous.signature === pattern.signature) {
+        score -= weekendFairnessWeight / 2;
+        weekendFairnessPenalty += weekendFairnessWeight / 2;
+      }
     });
 
     if (projectedBurdens.length > 1) {
       const projectedSpread = Math.max(...projectedBurdens) - Math.min(...projectedBurdens);
-      score -= projectedSpread * (weekendFairnessWeight / 4);
+      const projectedSpreadPenalty = projectedSpread * (weekendFairnessWeight / 4);
+      score -= projectedSpreadPenalty;
+      weekendFairnessPenalty += projectedSpreadPenalty;
       explanations.push(`Multi-week fairness burden spread after this rota: ${projectedSpread.toFixed(1)}.`);
     }
   }
@@ -227,6 +245,9 @@ export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnes
       valid: false,
       score: Math.min(score, 80),
       capped: true,
+      preferredDayOffViolationCount,
+      preferredDayOffPenalty,
+      weekendFairnessPenalty,
       explanation: ['Hard-rule failure detected; score capped.', ...explanations]
     };
   }
@@ -235,6 +256,9 @@ export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnes
     valid: true,
     score,
     capped: false,
+    preferredDayOffViolationCount,
+    preferredDayOffPenalty,
+    weekendFairnessPenalty,
     explanation: explanations
   };
 }
