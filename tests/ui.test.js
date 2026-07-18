@@ -219,6 +219,10 @@ export async function runUiTests(assert) {
   const stylesText = await fetch('../styles.css').then((response) => response.text());
   assert(stylesText.includes('.technical-details') && stylesText.includes('@media print'), 'UI: stylesheet includes technical-details and print rules for validation cleanup');
   assert(stylesText.includes('.week-panels .week-panel.hidden') && stylesText.includes('display: grid;'), 'UI: print stylesheet restores hidden week panels for printing');
+  assert(stylesText.includes('@media (max-width: 900px)') && stylesText.includes('min-width: 860px') && stylesText.includes('-webkit-overflow-scrolling: touch'), 'UI: phone widths use a touch-scrollable rota with a readable minimum width');
+  assert(stylesText.includes('.rota-table thead th:first-child') && stylesText.includes('position: sticky') && stylesText.includes('left: 0'), 'UI: mobile rota keeps the section column sticky');
+  const finalPrintRules = stylesText.slice(stylesText.lastIndexOf('@media print'));
+  assert(finalPrintRules.includes('.rota-swipe-guidance') && finalPrintRules.includes('display: none !important') && finalPrintRules.includes('overflow: visible') && finalPrintRules.includes('min-width: 0') && finalPrintRules.includes('position: static') && finalPrintRules.includes('outline: 0'), 'UI: final print rules override mobile guidance, scrolling, table width, sticky positioning, and focus treatment');
   const filteredPreferenceDetails = getChefSoftPreferenceDetails({
     preferredDaysOff: ['Tuesday', '', 'Tuesday', 'Not a day'],
     preferredBreakfast: 'No preference'
@@ -249,6 +253,8 @@ export async function runUiTests(assert) {
     await setFieldValue(doc.getElementById('weekStart'), '2026-07-13');
     await setFieldValue(doc.getElementById('numWeeks'), '1');
     await waitFor(() => doc.querySelector('details.technical-details'));
+    assert(doc.querySelectorAll('.rota-table-scroll').length === 1 && doc.querySelectorAll('.rota-swipe-guidance').length === 1, 'UI: a single-week rota renders one accessible mobile scroll wrapper and one swipe hint');
+    assert(doc.querySelector('.rota-table-scroll')?.getAttribute('role') === 'region' && !!doc.querySelector('.rota-table-scroll')?.getAttribute('aria-label'), 'UI: rota scroll wrapper has an accessible region label while preserving the table element');
 
     assert(!doc.getElementById('singleMioControl').classList.contains('hidden') && doc.getElementById('weeklyMioSelectors').classList.contains('hidden'), 'UI: one week shows the single MIO chef selector only');
     assert([...doc.getElementById('mioChef').options].some((option) => option.value === '' && option.textContent === 'No MIO chef'), 'UI: one-week selector includes the explicit No MIO chef option');
@@ -307,6 +313,8 @@ export async function runUiTests(assert) {
     assert(doc.querySelectorAll('section[data-week-panel]').length === 3, 'UI: selecting three weeks produces three generated week results');
     assert(doc.querySelectorAll('select[data-weekly-mio-start]').length === 3, 'UI: three weeks display three MIO selectors');
     assert(canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.mode === 'multi', 'UI: multi-week rendering does not call only buildRota()');
+    const renderedWeekCount = canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.visibleWeekCount || 0;
+    assert(doc.querySelectorAll('.rota-table-scroll').length === renderedWeekCount && doc.querySelectorAll('.rota-swipe-guidance').length === renderedWeekCount, 'UI: every generated week receives its own mobile scroll wrapper and swipe hint');
 
     const weeklySelectors = [...doc.querySelectorAll('select[data-weekly-mio-start]')];
     await setFieldValue(weeklySelectors[0], 'Fred');

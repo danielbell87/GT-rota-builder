@@ -43,6 +43,7 @@ export async function runPrintTests(assert) {
   const html = renderPrintDocument(multiModel);
   assert((html.match(/class="print-week/g) || []).length === 3 && html.includes('break-after: page') && html.includes('page-break-after: always'), 'Print: each week is a separate page-break block');
   assert(html.includes('@page { size: A4 landscape;') && html.includes('thead { display: table-header-group; }'), 'Print: document uses A4 landscape and repeatable table headers');
+  assert(!html.includes('rota-table-scroll') && !html.includes('rota-swipe-guidance') && !html.includes('position: sticky'), 'Print: dedicated PDF document has no app scroll wrappers, swipe guidance, or sticky columns');
 
   const unsafeHtml = renderPrintDocument(singleModel);
   assert(!unsafeHtml.includes(unsafeName) && unsafeHtml.includes('&lt;img src=x onerror=&quot;window.printAttack=1&quot;&gt;'), 'Print: user-editable chef names are safely escaped');

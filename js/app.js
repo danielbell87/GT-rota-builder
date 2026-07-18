@@ -7,6 +7,7 @@ import { addAvailabilityEntry, removeAvailabilityEntry, updateAvailabilityField,
 import {
   renderAll,
   renderResultsPanel,
+  updateRotaScrollAccessibility,
   renderAdditionalChefRequirements,
   renderAvailabilityTable,
   renderStaffTable,
@@ -234,6 +235,8 @@ function loadInitialState() {
 }
 
 function attachEvents() {
+  window.addEventListener('resize', () => updateRotaScrollAccessibility(document));
+
   requireElement('weekStart').addEventListener('change', (event) => {
     const normalized = normalizeWeekStart(event.target.value || getDefaultWeek());
     event.target.value = normalized;

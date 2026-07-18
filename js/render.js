@@ -706,7 +706,7 @@ export function renderAvailabilityTable() {
 
 function renderRotaTable(solveResult) {
   if (!solveResult.rota?.length) return '';
-  const dayHeaders = solveResult.rota.map((day) => `<th>${day.dayName}<br><span class="small">${formatDate(day.date)}</span></th>`).join('');
+  const dayHeaders = solveResult.rota.map((day) => `<th scope="col">${day.dayName}<br><span class="small">${formatDate(day.date)}</span></th>`).join('');
   const sectionCells = DISPLAY_SECTIONS.map((section) => {
     const cells = solveResult.rota.map((day) => {
       if (section === 'Float') {
@@ -716,14 +716,30 @@ function renderRotaTable(solveResult) {
       const matches = day.assignments.filter((assignment) => assignment.section === section);
       return `<td>${matches.length ? escapeHtml(matches.map((assignment) => assignment.chef).join(', ')) : '—'}</td>`;
     }).join('');
-    return `<tr><th>${section}</th>${cells}</tr>`;
+    return `<tr><th scope="row">${section}</th>${cells}</tr>`;
   }).join('');
 
   return `
     <section class="results-section">
       <h4>Rota table</h4>
-      <table class="rota-table"><thead><tr><th>Section</th>${dayHeaders}</tr></thead><tbody>${sectionCells}</tbody></table>
+      <p class="rota-swipe-guidance">Swipe left or right to view the full week.</p>
+      <div class="rota-table-scroll" role="region" aria-label="Weekly rota table, horizontally scrollable on smaller screens">
+        <table class="rota-table"><thead><tr><th scope="col">Section</th>${dayHeaders}</tr></thead><tbody>${sectionCells}</tbody></table>
+      </div>
     </section>`;
+}
+
+export function updateRotaScrollAccessibility(root = document) {
+  const mobileViewport = typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(max-width: 900px)').matches;
+  root.querySelectorAll('.rota-table-scroll').forEach((wrapper) => {
+    const genuinelyOverflows = mobileViewport
+      && wrapper.clientWidth > 0
+      && wrapper.scrollWidth > wrapper.clientWidth + 1;
+    if (genuinelyOverflows) wrapper.setAttribute('tabindex', '0');
+    else wrapper.removeAttribute('tabindex');
+  });
 }
 
 function renderFairnessSummary(summary = []) {
@@ -842,6 +858,13 @@ export function renderResultsPanel() {
         <label class="mobile-only print-hidden">Week<select id="resultsWeekSelect">${dropdownOptions}</select></label>
         <div class="week-panels">${panels}</div>
       </div>`;
+  }
+
+  if (typeof window !== 'undefined') {
+    window.requestAnimationFrame(() => {
+      updateRotaScrollAccessibility(container);
+      window.requestAnimationFrame(() => updateRotaScrollAccessibility(container));
+    });
   }
 
   if (typeof window !== 'undefined') {
