@@ -752,7 +752,7 @@ export async function runUiTests(assert) {
     assert(migratedState.staff.find((chef) => chef.name === 'Myles')?.mioEligible === true && migratedState.staff.find((chef) => chef.name === 'Dan')?.mioEligible === false, 'UI: legacy MIO eligibility map migrates into canonical chef records');
     assert(migratedState.staff.find((chef) => chef.name === 'Charlie')?.notes === 'User-entered migration note' && migratedState.staff.find((chef) => chef.name === 'Charlie')?.skills?.Sauce === 3, 'UI: schema migration preserves user notes and merges legacy structured profile data');
     assert(JSON.stringify(migratedState.weeklyInputs.availability) === JSON.stringify(legacyStaffState.weeklyInputs.availability), 'UI: schema migration preserves annual leave and unavailable entries');
-    assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '11', 'UI: storage schema version increments to 11');
+    assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '12', 'UI: storage schema version increments to 12');
     assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.mioEligibilityByChef') === null && migrationFrame.contentWindow.localStorage.getItem('gtRota.staffProfilesByChef') === null, 'UI: legacy per-chef storage maps are removed after migration');
   } finally {
     destroyFrame(migrationFrame);
@@ -764,6 +764,23 @@ export async function runUiTests(assert) {
     assert(JSON.stringify(getPersistedAppState(migrationReloadFrame.contentWindow)) === JSON.stringify(migratedSnapshot), 'UI: schema migration is idempotent across reloads');
   } finally {
     destroyFrame(migrationReloadFrame);
+  }
+
+  localStorage.clear();
+  const emptyPersistedState = cloneData(migrationSeedState);
+  emptyPersistedState.staff = [];
+  localStorage.setItem('gtRota.schemaVersion', '11');
+  localStorage.setItem('gtRota.state.v2', JSON.stringify(emptyPersistedState));
+  let restoredDefaultsFrame = null;
+  try {
+    restoredDefaultsFrame = await loadFrame('../index.html');
+    const restoredState = getPersistedAppState(restoredDefaultsFrame.contentWindow);
+    assert(restoredState.staff.length === 10, 'UI: schema 12 restores the canonical chef list when saved staff is empty');
+    assert(restoredState.staff.find((chef) => chef.name === 'Aled')?.senior === true && restoredState.staff.find((chef) => chef.name === 'Aled')?.skills?.Pass === 3, 'UI: restored defaults include canonical seniority and section strengths');
+    assert(JSON.stringify(restoredState.staff.find((chef) => chef.name === 'Aled')?.preferredDaysOff) === JSON.stringify(['Saturday', 'Sunday']), 'UI: restored defaults include canonical chef preferences');
+    assert(restoredDefaultsFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '12', 'UI: empty-staff restoration completes the schema 12 migration');
+  } finally {
+    destroyFrame(restoredDefaultsFrame);
   }
 
   localStorage.clear();

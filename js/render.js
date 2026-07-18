@@ -12,7 +12,7 @@ import {
 import { scoreSoftPreferences } from './scoring.js';
 import { buildRota, buildMultiWeekRota } from './solver.js';
 import { getChefSoftPreferenceDetails } from './staff.js';
-import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260718g';
+import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260718h';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
 
 function getRequiredElement(id) {

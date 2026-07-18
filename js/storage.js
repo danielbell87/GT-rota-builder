@@ -1,6 +1,7 @@
 import { getState, syncCompatibilityViews } from './state.js';
 import { normalizeStaffRecords } from './staff.js';
 import { getWeekStartAtOffset, normalizeWeekStart } from './utils.js';
+import { DEFAULT_STAFF } from '../data/default-staff.js';
 
 export const STORAGE_KEYS = {
   schemaVersion: 'gtRota.schemaVersion',
@@ -10,7 +11,7 @@ export const STORAGE_KEYS = {
 
 const LEGACY_MIO_ELIGIBILITY_KEY = 'gtRota.mioEligibilityByChef';
 const LEGACY_STAFF_PROFILES_KEY = 'gtRota.staffProfilesByChef';
-const CURRENT_SCHEMA_VERSION = 11;
+const CURRENT_SCHEMA_VERSION = 12;
 
 function safeParse(raw, fallback) {
   if (!raw) return fallback;
@@ -149,6 +150,9 @@ export function migrateStorageIfNeeded() {
     if (current < 11) {
       const fallbackWeekStart = saved.weeklyInputs?.weekStart || getState().weeklyInputs.weekStart;
       saved.weeklyInputs = normalizeWeeklyInputsShape(saved.weeklyInputs, fallbackWeekStart);
+    }
+    if (current < 12 && Array.isArray(saved.staff) && saved.staff.length === 0) {
+      saved.staff = normalizeStaffRecords(JSON.parse(JSON.stringify(DEFAULT_STAFF)));
     }
     localStorage.setItem(STORAGE_KEYS.appState, JSON.stringify(saved));
   }
