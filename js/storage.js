@@ -1,6 +1,6 @@
 import { getState, syncCompatibilityViews } from './state.js';
 import { normalizeStaffRecords } from './staff.js';
-import { normalizeWeekStart } from './utils.js';
+import { getWeekStartAtOffset, normalizeWeekStart } from './utils.js';
 
 export const STORAGE_KEYS = {
   schemaVersion: 'gtRota.schemaVersion',
@@ -10,7 +10,7 @@ export const STORAGE_KEYS = {
 
 const LEGACY_MIO_ELIGIBILITY_KEY = 'gtRota.mioEligibilityByChef';
 const LEGACY_STAFF_PROFILES_KEY = 'gtRota.staffProfilesByChef';
-const CURRENT_SCHEMA_VERSION = 10;
+const CURRENT_SCHEMA_VERSION = 11;
 
 function safeParse(raw, fallback) {
   if (!raw) return fallback;
@@ -25,18 +25,23 @@ function safeParse(raw, fallback) {
 function normalizeWeeklyInputsShape(weeklyInputs = {}, fallbackWeekStart = '') {
   const normalizedWeekStart = normalizeWeekStart(weeklyInputs.weekStart || fallbackWeekStart || getState().weeklyInputs.weekStart);
   const parsedWeeks = Number.parseInt(weeklyInputs.numWeeks, 10);
-  const normalizedSelections = weeklyInputs.weeklyMioSelections && typeof weeklyInputs.weeklyMioSelections === 'object'
-    ? { ...weeklyInputs.weeklyMioSelections }
+  const numWeeks = Math.max(1, Math.min(8, parsedWeeks || 1));
+  const savedSelections = weeklyInputs.weeklyMioSelections && typeof weeklyInputs.weeklyMioSelections === 'object'
+    ? weeklyInputs.weeklyMioSelections
     : {};
+  const activeWeekStarts = Array.from({ length: numWeeks }, (_, index) => getWeekStartAtOffset(normalizedWeekStart, index));
+  const normalizedSelections = Object.fromEntries(activeWeekStarts
+    .filter((weekStart) => Object.prototype.hasOwnProperty.call(savedSelections, weekStart))
+    .map((weekStart) => [weekStart, typeof savedSelections[weekStart] === 'string' ? savedSelections[weekStart] : '']));
 
-  if (weeklyInputs.mioChef && !normalizedSelections[normalizedWeekStart]) {
-    normalizedSelections[normalizedWeekStart] = weeklyInputs.mioChef;
+  if (!Object.prototype.hasOwnProperty.call(normalizedSelections, normalizedWeekStart)) {
+    normalizedSelections[normalizedWeekStart] = typeof weeklyInputs.mioChef === 'string' ? weeklyInputs.mioChef : '';
   }
 
   return {
     weekStart: normalizedWeekStart,
-    numWeeks: Math.max(1, Math.min(8, parsedWeeks || 1)),
-    mioChef: weeklyInputs.mioChef || normalizedSelections[normalizedWeekStart] || '',
+    numWeeks,
+    mioChef: normalizedSelections[normalizedWeekStart],
     weeklyMioSelections: normalizedSelections,
     status: weeklyInputs.status || 'Draft',
     dailyOverrides: weeklyInputs.dailyOverrides && typeof weeklyInputs.dailyOverrides === 'object' ? weeklyInputs.dailyOverrides : {},
@@ -140,6 +145,10 @@ export function migrateStorageIfNeeded() {
     }
     if (current < 10 && Array.isArray(saved.staff)) {
       saved.staff = normalizeStaffRecords(saved.staff);
+    }
+    if (current < 11) {
+      const fallbackWeekStart = saved.weeklyInputs?.weekStart || getState().weeklyInputs.weekStart;
+      saved.weeklyInputs = normalizeWeeklyInputsShape(saved.weeklyInputs, fallbackWeekStart);
     }
     localStorage.setItem(STORAGE_KEYS.appState, JSON.stringify(saved));
   }

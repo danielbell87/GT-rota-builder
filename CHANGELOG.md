@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-18 — Optional MIO weeks
+
+- Added a persistent **No MIO chef** choice to the single-week selector and every row of the responsive **MIO chef by week** table.
+- Reconciled per-week MIO selections against the active planning horizon while preserving overlapping weeks and removing stale out-of-range entries.
+- Prevented explicit empty selections from falling back to another week's chef during multi-week generation.
+- Made no-MIO weeks use ordinary leave-adjusted GT targets with no MIO assignments or selected-MIO pattern checks.
+- Added explicit MIO configuration summaries, eligibility validation, schema version 11 normalization, and browser/solver regression coverage.
+
 ## 2026-07-18 — Chef list badges and polish
 
 - Reworked compact chef cards so Senior, MIO, Breakfast, and Preferences badges render independently and in a stable order.

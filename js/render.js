@@ -12,7 +12,7 @@ import {
 import { scoreSoftPreferences } from './scoring.js';
 import { buildRota, buildMultiWeekRota } from './solver.js';
 import { getChefSoftPreferenceDetails } from './staff.js';
-import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260718b';
+import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260718c';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
 
 function getRequiredElement(id) {
@@ -305,6 +305,10 @@ function renderTechnicalDetails(view) {
   return `
     <details class="technical-details print-hidden">
       <summary>View technical details</summary>
+      <div class="technical-block">
+        <h5>Weekly MIO configuration</h5>
+        <p class="small">MIO chef: ${escapeHtml(view.inputs.mioChef || 'None')}</p>
+      </div>
       ${optimization ? `
         <div class="technical-block">
           <h5>Whole-rota optimisation</h5>
@@ -353,6 +357,19 @@ function getSuggestedMioRotation(eligibleChefs) {
   return eligibleChefs.map((chef) => chef.name);
 }
 
+function renderMioOptions(selectedChefName, eligibleChefs, state) {
+  const eligibleNames = new Set(eligibleChefs.map((chef) => chef.name));
+  const selectedStaff = selectedChefName ? state.staff.find((chef) => chef.name === selectedChefName) : null;
+  const invalidSelectedOption = selectedChefName && !eligibleNames.has(selectedChefName)
+    ? `<option value="${escapeHtml(selectedChefName)}" selected>${escapeHtml(selectedStaff ? `${selectedChefName} (not eligible)` : `${selectedChefName} (not in staff list)`)}</option>`
+    : '';
+  return [
+    `<option value="" ${selectedChefName ? '' : 'selected'}>No MIO chef</option>`,
+    invalidSelectedOption,
+    ...eligibleChefs.map((chef) => `<option value="${escapeHtml(chef.name)}" ${selectedChefName === chef.name ? 'selected' : ''}>${escapeHtml(chef.name)}</option>`)
+  ].join('');
+}
+
 function ensureWeeklyMioSelections() {
   const state = getState();
   const weekStart = state.weeklyInputs.weekStart;
@@ -365,17 +382,26 @@ function ensureWeeklyMioSelections() {
 
   state.weeklyInputs.weeklyMioSelections = selections;
 
+  const activeWeekStarts = Array.from({ length: numWeeks }, (_, index) => getWeekStartAtOffset(weekStart, index));
+  const activeWeekStartSet = new Set(activeWeekStarts);
+  Object.keys(selections).forEach((savedWeekStart) => {
+    if (!activeWeekStartSet.has(savedWeekStart)) delete selections[savedWeekStart];
+  });
+
   for (let weekIndex = 0; weekIndex < numWeeks; weekIndex += 1) {
-    const currentWeekStart = getWeekStartAtOffset(weekStart, weekIndex);
-    const existing = selections[currentWeekStart] || (weekIndex === 0 ? state.weeklyInputs.mioChef : '');
-    if (eligible.some((chef) => chef.name === existing)) {
+    const currentWeekStart = activeWeekStarts[weekIndex];
+    const hasSavedSelection = Object.prototype.hasOwnProperty.call(selections, currentWeekStart);
+    const existing = hasSavedSelection
+      ? (typeof selections[currentWeekStart] === 'string' ? selections[currentWeekStart] : '')
+      : (weekIndex === 0 && typeof state.weeklyInputs.mioChef === 'string' ? state.weeklyInputs.mioChef : null);
+    if (existing === '' || (typeof existing === 'string' && existing.length > 0)) {
       selections[currentWeekStart] = existing;
       continue;
     }
     selections[currentWeekStart] = rotation[weekIndex % Math.max(rotation.length, 1)] || eligible[0]?.name || '';
   }
 
-  const firstWeekSelection = selections[weekStart] || eligible[0]?.name || '';
+  const firstWeekSelection = Object.prototype.hasOwnProperty.call(selections, weekStart) ? selections[weekStart] : '';
   state.weeklyInputs.mioChef = firstWeekSelection;
   if (weekStart) selections[weekStart] = firstWeekSelection;
 
@@ -580,7 +606,7 @@ export function renderMioControls() {
   const weeks = ensureWeeklyMioSelections();
   const eligible = getEligibleMioChefs(state);
 
-  singleSelect.innerHTML = eligible.map((chef) => `<option value="${escapeHtml(chef.name)}" ${state.weeklyInputs.mioChef === chef.name ? 'selected' : ''}>${escapeHtml(chef.name)}</option>`).join('');
+  singleSelect.innerHTML = renderMioOptions(state.weeklyInputs.mioChef, eligible, state);
 
   if (state.weeklyInputs.numWeeks === 1) {
     singleControl.classList.remove('hidden');
@@ -593,14 +619,27 @@ export function renderMioControls() {
   singleControl.classList.add('hidden');
   multiContainer.classList.remove('hidden');
   multiContainer.innerHTML = `
-    <div class="weekly-mio-grid">
-      ${weeks.map((week) => `
-        <label class="weekly-mio-item">
-          <span>Week ${week.weekIndex + 1} · ${escapeHtml(week.label)}</span>
-          <select data-weekly-mio-start="${week.weekStart}">
-            ${eligible.map((chef) => `<option value="${escapeHtml(chef.name)}" ${week.chefName === chef.name ? 'selected' : ''}>${escapeHtml(chef.name)}</option>`).join('')}
-          </select>
-        </label>`).join('')}
+    <div class="weekly-mio-header">
+      <h3 id="weeklyMioHeading" class="mb-6">MIO chef by week</h3>
+      <p class="small mb-12">Select No MIO chef for any week where the kitchen cannot spare someone for MIO duty.</p>
+    </div>
+    <div class="weekly-mio-table-wrap">
+      <table class="weekly-mio-table">
+        <thead><tr><th scope="col">Week</th><th scope="col">Week commencing</th><th scope="col">MIO chef</th></tr></thead>
+        <tbody>
+          ${weeks.map((week) => {
+            const selectId = `mioChefWeek-${week.weekStart}`;
+            return `<tr>
+              <th scope="row" data-label="Week">Week ${week.weekIndex + 1}</th>
+              <td data-label="Week commencing">${escapeHtml(formatWeekCommencing(week.weekStart))}</td>
+              <td data-label="MIO chef">
+                <label class="visually-hidden" for="${selectId}">MIO chef for week ${week.weekIndex + 1}, commencing ${escapeHtml(formatWeekCommencing(week.weekStart))}</label>
+                <select id="${selectId}" data-weekly-mio-start="${week.weekStart}">${renderMioOptions(week.chefName, eligible, state)}</select>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
     </div>`;
 }
 
@@ -718,6 +757,7 @@ export function renderWeekPanel(view, options = {}) {
         <h4 class="multi-week-heading">${escapeHtml(`Week ${view.week.weekNumber}`)}</h4>
         <p class="results-subtitle">${escapeHtml(`${formatWeekCommencing(view.week.weekStart)} – ${getWeekEnd(view.week.weekStart)}`)}</p>
       </div>` : ''}
+      <p class="week-mio-summary"><strong>MIO chef:</strong> ${escapeHtml(view.inputs.mioChef || 'None')}</p>
       ${showStatus ? renderWeekStatusCard(view) : ''}
       ${view.week.status === 'infeasible' ? '' : renderRotaTable(view.week)}
       ${view.week.status === 'infeasible' ? '' : renderChefHoursSummary(view)}

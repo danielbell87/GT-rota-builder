@@ -134,8 +134,8 @@ The application stores these labels internally as ordered numeric values for det
 - H003: Exactly one breakfast chef is assigned each day.
 - H004: Monday to Wednesday require 4 GT chefs.
 - H005: Thursday to Sunday require 5 GT chefs.
-- H006: Exactly one eligible junior chef is assigned to MIO each week.
-- H007: MIO pattern is Monday–Wednesday at MIO and Saturday–Sunday at GT.
+- H006: When MIO duty is enabled for a week, exactly one eligible chef is selected; the app also permits an explicit **No MIO chef** operational override.
+- H007: A selected MIO chef works exactly three weekday MIO shifts and exactly two GT shifts; the pattern is not enforced in a no-MIO week.
 - H008: At least one chef whose canonical Senior chef field is true works each day.
 - H009: Required sections must be covered by an eligible chef.
 - H010: Annual leave credits are 12 hours per day; 4 days covers a full 7-day week away.

@@ -832,17 +832,48 @@ th {
   display: none;
 }
 
-.weekly-mio-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-.weekly-mio-item {
+.weekly-mio-section {
+  margin: 16px 0 20px;
+}
+
+.weekly-mio-header p {
+  margin-top: 0;
+}
+
+.weekly-mio-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.weekly-mio-table {
+  min-width: 560px;
   background: #0b1422;
   border: 1px solid #243547;
   border-radius: 12px;
-  padding: 12px;
+  overflow: hidden;
+}
+
+.weekly-mio-table select {
+  width: 100%;
+  min-width: 180px;
+}
+
+.week-mio-summary {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
 }
 
 .week-tabs {
@@ -955,6 +986,59 @@ th {
 
   .controls {
     gap: 6px;
+  }
+
+  .weekly-mio-table-wrap {
+    overflow: visible;
+  }
+
+  .weekly-mio-table {
+    min-width: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  .weekly-mio-table thead {
+    display: none;
+  }
+
+  .weekly-mio-table,
+  .weekly-mio-table tbody,
+  .weekly-mio-table tr,
+  .weekly-mio-table th,
+  .weekly-mio-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .weekly-mio-table tr {
+    box-sizing: border-box;
+    margin-bottom: 10px;
+    padding: 10px;
+    border: 1px solid #243547;
+    border-radius: 12px;
+    background: #0b1422;
+  }
+
+  .weekly-mio-table th,
+  .weekly-mio-table td {
+    box-sizing: border-box;
+    padding: 5px 0;
+    border: 0;
+    text-transform: none;
+    letter-spacing: normal;
+  }
+
+  .weekly-mio-table th::before,
+  .weekly-mio-table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 4px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
 
   .desktop-only {

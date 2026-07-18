@@ -179,6 +179,16 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
     availability,
     weeklyDates: requestedWeekDateSet
   });
+  const selectedMioChef = inputs.mioChef ? getChef(state.staff, inputs.mioChef) : null;
+  const mioSelectionValid = !inputs.mioChef || (!!selectedMioChef && selectedMioChef.mioEligible === true);
+  const mioSelectionMessage = !inputs.mioChef
+    ? 'MIO chef: None (no MIO duty requested)'
+    : selectedMioChef?.mioEligible
+      ? `MIO chef: ${inputs.mioChef} is eligible`
+      : selectedMioChef
+        ? `MIO chef: ${inputs.mioChef} is not eligible`
+        : `MIO chef: ${inputs.mioChef} is not in the current staff list`;
+  results.push(createResult('H032', mioSelectionValid, mioSelectionMessage));
 
   if (requestedWeekDates) {
     const rotaDates = rota.map((day) => day.date);

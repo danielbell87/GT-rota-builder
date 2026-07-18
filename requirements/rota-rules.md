@@ -22,8 +22,8 @@ These are treated as hard requirements and should be enforced before any soft pr
 9. A breakfast chef must also appear on a core section for that day.
 10. The rota must respect dated annual leave, approved unavailability, and section eligibility.
 11. The rota must not invent sickness or make up unavailable time; only the provided leave/unavailability data should be used.
-12. Exactly one eligible junior chef is assigned to MIO each week.
-13. MIO pattern is Monday–Wednesday at MIO and exactly two non-overlapping GT days in the same week; if annual leave makes that impossible, the week is infeasible.
+12. Each week independently selects either one eligible MIO chef or **No MIO chef**.
+13. When a MIO chef is selected, the pattern is exactly three weekday MIO shifts and exactly two non-overlapping GT days in the same week; if availability makes that impossible, the week is infeasible. When **No MIO chef** is selected, no MIO shifts are created and all chefs use normal leave-adjusted GT targets.
 14. If a chef is unavailable on a normal MIO day, the MIO assignment may move only to Thursday or Friday, per the AI prompt.
 15. The rota must preserve the workbook's layout, formulas, and rules when updated.
 16. At least one Sous Chef or higher must work in the kitchen each day.
@@ -58,7 +58,7 @@ These are scoring and quality objectives rather than hard blocking rules.
 - Multi-week search uses 2 candidates, 4 iterations, and 72 neighbours per iteration for each week.
 - Neighbours include two-chef/two-day exchanges, affected-day section rebuilds, primary-section exchanges, and Breakfast reassignment.
 - Every neighbour is passed through the shared hard validator. Only a strict improvement from the shared complete soft scorer can be accepted.
-- The selected MIO chef's feasible 3 MIO + 2 GT day plan is locked during local search.
+- A selected MIO chef's feasible 3 MIO + 2 GT day plan is locked during local search; no chef is locked or reserved in a no-MIO week.
 - Soft compromises are reported only from the final selected rota.
 
 ## Clarifications (confirmed from workbook)
@@ -67,7 +67,7 @@ These are scoring and quality objectives rather than hard blocking rules.
 - **Core sections**: Pass, Sauce, Garnish, Larder, Pastry
 - **Float** (if overstaffed or target-filling): One or more additional chefs across any section
 - **Breakfast**: One chef who is already assigned to a core section that day (not separate)
-- **MIO**: A separate kitchen for events (chefs loaned from GT); requires an eligible junior chef assigned Mon-Wed at MIO and exactly two GT days elsewhere in the same week
+- **MIO**: A separate kitchen for events (chefs loaned from GT). When used, it requires an eligible chef assigned exactly three weekday MIO shifts and exactly two GT days elsewhere in the same week. A week may instead select **No MIO chef**.
 
 ### Section levels
 - **Should not cover (0)**: Chef cannot work this section

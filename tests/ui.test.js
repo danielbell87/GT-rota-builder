@@ -210,6 +210,7 @@ export async function runUiTests(assert) {
   const canonicalMarkup = await fetch('../index.html').then((response) => response.text());
   const canonicalDoc = new DOMParser().parseFromString(canonicalMarkup, 'text/html');
   assert(!!canonicalDoc.querySelector('#numWeeks'), 'UI: canonical page contains #numWeeks');
+  assert(canonicalDoc.querySelector('label[for="mioChef"]')?.textContent.trim() === 'MIO chef', 'UI: one-week MIO selector has a visible associated label');
   assert(!canonicalDoc.querySelector('#chefWeekendRuleInput') && !canonicalDoc.querySelector('#chefFixedDayOffInput') && !!canonicalDoc.querySelector('#chefPreferredBreakfastInput') && !canonicalDoc.querySelector('#chefSkillBreakfastInput') && !canonicalMarkup.includes('Weekend rule') && !canonicalMarkup.includes('Fixed unavailable day'), 'UI: Preferred breakfast day is restored and Breakfast competency is absent');
   assert([...canonicalDoc.querySelectorAll('#chefPreferredBreakfastInput option')].map((option) => option.value).join(',') === ',Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday', 'UI: Preferred breakfast day offers no preference and every weekday');
   const stylesText = await fetch('../styles.css').then((response) => response.text());
@@ -245,6 +246,16 @@ export async function runUiTests(assert) {
     await setFieldValue(doc.getElementById('numWeeks'), '1');
     await waitFor(() => doc.querySelector('details.technical-details'));
 
+    assert(!doc.getElementById('singleMioControl').classList.contains('hidden') && doc.getElementById('weeklyMioSelectors').classList.contains('hidden'), 'UI: one week shows the single MIO chef selector only');
+    assert([...doc.getElementById('mioChef').options].some((option) => option.value === '' && option.textContent === 'No MIO chef'), 'UI: one-week selector includes the explicit No MIO chef option');
+    await setFieldValue(doc.getElementById('mioChef'), '');
+    await waitFor(() => canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.weekMioChefs?.[0] === '');
+    const oneWeekNoMioState = getPersistedAppState(canonicalFrame.contentWindow);
+    const oneWeekNoMioResult = buildResultFromPersistedState(oneWeekNoMioState).weeks[0];
+    assert(oneWeekNoMioResult.status === 'ok' && !oneWeekNoMioResult.rota.some((day) => day.assignments.some((assignment) => assignment.section === 'MIO')), 'UI: a one-week No MIO chef selection generates without MIO assignments');
+    assert(getVisibleResultsText(doc).includes('MIO chef: None'), 'UI: one-week summary clearly reports MIO chef: None');
+    await setFieldValue(doc.getElementById('mioChef'), 'Dan');
+
     const visibleSingleWeekText = getVisibleResultsText(doc);
     const singleWeekDetails = doc.querySelector('details.technical-details');
     const singleWeekTables = singleWeekDetails.querySelectorAll('.technical-table');
@@ -268,6 +279,24 @@ export async function runUiTests(assert) {
     assert(normalizeText(singleWeekDetails.textContent).includes('H008'), 'UI: hard-rule IDs remain visible inside technical details');
     assert(normalizeText(singleWeekDetails.textContent).includes('prefer-senior-on-pass'), 'UI: soft-rule IDs remain visible inside technical details');
 
+    await setFieldValue(doc.getElementById('numWeeks'), '2');
+    await waitFor(() => doc.querySelectorAll('select[data-weekly-mio-start]').length === 2);
+    assert(doc.querySelectorAll('.weekly-mio-table tbody tr').length === 2, 'UI: changing from one week to two displays two MIO rows immediately');
+    assert(doc.getElementById('singleMioControl').classList.contains('hidden') && !doc.getElementById('weeklyMioSelectors').classList.contains('hidden'), 'UI: multiple weeks show the per-week MIO table only');
+    assert(normalizeText(doc.getElementById('weeklyMioSelectors').textContent).includes('MIO chef by week') && normalizeText(doc.getElementById('weeklyMioSelectors').textContent).includes('Select No MIO chef'), 'UI: multi-week selector has the required heading and guidance');
+    assert([...doc.querySelectorAll('select[data-weekly-mio-start]')].every((select) => [...select.options].some((option) => option.value === '' && option.textContent === 'No MIO chef')), 'UI: every multi-week selector includes No MIO chef');
+    assert(new Set([...doc.querySelectorAll('select[data-weekly-mio-start]')].map((select) => select.id)).size === 2 && [...doc.querySelectorAll('select[data-weekly-mio-start]')].every((select) => doc.querySelector(`label[for="${select.id}"]`)), 'UI: multi-week selectors have unique IDs and associated labels');
+
+    await setFieldValue(doc.getElementById('weekStart'), '2026-07-20');
+    await waitFor(() => [...doc.querySelectorAll('.weekly-mio-table tbody tr')].every((row) => row.textContent.includes('2026') || row.textContent.includes('July')));
+    const shiftedWeekDates = [...doc.querySelectorAll('.weekly-mio-table tbody tr td:nth-child(2)')].map((cell) => normalizeText(cell.textContent));
+    assert(shiftedWeekDates[0].includes('20 Jul 2026') && shiftedWeekDates[1].includes('27 Jul 2026'), 'UI: changing week start updates every displayed week commencing date');
+    await setFieldValue(doc.getElementById('weekStart'), '2026-07-13');
+
+    await setFieldValue(doc.getElementById('numWeeks'), '1');
+    await waitFor(() => !doc.getElementById('singleMioControl').classList.contains('hidden'));
+    assert(doc.querySelectorAll('select[data-weekly-mio-start]').length === 0, 'UI: changing back to one week restores the single selector and clears stale rows');
+
     await setFieldValue(doc.getElementById('numWeeks'), '3');
     await waitFor(() => doc.querySelectorAll('select[data-weekly-mio-start]').length === 3);
 
@@ -277,9 +306,9 @@ export async function runUiTests(assert) {
 
     const weeklySelectors = [...doc.querySelectorAll('select[data-weekly-mio-start]')];
     await setFieldValue(weeklySelectors[0], 'Fred');
-    await setFieldValue(weeklySelectors[1], 'Brooke');
+    await setFieldValue(weeklySelectors[1], '');
     await setFieldValue(weeklySelectors[2], 'Dan');
-    assert(JSON.stringify(canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.weekMioChefs) === JSON.stringify(['Fred', 'Brooke', 'Dan']), 'UI: different MIO chefs are passed to different weeks');
+    assert(JSON.stringify(canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.weekMioChefs) === JSON.stringify(['Fred', '', 'Dan']), 'UI: selected and no-MIO choices remain independent between weeks');
 
     const resultsEl = doc.getElementById('results');
     const baselineResultsHtml = resultsEl.innerHTML;
@@ -287,7 +316,20 @@ export async function runUiTests(assert) {
     const baselineMultiWeek = buildResultFromPersistedState(baselinePersistedState);
     const baselineWeekSnapshots = baselineMultiWeek.weeks.map(serializeWeek);
     assert(getChefHoursText(doc, 0, 'Fred').includes('2/2') && getChefHoursText(doc, 2, 'Dan').includes('2/2'), 'UI: selected MIO chef summary shows the exact 2/2 GT target');
+    assert(getVisibleTextFromElement(getWeekPanel(doc, 1)).includes('MIO chef: None'), 'UI: the no-MIO week summary clearly reports None');
+    assert(!baselineMultiWeek.weeks[1].rota.some((day) => day.assignments.some((assignment) => assignment.section === 'MIO')), 'UI: a multi-week no-MIO selection produces no MIO assignments for that week');
+    assert(baselineMultiWeek.weeks[1].summary.every((item) => item.gtDays === item.adjustedGtTarget && item.adjustedGtTarget === 4), 'UI: the no-MIO week uses normal GT targets for all chefs');
     assert(normalizeText(getWeekPanel(doc, 0)?.textContent || '').includes('Float'), 'UI: rota table renders an explicit Float row');
+
+    let mioPersistenceFrame = null;
+    try {
+      mioPersistenceFrame = await loadFrame('../index.html');
+      const reloadedSelectors = [...mioPersistenceFrame.contentDocument.querySelectorAll('select[data-weekly-mio-start]')];
+      assert(JSON.stringify(reloadedSelectors.map((select) => select.value)) === JSON.stringify(['Fred', '', 'Dan']), 'UI: every weekly MIO selection, including No MIO chef, persists after reload');
+      assert(mioPersistenceFrame.contentWindow.__gtRotaBootstrap?.status === 'ok', 'UI: persisted mixed MIO selections reload without browser errors');
+    } finally {
+      destroyFrame(mioPersistenceFrame);
+    }
 
     doc.getElementById('addAvailabilityBtn').click();
     await waitFor(() => doc.querySelectorAll('#availabilityBody tr').length === 1);
@@ -355,6 +397,8 @@ export async function runUiTests(assert) {
       destroyFrame(availabilityReloadFrame);
     }
 
+    const weekTwoMioSelector = doc.querySelector('select[data-weekly-mio-start="2026-07-20"]');
+    await setFieldValue(weekTwoMioSelector, 'Brooke');
     doc.getElementById('addAvailabilityBtn').click();
     await waitFor(() => doc.querySelectorAll('#availabilityBody tr').length === 1);
     const infeasibleRow = doc.querySelector('#availabilityBody tr');
@@ -378,6 +422,7 @@ export async function runUiTests(assert) {
     infeasibleRow.querySelector('button[data-remove]').click();
     await waitFor(() => doc.querySelectorAll('#availabilityBody tr').length === 0);
     await waitFor(() => doc.querySelectorAll('.week-check').length === 3);
+    await setFieldValue(doc.querySelector('select[data-weekly-mio-start="2026-07-20"]'), '');
     doc.querySelector('button[data-results-week-index="0"]').click();
     await waitFor(() => !getWeekPanel(doc, 0)?.classList.contains('hidden'));
 
@@ -394,10 +439,17 @@ export async function runUiTests(assert) {
     await setFieldValue(doc.getElementById('numWeeks'), '1');
     await waitFor(() => !doc.querySelector('#resultsWeekSelect'));
     assert(doc.querySelectorAll('table.rota-table').length === 1, 'UI: selecting one week produces the existing one-week result');
+    const reducedHorizonState = getPersistedAppState(canonicalFrame.contentWindow);
+    assert(Object.keys(reducedHorizonState.weeklyInputs.weeklyMioSelections || {}).length === 1, 'UI: reducing the planning horizon removes stale weekly MIO selections');
 
     await setFieldValue(doc.getElementById('numWeeks'), '8');
     await waitFor(() => canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.visibleWeekCount === 8);
     assert(canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.visibleWeekCount === 8, 'UI: selecting eight weeks produces eight generated week results');
+    canonicalFrame.style.width = '390px';
+    await wait(100);
+    const mobileMioTable = doc.querySelector('.weekly-mio-table');
+    assert(canonicalFrame.contentWindow.getComputedStyle(mobileMioTable.querySelector('tr')).display === 'block', 'UI: multi-week MIO rows switch to the mobile card layout on narrow screens');
+    assert(mobileMioTable.getBoundingClientRect().width <= doc.getElementById('weeklyMioSelectors').getBoundingClientRect().width + 1, 'UI: mobile MIO selector avoids horizontal overflow');
   } finally {
     destroyFrame(canonicalFrame);
   }
@@ -694,7 +746,7 @@ export async function runUiTests(assert) {
     assert(migratedState.staff.find((chef) => chef.name === 'Myles')?.mioEligible === true && migratedState.staff.find((chef) => chef.name === 'Dan')?.mioEligible === false, 'UI: legacy MIO eligibility map migrates into canonical chef records');
     assert(migratedState.staff.find((chef) => chef.name === 'Charlie')?.notes === 'User-entered migration note' && migratedState.staff.find((chef) => chef.name === 'Charlie')?.skills?.Sauce === 3, 'UI: schema migration preserves user notes and merges legacy structured profile data');
     assert(JSON.stringify(migratedState.weeklyInputs.availability) === JSON.stringify(legacyStaffState.weeklyInputs.availability), 'UI: schema migration preserves annual leave and unavailable entries');
-    assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '10', 'UI: storage schema version increments to 10');
+    assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '11', 'UI: storage schema version increments to 11');
     assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.mioEligibilityByChef') === null && migrationFrame.contentWindow.localStorage.getItem('gtRota.staffProfilesByChef') === null, 'UI: legacy per-chef storage maps are removed after migration');
   } finally {
     destroyFrame(migrationFrame);

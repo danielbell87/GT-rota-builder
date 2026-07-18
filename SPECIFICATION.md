@@ -28,7 +28,9 @@ Each chef contains only `id`, `name`, display-only `role`, canonical `senior`, `
 - No separate preferred-section control is shown; **Preferred** is the single source of truth for both strongest suitability and generic section preference.
 
 ## Week Model
-Weekly inputs include week commencing date, selected MIO chef, date-based additional-chef requirements, leave/unavailability entries, and free-text rule notes.
+Weekly inputs include week commencing date, number of weeks, an optional MIO chef selection for each week, date-based additional-chef requirements, leave/unavailability entries, and free-text rule notes. The canonical no-MIO value is an empty string.
+
+For one week, the UI shows one labelled **MIO chef** selector. For two to eight weeks, it shows a responsive **MIO chef by week** table with one independent selector per week. Every selector includes **No MIO chef**. Saved selections are keyed by week-start date, overlapping weeks survive horizon changes, and stale entries outside the active horizon are removed.
 
 Additional-chef requirements are stored as `additionalChefRequirements: [{ date: "YYYY-MM-DD", count: N }]`. Each entry increases the required GT staffing on that exact calendar date by `count` chefs above the normal base. Requests are week-specific and do not carry across week changes.
 
@@ -65,8 +67,9 @@ Implemented as structured hard validation checks in `js/validation.js` and rule 
 - Pass coverage Thu-Sun
 - No MIO at weekends
 - MIO eligibility enforcement
-- MIO weekday pattern expectation
-- Exact weekly GT targets per chef, including annual-leave adjustments and the selected MIO chef's fixed 2 GT target
+- MIO weekday pattern expectation only when an eligible chef is selected
+- No MIO assignments when **No MIO chef** is selected
+- Exact weekly GT targets per chef, including annual-leave adjustments and the selected MIO chef's fixed 2 GT target; no-MIO weeks use normal leave-adjusted targets for everyone
 - One primary GT assignment per chef per day (Pass/Sauce/Garnish/Larder/Pastry/Float)
 - Annual leave hourly credit checks
 - Concurrent leave guardrail
@@ -98,7 +101,7 @@ Section levels are interpreted in order:
 - Explore two-chef/two-day membership exchanges (which preserve exact weekly targets), affected-day section rebuilds, valid primary-section swaps, and Breakfast reassignment.
 - Accept only strict whole-rota soft-score improvements and repeat until local convergence or the configured iteration bound.
 - Compare optimized candidates with complete soft scoring, including the existing multi-week fairness context.
-- Lock the selected MIO chef's established GT-day plan during local search so exact 3 MIO + 2 GT and existing weekend-first/fallback behaviour remain unchanged.
+- When a MIO chef is selected, lock that chef's established GT-day plan during local search so exact 3 MIO + 2 GT and existing weekend-first/fallback behaviour remain unchanged. No-MIO weeks reserve no chef.
 
 Search limits are 3 candidates × 8 iterations × 120 neighbours for a single week, and 2 × 4 × 72 per week for multi-week requests. These explicit limits bound browser work; the lower multi-week budget keeps an eight-week request practical while still performing several hundred hard-validated neighbour comparisons per week.
 
@@ -124,7 +127,7 @@ Browser localStorage stores:
 - history
 - legacy compatibility maps for staff profiles and MIO eligibility
 
-Schema version 10 migrates existing staff records idempotently. It preserves valid `preferredBreakfast` weekdays and removes obsolete `skills.Breakfast` competency data, while retaining the version 9 consolidation of `seniorStatus`, legacy `fixedDayOff`, and legacy MIO/profile maps. Weekly inputs, dated availability, notes, generated rotas, fairness history, and published history remain intact.
+Schema version 11 normalizes per-week MIO selections, preserves explicit empty selections, and retains only entries inside the active planning horizon. It preserves version 10's valid `preferredBreakfast` weekdays and removal of obsolete `skills.Breakfast` competency data, plus the version 9 consolidation of `seniorStatus`, legacy `fixedDayOff`, and legacy MIO/profile maps. Other weekly inputs, dated availability, notes, generated rotas, fairness history, and published history remain intact.
 
 ## Known Limitations
 - No external optimization engine; candidate generation is heuristic

@@ -3,8 +3,8 @@ export const CORE_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry'];
 export const DISPLAY_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry', 'Float', 'Breakfast', 'MIO'];
 export const EDITABLE_SKILL_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry'];
 
-export const APP_BUILD_VERSION = '2026.07.18.2';
-export const CACHE_BUST_VERSION = '20260718b';
+export const APP_BUILD_VERSION = '2026.07.18.3';
+export const CACHE_BUST_VERSION = '20260718c';
 export const DAY_FAIRNESS_WEIGHTS = {
   Monday: 0,
   Tuesday: 0,
