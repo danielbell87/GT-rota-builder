@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-18 — Whole-week Breakfast preference optimization
+
+- Added a dedicated seven-day Breakfast matching pass that honours every feasible Preferred breakfast day without changing GT working days or primary section assignments.
+- Added direct-swap and augmenting-path multi-day reassignment coverage, with rotation breadth and assignment stability retained as tie-breakers.
+- Made Preferred breakfast matches outrank one repeat penalty while keeping the preference soft when the chef is unavailable, not working, or ineligible.
+- Allowed Breakfast to overlay either a core section or Float, while continuing to require exactly one eligible working GT chef per day.
+- Added the Charlie/Joel Thursday-Sunday regression plus infeasibility, working-chef, exactly-one, boolean eligibility, Float, hard-rule, and full-suite coverage.
+
 ## 2026-07-18 — Optional MIO weeks
 
 - Added a persistent **No MIO chef** choice to the single-week selector and every row of the responsive **MIO chef by week** table.

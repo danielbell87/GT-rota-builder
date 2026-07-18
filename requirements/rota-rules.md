@@ -19,7 +19,7 @@ These are treated as hard requirements and should be enforced before any soft pr
    - More than one Float chef may be used on the same day.
    - A Float chef must not also hold another primary GT section that day.
 8. Required sections must be covered by an eligible chef.
-9. A breakfast chef must also appear on a core section for that day.
+9. A breakfast chef must also appear on a core section or Float for that day.
 10. The rota must respect dated annual leave, approved unavailability, and section eligibility.
 11. The rota must not invent sickness or make up unavailable time; only the provided leave/unavailability data should be used.
 12. Each week independently selects either one eligible MIO chef or **No MIO chef**.
@@ -44,6 +44,7 @@ These are scoring and quality objectives rather than hard blocking rules.
 9. The rota should avoid unnecessary overstaffing, but must use Float whenever extra GT days are required to satisfy exact weekly chef targets.
 10. Thursday to Sunday, Pass should be assigned to an available chef marked Senior chef where this can be achieved without breaking hard constraints.
 11. Preferred Days Off may contain any Monday-to-Sunday combination. They should be honoured where feasible, but may be overridden for coverage, senior cover, section strength, exact weekly targets, or overall feasibility.
+12. Preferred breakfast day remains soft, but Breakfast duties must be reassigned across the complete week to honour every feasible match before rotation fairness is used as a tie-breaker.
 
 ## Important notes from the workbook
 
@@ -56,7 +57,8 @@ These are scoring and quality objectives rather than hard blocking rules.
 - The greedy Monday-to-Sunday builder supplies initial feasible rotas; it is not the final decision-maker.
 - Single-week search evaluates up to 3 deterministic initial candidates, with at most 8 local-search iterations and 120 neighbour evaluations per iteration.
 - Multi-week search uses 2 candidates, 4 iterations, and 72 neighbours per iteration for each week.
-- Neighbours include two-chef/two-day exchanges, affected-day section rebuilds, primary-section exchanges, and Breakfast reassignment.
+- Neighbours include two-chef/two-day exchanges, affected-day section rebuilds, and primary-section exchanges.
+- A separate complete-week Breakfast matching pass runs on every candidate and can use direct swaps or augmenting-path multi-day reassignments.
 - Every neighbour is passed through the shared hard validator. Only a strict improvement from the shared complete soft scorer can be accepted.
 - A selected MIO chef's feasible 3 MIO + 2 GT day plan is locked during local search; no chef is locked or reserved in a no-MIO week.
 - Soft compromises are reported only from the final selected rota.
@@ -66,7 +68,7 @@ These are scoring and quality objectives rather than hard blocking rules.
 ### Daily sections
 - **Core sections**: Pass, Sauce, Garnish, Larder, Pastry
 - **Float** (if overstaffed or target-filling): One or more additional chefs across any section
-- **Breakfast**: One chef who is already assigned to a core section that day (not separate)
+- **Breakfast**: One eligible chef who is already assigned to a core section or Float that day (not separate)
 - **MIO**: A separate kitchen for events (chefs loaned from GT). When used, it requires an eligible chef assigned exactly three weekday MIO shifts and exactly two GT days elsewhere in the same week. A week may instead select **No MIO chef**.
 
 ### Section levels

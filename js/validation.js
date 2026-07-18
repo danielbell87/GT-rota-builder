@@ -237,8 +237,8 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
     if (breakfast.length === 1) {
       const breakfastChef = breakfast[0].chef;
       const breakfastStaff = getChef(state.staff, breakfastChef);
-      const coreChefSet = new Set(day.assignments.filter((a) => CORE_SECTIONS.includes(a.section)).map((a) => a.chef));
-      results.push(createResult('H007', coreChefSet.has(breakfastChef), `${day.dayName}: breakfast chef must also be on a core section`));
+      const workingGtChefSet = new Set(day.assignments.filter((a) => PRIMARY_GT_SECTIONS.includes(a.section)).map((a) => a.chef));
+      results.push(createResult('H007', workingGtChefSet.has(breakfastChef), `${day.dayName}: breakfast chef must also have a core or Float GT assignment`));
       results.push(createResult('H028', breakfastStaff?.breakfastEligible === true, `${day.dayName}: breakfast chef must be marked Breakfast eligible`));
     }
 

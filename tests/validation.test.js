@@ -1,6 +1,6 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota } from '../js/solver.js';
-import { validateRotaHardRules, validateRotaSoftRules, isRotaValid, getStaffConfigurationWarnings } from '../js/validation.js?v=20260718c';
+import { validateRotaHardRules, validateRotaSoftRules, isRotaValid, getStaffConfigurationWarnings } from '../js/validation.js?v=20260718e';
 
 function createSummary(state, annualLeaveHoursByChef = {}) {
   return state.staff.map((chef) => {
@@ -93,6 +93,30 @@ export async function runValidationTests(assert) {
   breakfastEligibilityState.staff.find((chef) => chef.name === firstBreakfast.chef).breakfastEligible = false;
   const breakfastEligibilityValidation = validateRotaHardRules({ rota: breakfastEligibilityCorrupted, state: breakfastEligibilityState, inputs: breakfastEligibilityState.weeklyInputs, summary: result.summary, fullWeekDates: result.fullWeekDates });
   assert(breakfastEligibilityValidation.some((v) => v.ruleId === 'H028' && !v.passed), 'Validation rejects a Breakfast assignment for an ineligible chef');
+
+  const floatBreakfastRota = JSON.parse(JSON.stringify(result.rota));
+  const floatBreakfastDay = floatBreakfastRota.find((day) => day.assignments.some((assignment) => {
+    if (assignment.section !== 'Float') return false;
+    return state.staff.find((chef) => chef.name === assignment.chef)?.breakfastEligible === true;
+  }));
+  const eligibleFloat = floatBreakfastDay?.assignments.find((assignment) => (
+    assignment.section === 'Float'
+      && state.staff.find((chef) => chef.name === assignment.chef)?.breakfastEligible === true
+  ));
+  if (floatBreakfastDay && eligibleFloat) {
+    floatBreakfastDay.assignments.find((assignment) => assignment.section === 'Breakfast').chef = eligibleFloat.chef;
+  }
+  const floatBreakfastValidation = validateRotaHardRules({
+    rota: floatBreakfastRota,
+    state,
+    inputs: state.weeklyInputs,
+    summary: result.summary,
+    fullWeekDates: result.fullWeekDates
+  });
+  assert(
+    !!eligibleFloat && !floatBreakfastValidation.some((v) => ['H007', 'H028'].includes(v.ruleId) && !v.passed),
+    'Validation allows a Breakfast-eligible chef already working Float to cover Breakfast'
+  );
 
   const sectionEligibilityState = JSON.parse(JSON.stringify(state));
   const sectionEligibilityCorrupted = JSON.parse(JSON.stringify(result.rota));

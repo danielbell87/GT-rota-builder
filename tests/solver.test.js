@@ -8,11 +8,12 @@ import {
   generateNeighborCandidates,
   getSectionCandidateBaseScore,
   hardValidateRotaCandidate,
+  optimizeBreakfastAssignments,
   optimizeRotaCandidate,
   selectBreakfastChef
 } from '../js/solver.js';
 import { isSenior, getHoursForDay, getHoursForAssignment, scoreSoftPreferences } from '../js/scoring.js';
-import { isUnavailable, validateRotaHardRules, validateRotaSoftRules } from '../js/validation.js?v=20260718c';
+import { isUnavailable, validateRotaHardRules, validateRotaSoftRules } from '../js/validation.js?v=20260718e';
 import { canCoverSection, sectionCandidateScore } from '../js/section-levels.js';
 import { normalizeChefRecord } from '../js/staff.js';
 
@@ -206,8 +207,12 @@ export async function runSolverTests(assert) {
     'A matching Preferred breakfast day wins when otherwise-valid candidates are tied'
   );
   assert(
-    selectBreakfastChef(tiedBreakfastCandidates, 'Monday', { [tiedBreakfastCandidates[1].name]: 1 })?.name === tiedBreakfastCandidates[0].name,
-    'Existing Breakfast fairness remains stronger than Preferred breakfast day'
+    selectBreakfastChef(tiedBreakfastCandidates, 'Monday', { [tiedBreakfastCandidates[1].name]: 1 })?.name === tiedBreakfastCandidates[1].name,
+    'A feasible Preferred breakfast day takes priority over a Breakfast repeat'
+  );
+  assert(
+    selectBreakfastChef(tiedBreakfastCandidates.map((chef) => ({ ...chef, preferredBreakfast: '' })), 'Monday', { [tiedBreakfastCandidates[0].name]: 1 })?.name === tiedBreakfastCandidates[1].name,
+    'Breakfast rotation still breaks ties when no candidate has a matching preference'
   );
 
   preferredBreakfastState.staff.forEach((chef) => {
@@ -217,6 +222,135 @@ export async function runSolverTests(assert) {
   assert(
     mismatchedBreakfastPreferenceResult.status === 'ok' && getHardFailures(preferredBreakfastState, mismatchedBreakfastPreferenceResult).length === 0,
     'Preferred breakfast day remains soft and cannot make a valid rota infeasible'
+  );
+
+  const breakfastSwapState = setupBaseState();
+  breakfastSwapState.staff.find((chef) => chef.name === 'Charlie').preferredBreakfast = 'Sunday';
+  breakfastSwapState.staff.find((chef) => chef.name === 'Charlie').skills.Breakfast = 0;
+  breakfastSwapState.staff.find((chef) => chef.name === 'Joel').skills.Breakfast = 99;
+  breakfastSwapState.weeklyInputs.availability = ['Charlie', 'Joel'].map((chef) => ({
+    chef,
+    type: 'Unavailable',
+    startDate: '2026-07-13',
+    finishDate: '2026-07-15',
+    notes: 'Regression setup: forces Thursday-Sunday GT availability'
+  }));
+  syncCompatibilityViews();
+  const breakfastSwapBase = runScenario(breakfastSwapState);
+  const breakfastSwapCompeting = cloneRotaCandidate(breakfastSwapBase.rota);
+  const forcedBreakfastByDay = { Thursday: 'Charlie', Sunday: 'Joel' };
+  const orderedBreakfastDays = breakfastSwapCompeting
+    .slice()
+    .sort((a, b) => {
+      const forcedA = Object.prototype.hasOwnProperty.call(forcedBreakfastByDay, a.dayName) ? 0 : 1;
+      const forcedB = Object.prototype.hasOwnProperty.call(forcedBreakfastByDay, b.dayName) ? 0 : 1;
+      return forcedA - forcedB || a.date.localeCompare(b.date);
+    });
+  const distinctBreakfastPlan = {};
+  const usedBreakfastChefs = new Set();
+  function findDistinctBreakfastPlan(dayIndex) {
+    if (dayIndex === orderedBreakfastDays.length) return true;
+    const day = orderedBreakfastDays[dayIndex];
+    const forcedChef = forcedBreakfastByDay[day.dayName];
+    const candidates = day.assignments
+      .filter((assignment) => PRIMARY_GT_SECTIONS.includes(assignment.section))
+      .map((assignment) => assignment.chef)
+      .filter((name) => breakfastSwapState.staff.find((chef) => chef.name === name)?.breakfastEligible === true)
+      .filter((name) => !forcedChef || name === forcedChef)
+      .sort();
+    for (const chefName of candidates) {
+      if (usedBreakfastChefs.has(chefName)) continue;
+      usedBreakfastChefs.add(chefName);
+      distinctBreakfastPlan[day.dayName] = chefName;
+      if (findDistinctBreakfastPlan(dayIndex + 1)) return true;
+      usedBreakfastChefs.delete(chefName);
+      delete distinctBreakfastPlan[day.dayName];
+    }
+    return false;
+  }
+  const hasDistinctCompetingPlan = findDistinctBreakfastPlan(0);
+  if (hasDistinctCompetingPlan) {
+    breakfastSwapCompeting.forEach((day) => {
+      day.assignments.find((assignment) => assignment.section === 'Breakfast').chef = distinctBreakfastPlan[day.dayName];
+    });
+  }
+  const competingBreakfastHard = hardValidateRotaCandidate({
+    rota: breakfastSwapCompeting,
+    state: breakfastSwapState,
+    inputs: breakfastSwapState.weeklyInputs,
+    fullWeekDates: breakfastSwapBase.fullWeekDates
+  });
+  const optimizedBreakfastSwap = optimizeBreakfastAssignments({
+    rota: breakfastSwapCompeting,
+    state: breakfastSwapState
+  });
+  const optimizedBreakfastHard = hardValidateRotaCandidate({
+    rota: optimizedBreakfastSwap.rota,
+    state: breakfastSwapState,
+    inputs: breakfastSwapState.weeklyInputs,
+    fullWeekDates: breakfastSwapBase.fullWeekDates
+  });
+  const optimizedThursdayBreakfast = optimizedBreakfastSwap.rota
+    .find((day) => day.dayName === 'Thursday')?.assignments
+    .find((assignment) => assignment.section === 'Breakfast')?.chef;
+  const optimizedSundayBreakfast = optimizedBreakfastSwap.rota
+    .find((day) => day.dayName === 'Sunday')?.assignments
+    .find((assignment) => assignment.section === 'Breakfast')?.chef;
+  assert(
+    breakfastSwapBase.status === 'ok'
+      && hasDistinctCompetingPlan
+      && competingBreakfastHard.valid,
+    'Breakfast regression setup is a hard-valid week with Charlie and Joel working Thursday-Sunday'
+  );
+  assert(
+    optimizedSundayBreakfast === 'Charlie' && optimizedThursdayBreakfast === 'Joel',
+    'Regression: whole-week Breakfast optimization swaps Joel to Thursday and gives Charlie preferred Sunday'
+  );
+  assert(
+    optimizedBreakfastSwap.preferenceScoreAfter > optimizedBreakfastSwap.preferenceScoreBefore
+      && optimizedBreakfastSwap.fairnessRepeatsAfter <= optimizedBreakfastSwap.fairnessRepeatsBefore,
+    'Breakfast rearrangement improves total preference satisfaction without worsening rotation fairness'
+  );
+  assert(
+    optimizedBreakfastHard.valid && optimizedBreakfastHard.hardValidation.every((result) => result.passed),
+    'Breakfast preference optimization preserves every hard rota rule'
+  );
+  assert(
+    optimizedBreakfastSwap.rota.every((day) => {
+      const breakfasts = day.assignments.filter((assignment) => assignment.section === 'Breakfast');
+      const breakfastChef = breakfasts[0]?.chef;
+      return breakfasts.length === 1
+        && day.chefs.includes(breakfastChef)
+        && day.assignments.some((assignment) => assignment.chef === breakfastChef && PRIMARY_GT_SECTIONS.includes(assignment.section));
+    }),
+    'Breakfast optimization keeps exactly one working GT chef assigned per day'
+  );
+  assert(
+    optimizedSundayBreakfast === 'Charlie'
+      && breakfastSwapState.staff.find((chef) => chef.name === 'Charlie').skills.Breakfast === 0
+      && breakfastSwapState.staff.find((chef) => chef.name === 'Joel').skills.Breakfast === 99,
+    'Breakfast eligibility remains boolean and ignores legacy competency weighting'
+  );
+
+  const infeasibleBreakfastPreferenceState = setupBaseState();
+  infeasibleBreakfastPreferenceState.staff.find((chef) => chef.name === 'Charlie').preferredBreakfast = 'Sunday';
+  infeasibleBreakfastPreferenceState.weeklyInputs.availability = [{
+    chef: 'Charlie',
+    type: 'Unavailable',
+    startDate: '2026-07-19',
+    finishDate: '2026-07-19',
+    notes: 'Preferred Breakfast day is genuinely infeasible'
+  }];
+  syncCompatibilityViews();
+  const infeasibleBreakfastPreference = runScenario(infeasibleBreakfastPreferenceState);
+  const infeasibleSundayBreakfast = infeasibleBreakfastPreference.rota
+    .find((day) => day.dayName === 'Sunday')?.assignments
+    .find((assignment) => assignment.section === 'Breakfast')?.chef;
+  assert(
+    infeasibleBreakfastPreference.status === 'ok'
+      && infeasibleSundayBreakfast !== 'Charlie'
+      && getHardFailures(infeasibleBreakfastPreferenceState, infeasibleBreakfastPreference).length === 0,
+    'A Preferred breakfast day may be missed when that chef cannot feasibly work it'
   );
 
   const baselineFloatAssignments = baseline.rota.flatMap((day) => day.assignments

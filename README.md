@@ -9,7 +9,7 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 - **Compact chefs list** with click-to-edit popup profiles
 - **Availability management** for annual leave and unavailable dates
 - **Additional chef requests** via compact date-based list and modal dialog
-- **Breakfast shift scheduling** with eligibility, core coupling, and fairness scoring
+- **Breakfast shift scheduling** with eligibility, working-GT coupling, whole-week preference optimization, and fairness scoring
 - **Exact weekly GT target enforcement** with explicit Float assignments
 - **Deterministic whole-rota optimisation** after the first hard-valid weekly plan
 - **Hours tracking** with adjusted calculations for breakfast shifts
@@ -37,7 +37,7 @@ A web-based chef scheduling application that generates weekly rotas based on ava
 - The popup uses four section levels everywhere: **Should not cover**, **In training**, **Competent**, **Preferred**.
 - **Preferred** combines strongest suitability and generic section preference; there is no separate preferred-section field.
 - **Preferred Days Off** is the sole day-off preference mechanism and supports every day from Monday through Sunday.
-- **Preferred breakfast day** optionally favours one weekday when breakfast fairness and all hard constraints permit it.
+- **Preferred breakfast day** optionally favours one weekday. It remains soft, but is honoured whenever the already-working eligible chefs can be reassigned without breaking a hard rule.
 - **Breakfast eligible** is the only breakfast qualification; Breakfast is not a section competency.
 - Role is display-only. The **Senior chef** checkbox is the sole source of senior-cover eligibility.
 - Service pace has been removed because it is not used by rota generation.
@@ -65,7 +65,7 @@ Requests are tied to a specific calendar date and do not carry across week chang
 
 ### Whole-rota optimisation
 
-The chronological greedy builder remains the feasible-solution generator, but a hard-valid week is no longer returned immediately. The solver builds deterministic starting rotas using chronological, reverse, and weekend-first planning orders; scores each complete week; then explores two-chef/two-day exchanges, affected-day section rebuilds, primary-section swaps, and Breakfast reassignments. Every neighbour is passed through the shared hard validator, and only a strict complete-score improvement can be accepted.
+The chronological greedy builder remains the feasible-solution generator, but a hard-valid week is no longer returned immediately. The solver builds deterministic starting rotas using chronological, reverse, and weekend-first planning orders; scores each complete week; then explores two-chef/two-day exchanges, affected-day section rebuilds, and primary-section swaps. Every complete candidate also receives a dedicated seven-day Breakfast matching pass before shared hard validation. The pass can perform direct swaps or longer reassignment chains without changing GT days or primary sections.
 
 Single-week generation is bounded to 3 initial candidates, 8 local-search iterations per candidate, and 120 neighbour evaluations per iteration. Multi-week generation uses 2 candidates, 4 iterations, and 72 neighbours per iteration. The lower multi-week limits retain meaningful search while keeping an eight-week request responsive in a normal desktop browser. Identical inputs produce deterministic results without uncontrolled randomness.
 
@@ -84,7 +84,8 @@ Preferred Day Off compromises are calculated only from the final optimized rota.
 
 ### Breakfast Shifts
 - Spread breakfast shifts across eligible chefs where possible; repeats receive a soft fairness penalty
-- Breakfast is an overlay on a core GT section and does not replace the chef's primary section assignment
+- Maximise feasible Preferred breakfast-day matches across the complete week before using rotation fairness and deterministic stability as tie-breakers
+- Breakfast is an overlay on a core or Float GT assignment and does not replace the chef's primary assignment
 - 7:30am start time with adjusted hours:
   - Mon-Fri: 14 hours
   - Saturday: 14.5 hours

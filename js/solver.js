@@ -14,10 +14,11 @@ import {
   isUnavailable,
   getRequiredChefCount,
   getCoreSections,
+  PRIMARY_GT_SECTIONS,
   validateRotaHardRules,
   getAdjustedGtTargetsByChef,
   getAnnualLeaveDatesByChef
-} from './validation.js?v=20260718c';
+} from './validation.js?v=20260718e';
 import { filterAvailabilityForWeek, filterAdditionalChefRequirementsForWeek } from './weekly-inputs.js';
 
 const PASS_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -27,7 +28,7 @@ const MIO_GT_PRIMARY_DAYS = ['Saturday', 'Sunday'];
 const MIO_GT_FALLBACK_DAYS = ['Thursday', 'Friday', 'Monday', 'Tuesday', 'Wednesday'];
 const FLOAT_PRIORITY_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-export const SOLVER_ENGINE_VERSION = '2026-07-18-whole-rota-optimization';
+export const SOLVER_ENGINE_VERSION = '2026-07-18-breakfast-week-optimization';
 
 export const SOLVER_SEARCH_LIMITS = Object.freeze({
   singleWeek: Object.freeze({
@@ -415,12 +416,13 @@ export function selectBreakfastChef(candidates, dayName, breakfastCounts = {}) {
     .filter((staff) => staff?.breakfastEligible === true)
     .slice()
     .sort((a, b) => {
+      const preferenceA = a.preferredBreakfast === dayName ? 1 : 0;
+      const preferenceB = b.preferredBreakfast === dayName ? 1 : 0;
+      if (preferenceA !== preferenceB) return preferenceB - preferenceA;
       const countA = breakfastCounts[a.name] || 0;
       const countB = breakfastCounts[b.name] || 0;
       if (countA !== countB) return countA - countB;
-      const preferenceA = a.preferredBreakfast === dayName ? 1 : 0;
-      const preferenceB = b.preferredBreakfast === dayName ? 1 : 0;
-      return preferenceB - preferenceA;
+      return String(a.name || a.id || '').localeCompare(String(b.name || b.id || ''));
     })[0] || null;
 }
 
@@ -522,11 +524,11 @@ function createDayPlan({
     assignments.push({ chef: extra.name, section: 'Float' });
   }
 
-  const coreChefs = assignments
-    .filter((assignment) => coreSections.includes(assignment.section))
+  const breakfastCandidates = assignments
+    .filter((assignment) => PRIMARY_GT_SECTIONS.includes(assignment.section))
     .map((assignment) => assignment.chef);
   const breakfastChef = selectBreakfastChef(
-    coreChefs.map((name) => state.staff.find((staff) => staff.name === name)),
+    breakfastCandidates.map((name) => state.staff.find((staff) => staff.name === name)),
     dayName,
     breakfastCounts
   );
@@ -725,6 +727,188 @@ export function cloneRotaCandidate(rota) {
   }));
 }
 
+function getBreakfastMetrics(rota, state) {
+  const counts = {};
+  let preferenceScore = 0;
+
+  (rota || []).forEach((day) => {
+    const breakfast = day.assignments.find((assignment) => assignment.section === 'Breakfast');
+    if (!breakfast) return;
+    counts[breakfast.chef] = (counts[breakfast.chef] || 0) + 1;
+    const chef = state.staff.find((candidate) => candidate.name === breakfast.chef);
+    if (chef?.preferredBreakfast === day.dayName) preferenceScore += 1;
+  });
+
+  const assignedDays = Object.values(counts).reduce((total, count) => total + count, 0);
+  const distinctChefs = Object.keys(counts).length;
+  return {
+    preferenceScore,
+    counts,
+    distinctChefs,
+    repeatedAssignments: assignedDays - distinctChefs
+  };
+}
+
+function getEligibleBreakfastChefNames(day, state) {
+  const workingPrimaryChefs = new Set(
+    day.assignments
+      .filter((assignment) => PRIMARY_GT_SECTIONS.includes(assignment.section))
+      .map((assignment) => assignment.chef)
+      .filter((name) => day.chefs.includes(name))
+  );
+
+  return state.staff
+    .filter((chef) => chef.breakfastEligible === true && workingPrimaryChefs.has(chef.name))
+    .map((chef) => chef.name)
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function setSingleBreakfastAssignment(day, chefName) {
+  let breakfastSeen = false;
+  const assignments = day.assignments
+    .map((assignment) => {
+      if (assignment.section !== 'Breakfast') return assignment;
+      if (breakfastSeen) return null;
+      breakfastSeen = true;
+      return { ...assignment, chef: chefName };
+    })
+    .filter(Boolean);
+
+  if (!breakfastSeen) {
+    const mioIndex = assignments.findIndex((assignment) => assignment.section === 'MIO');
+    const insertionIndex = mioIndex >= 0 ? mioIndex : assignments.length;
+    assignments.splice(insertionIndex, 0, { chef: chefName, section: 'Breakfast' });
+  }
+  day.assignments = assignments;
+}
+
+// Breakfast is an overlay on an already-built GT week, so its complete feasible
+// search space can be optimized independently without changing days or sections.
+// The seven-day matching pass maximizes matched preferences first, then keeps
+// the widest possible rotation and minimizes unnecessary churn.
+export function optimizeBreakfastAssignments({ rota, state }) {
+  const optimizedRota = cloneRotaCandidate(rota);
+  const before = getBreakfastMetrics(optimizedRota, state);
+  const orderedDays = optimizedRota
+    .map((day, index) => ({
+      day,
+      index,
+      eligibleChefNames: getEligibleBreakfastChefNames(day, state),
+      initialChef: day.assignments.find((assignment) => assignment.section === 'Breakfast')?.chef || ''
+    }))
+    .sort((a, b) => a.day.date.localeCompare(b.day.date));
+
+  if (orderedDays.some((item) => item.eligibleChefNames.length === 0)) {
+    return {
+      rota: optimizedRota,
+      feasible: false,
+      changedDays: [],
+      preferenceScoreBefore: before.preferenceScore,
+      preferenceScoreAfter: before.preferenceScore,
+      fairnessRepeatsBefore: before.repeatedAssignments,
+      fairnessRepeatsAfter: before.repeatedAssignments
+    };
+  }
+
+  const initialChefSet = new Set(orderedDays.map((item) => item.initialChef).filter(Boolean));
+  orderedDays.forEach((item) => {
+    const matchingPreferenceChefs = item.eligibleChefNames.filter((chefName) => (
+      state.staff.find((chef) => chef.name === chefName)?.preferredBreakfast === item.day.dayName
+    ));
+    item.allowedChefNames = matchingPreferenceChefs.length
+      ? matchingPreferenceChefs
+      : item.eligibleChefNames;
+  });
+
+  const displacedInitialChefs = new Set(
+    orderedDays
+      .filter((item) => item.initialChef && !item.allowedChefNames.includes(item.initialChef))
+      .map((item) => item.initialChef)
+  );
+  orderedDays.forEach((item) => {
+    item.allowedChefNames = item.allowedChefNames.slice().sort((a, b) => {
+      const currentDiff = Number(b === item.initialChef) - Number(a === item.initialChef);
+      if (currentDiff !== 0) return currentDiff;
+      const displacedDiff = Number(displacedInitialChefs.has(b)) - Number(displacedInitialChefs.has(a));
+      if (displacedDiff !== 0) return displacedDiff;
+      const existingDiff = Number(initialChefSet.has(b)) - Number(initialChefSet.has(a));
+      return existingDiff || a.localeCompare(b);
+    });
+  });
+
+  const matchingOrder = orderedDays
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => (
+      a.item.allowedChefNames.length - b.item.allowedChefNames.length
+      || a.item.day.date.localeCompare(b.item.day.date)
+    ))
+    .map((entry) => entry.index);
+  const chefToDay = new Map();
+
+  function assignDistinctChef(dayIndex, visitedChefs) {
+    const item = orderedDays[dayIndex];
+    for (const chefName of item.allowedChefNames) {
+      if (visitedChefs.has(chefName)) continue;
+      visitedChefs.add(chefName);
+      const occupiedDayIndex = chefToDay.get(chefName);
+      if (occupiedDayIndex === undefined || assignDistinctChef(occupiedDayIndex, visitedChefs)) {
+        chefToDay.set(chefName, dayIndex);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  matchingOrder.forEach((dayIndex) => {
+    assignDistinctChef(dayIndex, new Set());
+  });
+
+  const assignedChefByDay = new Map();
+  chefToDay.forEach((dayIndex, chefName) => assignedChefByDay.set(dayIndex, chefName));
+  const breakfastCounts = {};
+  assignedChefByDay.forEach((chefName) => {
+    breakfastCounts[chefName] = (breakfastCounts[chefName] || 0) + 1;
+  });
+  matchingOrder.forEach((dayIndex) => {
+    if (assignedChefByDay.has(dayIndex)) return;
+    const item = orderedDays[dayIndex];
+    const chefName = item.allowedChefNames.slice().sort((a, b) => {
+      const countDiff = (breakfastCounts[a] || 0) - (breakfastCounts[b] || 0);
+      if (countDiff !== 0) return countDiff;
+      const currentDiff = Number(b === item.initialChef) - Number(a === item.initialChef);
+      if (currentDiff !== 0) return currentDiff;
+      const displacedDiff = Number(displacedInitialChefs.has(b)) - Number(displacedInitialChefs.has(a));
+      return displacedDiff || a.localeCompare(b);
+    })[0];
+    assignedChefByDay.set(dayIndex, chefName);
+    breakfastCounts[chefName] = (breakfastCounts[chefName] || 0) + 1;
+  });
+
+  const changedDays = [];
+  orderedDays.forEach((item, index) => {
+    const chefName = assignedChefByDay.get(index);
+    if (chefName !== item.initialChef) {
+      changedDays.push({
+        dayName: item.day.dayName,
+        from: item.initialChef,
+        to: chefName
+      });
+    }
+    setSingleBreakfastAssignment(optimizedRota[item.index], chefName);
+  });
+  const after = getBreakfastMetrics(optimizedRota, state);
+
+  return {
+    rota: optimizedRota,
+    feasible: true,
+    changedDays,
+    preferenceScoreBefore: before.preferenceScore,
+    preferenceScoreAfter: after.preferenceScore,
+    fairnessRepeatsBefore: before.repeatedAssignments,
+    fairnessRepeatsAfter: after.repeatedAssignments
+  };
+}
+
 function getStaffOrder(state) {
   return new Map(state.staff.map((chef, index) => [chef.name, index]));
 }
@@ -764,7 +948,8 @@ function rebuildDayAssignments({ day, state, inputs, breakfastCounts }) {
   function search(sectionIndex, localScore) {
     if (sectionIndex === sectionOrder.length) {
       const coreChefNames = coreSections.map((section) => assignedBySection[section]);
-      if (!coreChefNames.some((name) => state.staff.find((chef) => chef.name === name)?.breakfastEligible === true)) return;
+      const hasBreakfastChef = selectedChefs.some((chef) => chef.breakfastEligible === true);
+      if (!hasBreakfastChef) return;
       const signature = coreChefNames.join('|');
       if (!best || localScore > best.score || (localScore === best.score && signature.localeCompare(best.signature) < 0)) {
         best = {
@@ -801,7 +986,7 @@ function rebuildDayAssignments({ day, state, inputs, breakfastCounts }) {
     state
   ).map((chef) => ({ chef, section: 'Float' }));
   const breakfastChef = selectBreakfastChef(
-    coreAssignments.map((assignment) => state.staff.find((chef) => chef.name === assignment.chef)),
+    [...coreAssignments, ...floatAssignments].map((assignment) => state.staff.find((chef) => chef.name === assignment.chef)),
     day.dayName,
     breakfastCounts
   );
@@ -985,24 +1170,6 @@ export function generateNeighborCandidates({
       }
     }
 
-    const breakfast = day.assignments.find((assignment) => assignment.section === 'Breakfast');
-    const eligibleCoreChefs = day.assignments
-      .filter((assignment) => CORE_SECTIONS.includes(assignment.section))
-      .map((assignment) => assignment.chef)
-      .filter((name) => state.staff.find((chef) => chef.name === name)?.breakfastEligible === true)
-      .sort();
-    eligibleCoreChefs.forEach((chefName) => {
-      if (neighbors.length >= limit || chefName === breakfast?.chef) return;
-      const changed = cloneRotaCandidate(rota);
-      changed[dayIndex].assignments.find((assignment) => assignment.section === 'Breakfast').chef = chefName;
-      addUniqueNeighbor({
-        neighbors,
-        seen,
-        rota: changed,
-        move: `breakfast:${day.dayName}:${chefName}`,
-        limit
-      });
-    });
   });
 
   for (let leftDay = 0; leftDay < orderedDayIndexes.length; leftDay += 1) {
@@ -1042,20 +1209,27 @@ export function generateNeighborCandidates({
 }
 
 function evaluateCompleteRotaCandidate({ rota, state, inputs, fullWeekDates, fairnessContext }) {
-  const hardResult = hardValidateRotaCandidate({ rota, state, inputs, fullWeekDates });
+  const breakfastOptimization = optimizeBreakfastAssignments({ rota, state });
+  const hardResult = hardValidateRotaCandidate({
+    rota: breakfastOptimization.rota,
+    state,
+    inputs,
+    fullWeekDates
+  });
   const softScore = scoreSoftPreferences({
     state,
-    rota,
+    rota: breakfastOptimization.rota,
     hardValidation: hardResult.hardValidation,
     fairnessContext
   });
   return {
-    rota,
-    signature: getRotaSignature(rota),
+    rota: breakfastOptimization.rota,
+    signature: getRotaSignature(breakfastOptimization.rota),
     valid: hardResult.valid,
     hardValidation: hardResult.hardValidation,
     summary: hardResult.summary,
-    softScore
+    softScore,
+    breakfastOptimization
   };
 }
 

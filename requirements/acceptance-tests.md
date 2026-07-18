@@ -87,10 +87,10 @@ These tests are designed to prove that each hard rule is enforced.
 - when the rota is generated,
 - then the solver must return an infeasible result naming the affected chef and reporting actual versus required GT days.
 
-## 13. Daily core coverage requirement
-- Given a day where the breakfast chef does not also appear on a core section,
+## 13. Daily GT coverage requirement
+- Given a day where the breakfast chef does not also appear on a core section or Float,
 - when the validation runs,
-- then the rota must fail the breakfast/core-section check.
+- then the rota must fail the breakfast/GT-assignment check.
 
 ## 14. Role-independent senior cover
 - Given a high-title chef with `senior: false` and a lower-title chef with `senior: true`,

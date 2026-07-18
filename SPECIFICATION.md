@@ -5,7 +5,7 @@ Generate a weekly GT kitchen rota from staff capabilities, availability, hard co
 
 ## Terminology
 - GT day: core kitchen coverage day assignment (Pass/Sauce/Garnish/Larder/Pastry/Float support)
-- Breakfast assignment: one breakfast chef per day who must also cover a core section
+- Breakfast assignment: one breakfast chef per day who must also hold a core or Float GT assignment
 - MIO assignment: separate off-site/events allocation, weekday only
 - Hard rule: must pass for rota validity
 - Soft preference: affects score and explanation but does not override hard rules
@@ -59,7 +59,7 @@ Weekly GT allocation is solved across the whole week rather than as seven isolat
 ## Hard Rules
 Implemented as structured hard validation checks in `js/validation.js` and rule metadata in `data/default-rules.js`, including:
 - One breakfast chef daily
-- Breakfast chef also core-assigned
+- Breakfast chef also assigned to a core section or Float
 - Breakfast chef must be marked Breakfast eligible
 - Senior daily cover
 - Mon-Wed exactly N GT chefs (N = 4 + any additional-chef request for that date)
@@ -75,7 +75,7 @@ Implemented as structured hard validation checks in `js/validation.js` and rule 
 - Concurrent leave guardrail
 
 ## Soft Preferences
-Soft scoring in `js/scoring.js` evaluates core section-level fit, Preferred Days Off, matching Preferred breakfast days, breakfast fairness, weekend fairness, and additional preference penalties/bonuses without permitting hard-rule breaches. Scheduling on a Preferred Day Off or without a matching breakfast-day preference remains possible.
+Soft scoring in `js/scoring.js` evaluates core section-level fit, Preferred Days Off, matching Preferred breakfast days, breakfast fairness, weekend fairness, and additional preference penalties/bonuses without permitting hard-rule breaches. A dedicated complete-week Breakfast pass maximises feasible preferred-day matches first and uses rotation fairness when preference satisfaction is tied. A preference may still be missed when its chef cannot work Breakfast that day.
 
 Senior-on-Pass preference is implemented as a strong soft rule:
 - Thursday to Sunday, prefer assigning Pass to an available senior chef.
@@ -98,7 +98,8 @@ Section levels are interpreted in order:
 
 - Generate deterministic candidates from chronological, reverse-chronological, and weekend-first planning orders.
 - Revalidate every candidate and neighbour with `validateRotaHardRules`; hard-invalid neighbours can never be accepted.
-- Explore two-chef/two-day membership exchanges (which preserve exact weekly targets), affected-day section rebuilds, valid primary-section swaps, and Breakfast reassignment.
+- Explore two-chef/two-day membership exchanges (which preserve exact weekly targets), affected-day section rebuilds, and valid primary-section swaps.
+- Re-optimize Breakfast across all seven days for every complete candidate using preference-first bipartite matching, including augmenting-path multi-day reassignments.
 - Accept only strict whole-rota soft-score improvements and repeat until local convergence or the configured iteration bound.
 - Compare optimized candidates with complete soft scoring, including the existing multi-week fairness context.
 - When a MIO chef is selected, lock that chef's established GT-day plan during local search so exact 3 MIO + 2 GT and existing weekend-first/fallback behaviour remain unchanged. No-MIO weeks reserve no chef.
