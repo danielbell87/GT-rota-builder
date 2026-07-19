@@ -14,7 +14,7 @@ import { buildRota, buildMultiWeekRota, summarizeRota } from './solver.js?v=2026
 import { getChefSoftPreferenceDetails } from './staff.js';
 import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260719t';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
-import { cellKey, ensureManualEditState, getChefConcerns, MANUALLY_EDITABLE_SECTIONS } from './manual-edit.js?v=20260719t';
+import { cellKey, ensureManualEditState, getChefConcerns, MANUALLY_EDITABLE_SECTIONS, rateManualAssignmentCandidates } from './manual-edit.js?v=20260719t';
 import { buildRotaDiagnostics, checkRotaFeasibility, summarizeDiagnostics } from './diagnostics.js?v=20260719t';
 import { getGtChefNamesForDay, syncRotaGtChefs } from './rota-model.js?v=20260719t';
 import { buildContextualScore, combineContextualScores } from './score-context.js?v=20260719t';
@@ -1219,34 +1219,45 @@ export function renderChefSelector({ weekIndex, date, section }) {
   const week = state.generatedRotas.latestResult?.weeks?.[weekIndex];
   const currentAssignments = week?.rota?.find((day) => day.date === date)?.assignments?.filter((item) => item.section === section) || [];
   const currentChefs = new Set(currentAssignments.map((item) => item.chef));
-  const current = currentAssignments[0]?.chef || '';
-  const option = (name, label, floatAction = '') => {
-    const concerns = getChefConcerns({ state, week, date, section, chefName: name });
-    const selected = section === 'Float' ? currentChefs.has(name) : name === current;
-    return `<button type="button" class="chef-selector-option${selected ? ' current' : ''}" data-select-chef="${escapeHtml(name)}"${floatAction ? ` data-float-action="${floatAction}"` : ''}><span>${escapeHtml(label)}</span>${concerns.length ? `<small>${escapeHtml(concerns.join(' · '))}</small>` : ''}</button>`;
+  const ratings = rateManualAssignmentCandidates({ state, overallResult: state.generatedRotas.latestResult, weekIndex, date, section });
+  const option = (rating) => {
+    const name = rating.chefName;
+    const selected = rating.current;
+    const label = section === 'Float'
+      ? (name ? `${rating.floatAction === 'remove' ? 'Remove' : 'Add'} ${name}` : 'Clear all Float assignments')
+      : (name || 'Leave unfilled');
+    const tone = rating.hardValid ? (rating.score >= 75 ? 'strong' : 'acceptable') : 'exception';
+    const actionText = rating.action === 'swap' ? `Best outcome: swap assignments` : rating.action === 'move' ? `Best outcome: move from another section` : '';
+    const badges = [selected ? 'Current' : '', rating.recommendationLabel].filter(Boolean);
+    const breakdown = rating.breakdown.map((item) => `<li><span>${escapeHtml(item.label)}</span><strong>${item.final ? `${item.value}%` : `${item.value > 0 ? '+' : ''}${item.value}`}</strong></li>`).join('');
+    return `<article class="chef-selector-option ${tone}${selected ? ' current' : ''}">
+      <button type="button" class="chef-option-select" data-select-chef="${escapeHtml(name)}" data-float-action="${rating.floatAction}">
+        <span class="chef-option-main"><span class="chef-option-title"><strong>${escapeHtml(label)}</strong>${badges.map((badge) => `<em>${escapeHtml(badge)}</em>`).join('')}</span><small>${escapeHtml(rating.reasons.slice(0, 3).join(' · '))}</small>${actionText ? `<small>${escapeHtml(actionText)}</small>` : ''}</span>
+        <span class="chef-option-score"><strong>${rating.score}%</strong><small>${escapeHtml(rating.label)}</small></span>
+      </button>
+      <details><summary>Rating breakdown</summary><ul>${breakdown}</ul></details>
+    </article>`;
   };
-  const options = section === 'Float'
-    ? [
-        currentChefs.size ? option('', 'Clear all Float assignments', 'clear') : '',
-        ...state.staff.map((chef) => currentChefs.has(chef.name)
-          ? option(chef.name, `Remove ${chef.name}`, 'remove')
-          : option(chef.name, `Add ${chef.name}`, 'add'))
-      ].join('')
-    : `${option('', 'None')}${state.staff.map((chef) => option(chef.name, chef.name)).join('')}`;
+  const options = ratings.map(option).join('');
   return `<div class="chef-selector-backdrop" data-close-chef-selector></div><section class="chef-selector" role="dialog" aria-modal="true" aria-labelledby="chefSelectorTitle" data-week-index="${weekIndex}" data-date="${date}" data-section="${section}">
     <div class="chef-selector-head"><div><h3 id="chefSelectorTitle">${escapeHtml(section)} · ${escapeHtml(formatDate(date))}</h3><p>${section === 'Float' ? 'Add or remove individual Float chefs. Existing Float assignments are preserved when another chef is added.' : 'Choose any configured chef. Warnings do not prevent selection.'}</p></div><button type="button" class="secondary" data-close-chef-selector aria-label="Close chef selector">×</button></div>
-    <div class="chef-selector-options">${options}</div>
+    <div class="chef-selector-options" aria-label="Chef options, current assignment first, then suitability order">${options}</div>
     <div class="chef-selector-actions"><button type="button" class="secondary" data-reset-manual-cell>Reset cell</button><button type="button" class="secondary" data-close-chef-selector>Cancel</button></div>
   </section>`;
 }
 
-export function renderAssignmentConflict({ weekIndex, date, section, chef, duplicateSection, currentChef, swapWarnings = [] }) {
+export function renderAssignmentConflict({ weekIndex, date, section, chef, duplicateSection, currentChef, swapWarnings = [], actionRatings = [] }) {
   const canSwap = section !== 'Float' && !!currentChef;
   const moveLabel = section === 'Float' ? `Move ${chef} from ${duplicateSection} to Float` : 'Move chef';
+  const ratingFor = (action) => actionRatings.find((item) => item.action === action);
+  const ratedLabel = (label, action) => {
+    const rating = ratingFor(action);
+    return rating ? `${label} — ${rating.score}% · ${rating.label}` : label;
+  };
   const options = [
     '<option value="">Choose an action</option>',
-    canSwap ? '<option value="swap">Swap assignments</option>' : '',
-    `<option value="move">${escapeHtml(moveLabel)}</option>`
+    canSwap ? `<option value="swap">${escapeHtml(ratedLabel('Swap assignments', 'swap'))}</option>` : '',
+    `<option value="move">${escapeHtml(ratedLabel(moveLabel, 'move'))}</option>`
   ].join('');
   const swapNote = canSwap && swapWarnings.length
     ? `<p class="conflict-option-warning" id="conflictSwapWarning"><strong>Swap warning:</strong> ${escapeHtml(swapWarnings.join(' · '))}. Managerial override remains available.</p>`
@@ -1266,10 +1277,11 @@ export function renderAssignmentConflict({ weekIndex, date, section, chef, dupli
   </section>`;
 }
 
-export function renderAssignmentConflictPreview({ action, chef, targetSection, currentChef, previousSection }) {
+export function renderAssignmentConflictPreview({ action, chef, targetSection, currentChef, previousSection, rating = null }) {
   if (!action) return '<span class="small">Select an action to preview the result.</span>';
-  if (action === 'swap') return `<strong>Preview</strong><span>${escapeHtml(chef)} → ${escapeHtml(targetSection)}</span><span>${escapeHtml(currentChef)} → ${escapeHtml(previousSection)}</span>`;
-  return `<strong>Preview</strong><span>${escapeHtml(chef)} → ${escapeHtml(targetSection)}</span><span>${escapeHtml(previousSection)} → Unfilled</span>`;
+  const ratingMarkup = rating ? `<span><strong>${rating.score}% · ${escapeHtml(rating.label)}</strong> — ${escapeHtml((rating.reasons || []).slice(0, 2).join(' · '))}</span>` : '';
+  if (action === 'swap') return `<strong>Preview</strong>${ratingMarkup}<span>${escapeHtml(chef)} → ${escapeHtml(targetSection)}</span><span>${escapeHtml(currentChef)} → ${escapeHtml(previousSection)}</span>`;
+  return `<strong>Preview</strong>${ratingMarkup}<span>${escapeHtml(chef)} → ${escapeHtml(targetSection)}</span><span>${escapeHtml(previousSection)} → Unfilled</span>`;
 }
 
 export function renderAll() {

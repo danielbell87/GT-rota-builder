@@ -23,7 +23,7 @@ import {
   syncChefChoiceChipState
 } from './render.js?v=20260719t';
 import { renderAssignmentConflict, renderAssignmentConflictPreview, renderChefSelector } from './render.js?v=20260719t';
-import { applyManualAssignment, findDuplicateCoreAssignment, getChefConcerns, redoManualEdit, resetAllManualEdits, resetManualCell, undoManualEdit } from './manual-edit.js';
+import { applyManualAssignment, findDuplicateCoreAssignment, getChefConcerns, rateManualAssignmentActions, redoManualEdit, resetAllManualEdits, resetManualCell, undoManualEdit } from './manual-edit.js';
 import { upsertPublishedHistory, upsertPublishedWeeks } from './history.js';
 import { openPrintWindow } from './print.js';
 import { createBackup, createBackupFilename, restoreBackup, serializeBackup } from './backup.js';
@@ -176,16 +176,27 @@ function openAssignmentSelector(button) {
     date: button.dataset.date,
     section: button.dataset.section
   }));
-  document.querySelector('.chef-selector-option')?.focus();
+  document.querySelector('.chef-option-select')?.focus();
 }
 
 function openAssignmentConflict({ selector, weekIndex, date, section, chef, duplicate, current }) {
   const week = state.generatedRotas.latestResult.weeks[weekIndex];
+  const actionRatings = rateManualAssignmentActions({
+    state,
+    overallResult: state.generatedRotas.latestResult,
+    weekIndex,
+    date,
+    section,
+    chefName: chef,
+    floatAction: 'add'
+  });
   const swapWarnings = current && section !== 'Float'
     ? (getChefConcerns({ state, week, date, section: duplicate.section, chefName: current }) || []).filter((warning) => warning !== 'Already assigned elsewhere that day')
     : [];
   selector.previousElementSibling?.remove();
-  selector.outerHTML = renderAssignmentConflict({ weekIndex, date, section, chef, duplicateSection: duplicate.section, currentChef: current, swapWarnings });
+  selector.outerHTML = renderAssignmentConflict({ weekIndex, date, section, chef, duplicateSection: duplicate.section, currentChef: current, swapWarnings, actionRatings });
+  const conflictSelector = document.querySelector('.conflict-selector');
+  if (conflictSelector) conflictSelector._actionRatings = actionRatings;
   document.getElementById('assignmentConflictTitle')?.focus();
   announce(`${chef} is already assigned to ${duplicate.section}. Choose an action before applying any change.`);
 }
@@ -198,8 +209,9 @@ function updateConflictPreview(selector) {
   const current = selector.dataset.currentChef;
   const target = selector.dataset.section;
   const previous = selector.dataset.duplicateSection;
+  const rating = selector._actionRatings?.find((item) => item.action === action) || null;
   apply.disabled = !action;
-  preview.innerHTML = renderAssignmentConflictPreview({ action, chef, targetSection: target, currentChef: current, previousSection: previous });
+  preview.innerHTML = renderAssignmentConflictPreview({ action, chef, targetSection: target, currentChef: current, previousSection: previous, rating });
 }
 
 function openResetManualConfirmation(button) {

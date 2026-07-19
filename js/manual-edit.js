@@ -3,6 +3,7 @@ import { validateRotaHardRules, validateRotaSoftRules } from './validation.js?v=
 import { scoreSoftPreferences } from './scoring.js?v=20260719t';
 import { buildRotaDiagnostics } from './diagnostics.js?v=20260719t';
 import { getGtChefNamesForDay, hasGtAssignment, syncDayGtChefs } from './rota-model.js?v=20260719t';
+import { getSectionLevel, getSectionLevelLabel } from './section-levels.js';
 
 export const MANUAL_HISTORY_LIMIT = 10;
 export const MANUALLY_EDITABLE_SECTIONS = DISPLAY_SECTIONS.filter((section) => section !== 'MIO');
@@ -254,4 +255,170 @@ export function getChefConcerns({ state, week, date, section, chefName }) {
   const summary = week.summary?.find((item) => item.name === chefName);
   if ((summary?.gtDays || 0) >= (summary?.adjustedGtTarget ?? 4) && !hasGtAssignment(day, chefName)) concerns.push('Would exceed weekly target');
   return [...new Set(concerns)];
+}
+
+const AVAILABILITY_RULES = new Set(['H019', 'H023']);
+const COVERAGE_RULES = new Set(['H006', 'H007', 'H008', 'H009', 'H010', 'H011', 'H012']);
+const WEEKLY_TARGET_RULES = new Set(['H015', 'H016', 'H022']);
+
+function failedRuleKeys(week) {
+  return new Set((week?.hardValidation || [])
+    .filter((result) => result.passed === false)
+    .map((result) => `${result.ruleId}|${result.date || ''}|${result.chefName || ''}|${result.section || ''}|${result.message || ''}`));
+}
+
+function ratingLabel(score) {
+  if (score >= 90) return 'Excellent';
+  if (score >= 75) return 'Good';
+  if (score >= 60) return 'Reasonable';
+  if (score >= 40) return 'Poor';
+  if (score > 0) return 'Very poor';
+  return 'No workable outcome';
+}
+
+function simulateManualOutcome({ state, overallResult, weekIndex, date, section, chef, duplicateAction, floatAction }) {
+  const previewState = structuredClone(state);
+  const previewResult = structuredClone(overallResult);
+  previewState.manualEditing = null;
+  const duplicate = findDuplicateCoreAssignment(previewResult.weeks[weekIndex], date, section, chef);
+  if (duplicate && !duplicateAction) return { applied: false, previewState, previewResult };
+  const current = getCellChef(previewResult.weeks[weekIndex], date, section);
+  if (section !== 'Float' && current === chef) {
+    recalculateEditedResult(previewState, previewResult);
+    return { applied: true, previewState, previewResult, unchanged: true };
+  }
+  const result = applyManualAssignment({
+    state: previewState,
+    overallResult: previewResult,
+    weekIndex,
+    date,
+    section,
+    chef,
+    duplicateAction,
+    floatAction
+  });
+  return { ...result, previewState, previewResult };
+}
+
+function scoreSimulatedOutcome({ state, overallResult, weekIndex, date, section, chefName, action, simulation }) {
+  if (!simulation.applied) return {
+    chefName, action, score: 0, label: ratingLabel(0), hardValid: false,
+    reasons: ['No coherent assignment outcome'], breakdown: [{ label: 'Outcome', value: -100 }]
+  };
+  const beforeWeek = overallResult.weeks[weekIndex];
+  const week = simulation.previewResult.weeks[weekIndex];
+  const originalFailures = failedRuleKeys(beforeWeek);
+  const failures = (week.hardValidation || []).filter((result) => result.passed === false);
+  const introduced = failures.filter((result) => !originalFailures.has(`${result.ruleId}|${result.date || ''}|${result.chefName || ''}|${result.section || ''}|${result.message || ''}`));
+  const chef = state.staff.find((item) => item.name === chefName);
+  const level = chefName && !['Breakfast', 'Float'].includes(section) ? getSectionLevel(chef, section) : null;
+  const beforeSoft = Number(beforeWeek.softScore?.score ?? beforeWeek.score ?? 100);
+  const afterSoft = Number(week.softScore?.score ?? week.score ?? 100);
+  const softDelta = Math.max(-12, Math.min(12, Math.round((afterSoft - beforeSoft) / 4)));
+  let score = 82;
+  const breakdown = [{ label: 'Complete-rota baseline', value: 82 }];
+  const reasons = [];
+
+  if (level !== null) {
+    const sectionPoints = [-28, -8, 8, 16][level] ?? 0;
+    score += sectionPoints;
+    breakdown.push({ label: 'Section suitability', value: sectionPoints });
+    reasons.push(`${getSectionLevelLabel(level)} on ${section}`);
+  } else if (chefName) {
+    reasons.push(section === 'Breakfast' ? 'Breakfast pairing evaluated' : 'Multi-chef Float rules evaluated');
+  } else {
+    score -= 24;
+    breakdown.push({ label: 'Unfilled section', value: -24 });
+    reasons.push('Leaves this section unfilled');
+  }
+
+  if (softDelta) {
+    score += softDelta;
+    breakdown.push({ label: 'Preferences and fairness', value: softDelta });
+  }
+  if (action === 'swap') {
+    score -= 2;
+    breakdown.push({ label: 'Assignment disruption', value: -2 });
+  } else if (action === 'move') {
+    score -= 5;
+    breakdown.push({ label: 'Assignment disruption', value: -5 });
+  }
+
+  const ruleIds = new Set(failures.map((failure) => failure.ruleId));
+  let cap = failures.length ? 59 : 100;
+  if ([...ruleIds].some((id) => COVERAGE_RULES.has(id))) cap = Math.min(cap, 39);
+  if (ruleIds.has('H025') || level === 0) cap = Math.min(cap, 29);
+  if ([...ruleIds].some((id) => AVAILABILITY_RULES.has(id))) cap = Math.min(cap, 10);
+  if (failures.length && [...ruleIds].every((id) => WEEKLY_TARGET_RULES.has(id))) cap = Math.min(cap, 59);
+  score -= Math.min(42, introduced.length * 12);
+  if (introduced.length) breakdown.push({ label: 'Hard-rule outcome', value: -Math.min(42, introduced.length * 12) });
+  score = Math.max(failures.length ? 1 : 40, Math.min(cap, Math.round(score)));
+
+  const day = week.rota.find((item) => item.date === date);
+  const summary = week.summary?.find((item) => item.name === chefName);
+  const target = summary?.adjustedGtTarget ?? (week.inputs?.mioChef === chefName ? 2 : 4);
+  if (chefName && summary) reasons.push(`Results in ${summary.gtDays}/${target} GT days`);
+  if (introduced.length) reasons.push(introduced[0].message);
+  else if (!failures.length) reasons.push('All hard rules remain satisfied');
+  else reasons.push(`${failures.length} existing hard-rule issue${failures.length === 1 ? '' : 's'} remain`);
+  if (day && chefName && day.assignments.some((item) => item.chef === chefName && item.section === 'MIO')) reasons.unshift('Conflicts with MIO duty');
+
+  breakdown.push({ label: 'Final rating', value: score, final: true });
+  return {
+    chefName,
+    action,
+    score,
+    label: ratingLabel(score),
+    hardValid: failures.length === 0,
+    failures,
+    introducedFailures: introduced,
+    reasons: [...new Set(reasons)].slice(0, 3),
+    breakdown,
+    previewResult: simulation.previewResult
+  };
+}
+
+export function rateManualAssignmentActions({ state, overallResult, weekIndex, date, section, chefName, floatAction = 'add' }) {
+  const week = overallResult.weeks[weekIndex];
+  const duplicate = findDuplicateCoreAssignment(week, date, section, chefName);
+  const current = getCellChef(week, date, section);
+  const actions = duplicate
+    ? [...(section !== 'Float' && current ? ['swap'] : []), 'move']
+    : ['assign'];
+  return actions.map((action) => {
+    const simulation = simulateManualOutcome({
+      state, overallResult, weekIndex, date, section, chef: chefName,
+      duplicateAction: action === 'assign' ? '' : action,
+      floatAction
+    });
+    return scoreSimulatedOutcome({ state, overallResult, weekIndex, date, section, chefName, action, simulation });
+  }).sort((a, b) => b.score - a.score);
+}
+
+export function rateManualAssignmentCandidates({ state, overallResult, weekIndex, date, section }) {
+  const week = overallResult.weeks[weekIndex];
+  const currentChefs = new Set(getCellChefs(week, date, section));
+  const candidates = section === 'Float'
+    ? [
+        ...(currentChefs.size ? [{ chefName: '', floatAction: 'clear' }] : []),
+        ...state.staff.map((chef) => ({ chefName: chef.name, floatAction: currentChefs.has(chef.name) ? 'remove' : 'add' }))
+      ]
+    : [{ chefName: '', floatAction: 'add' }, ...state.staff.map((chef) => ({ chefName: chef.name, floatAction: 'add' }))];
+  const rated = candidates.map((candidate) => {
+    const actions = rateManualAssignmentActions({ state, overallResult, weekIndex, date, section, ...candidate });
+    return { ...actions[0], ...candidate, actions, current: candidate.chefName ? currentChefs.has(candidate.chefName) : currentChefs.size === 0 };
+  });
+  const chefOptions = rated.filter((item) => item.chefName);
+  const valid = chefOptions.filter((item) => item.hardValid);
+  const best = (valid.length ? valid : chefOptions).sort((a, b) => b.score - a.score)[0];
+  rated.forEach((item) => {
+    item.recommended = item === best;
+    item.recommendationLabel = item === best ? (item.hardValid ? 'Recommended' : 'Best available exception') : '';
+  });
+  return rated.sort((a, b) => {
+    if (a.current !== b.current) return a.current ? -1 : 1;
+    if (!a.chefName !== !b.chefName) return a.chefName ? -1 : 1;
+    if (a.hardValid !== b.hardValid) return a.hardValid ? -1 : 1;
+    return b.score - a.score || a.chefName.localeCompare(b.chefName);
+  });
 }

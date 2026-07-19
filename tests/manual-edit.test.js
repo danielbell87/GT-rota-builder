@@ -4,6 +4,8 @@ import {
   applyManualAssignment,
   ensureManualEditState,
   findDuplicateCoreAssignment,
+  rateManualAssignmentActions,
+  rateManualAssignmentCandidates,
   recalculateEditedResult,
   redoManualEdit,
   resetAllManualEdits,
@@ -31,6 +33,15 @@ export async function runManualEditTests(assert) {
   const sauce = day.assignments.find((item) => item.section === 'Sauce');
   const garnish = day.assignments.find((item) => item.section === 'Garnish');
   const originalSauce = sauce.chef;
+  const beforeRatings = JSON.stringify(overall);
+  const ratings = rateManualAssignmentCandidates({ state, overallResult: overall, weekIndex: 0, date: day.date, section: 'Sauce' });
+  assert(ratings.filter((item) => item.chefName).length === state.staff.length && ratings.every((item) => Number.isInteger(item.score) && item.score >= 0 && item.score <= 100 && item.label), 'Manual suitability: every configured chef receives a percentage and label');
+  assert(ratings[0].chefName === originalSauce && ratings[0].current, 'Manual suitability: current assignment is pinned first and rated');
+  assert(ratings.filter((item) => item.recommended).length === 1, 'Manual suitability: exactly one chef is marked as the best option');
+  assert(ratings.every((item) => item.reasons.length && item.breakdown.some((part) => part.final)), 'Manual suitability: every option has concise reasons and an explainable final breakdown');
+  assert(JSON.stringify(overall) === beforeRatings, 'Manual suitability: candidate simulations never mutate the real rota');
+  const duplicateRatings = rateManualAssignmentActions({ state, overallResult: overall, weekIndex: 0, date: day.date, section: 'Sauce', chefName: garnish.chef });
+  assert(duplicateRatings.some((item) => item.action === 'swap') && duplicateRatings.some((item) => item.action === 'move') && duplicateRatings[0].score >= duplicateRatings[1].score, 'Manual suitability: duplicate assignments compare and sort coherent swap and move outcomes');
 
   const normal = applyManualAssignment({ state, overallResult: overall, weekIndex: 0, date: day.date, section: 'Sauce', chef: '' });
   assert(normal.applied && !day.assignments.some((item) => item.section === 'Sauce'), 'Manual edit: selecting None updates the rota model');

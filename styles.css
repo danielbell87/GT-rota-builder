@@ -322,13 +322,27 @@ th { color: var(--ink-soft); font-size: 11px; font-weight: 800; letter-spacing: 
 .assignment-static { display:block; min-height:48px; padding:11px 32px 11px 10px; }
 .manual-dot { margin-left:6px; color:var(--brass-dark); font-size:18px; line-height:0; }
 .chef-selector-backdrop { position:fixed; inset:0; z-index:30; background:rgba(25,27,23,.5); }
-.chef-selector { position:fixed; z-index:31; top:50%; left:50%; display:flex; flex-direction:column; width:min(460px,calc(100vw - 32px)); max-height:min(680px,calc(100vh - 32px)); overflow:hidden; transform:translate(-50%,-50%); padding:18px; border:1px solid var(--line-strong); border-radius:var(--radius-md); background:var(--paper); box-shadow:0 24px 70px rgba(0,0,0,.3); }
+.chef-selector { position:fixed; z-index:31; top:50%; left:50%; display:flex; flex-direction:column; width:min(580px,calc(100vw - 32px)); max-height:min(760px,calc(100vh - 32px)); overflow:hidden; transform:translate(-50%,-50%); padding:18px; border:1px solid var(--line-strong); border-radius:var(--radius-md); background:var(--paper); box-shadow:0 24px 70px rgba(0,0,0,.3); }
 .chef-selector-head { display:flex; justify-content:space-between; gap:12px; }
 .chef-selector-head h3,.chef-selector-head p { margin:0 0 6px; }
 .chef-selector-options { display:grid; gap:6px; margin:14px 0; overflow-y:auto; padding-right:4px; }
-.chef-selector-option { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; width:100%; padding:10px 12px; border:1px solid var(--line); background:#fff; color:var(--ink); text-align:left; }
-.chef-selector-option small { color:var(--warn); text-align:right; }
+.chef-selector-option { width:100%; border:1px solid var(--line); background:#fff; color:var(--ink); text-align:left; }
+.chef-option-select { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; width:100%; padding:10px 12px 7px; border:0; background:transparent; color:inherit; text-align:left; }
+.chef-selector-option small { color:var(--muted); }
 .chef-selector-option.current { border-color:var(--brass); }
+.chef-selector-option.strong { border-left:4px solid #35784b; }
+.chef-selector-option.acceptable { border-left:4px solid #828044; }
+.chef-selector-option.exception { border-left:4px solid #b14d42; background:#fffafa; }
+.chef-option-main { display:grid; min-width:0; gap:4px; }
+.chef-option-title { display:flex; align-items:center; flex-wrap:wrap; gap:7px; }
+.chef-option-title em { padding:2px 6px; border-radius:999px; background:var(--section-surface); color:var(--ink-soft); font-size:10px; font-style:normal; font-weight:800; text-transform:uppercase; letter-spacing:.03em; }
+.chef-option-score { display:grid; flex:0 0 82px; justify-items:end; color:var(--ink); }
+.chef-option-score strong { font-size:20px; line-height:1; }
+.chef-option-score small { margin-top:4px; text-align:right; }
+.chef-selector-option details { margin:0 12px 9px; font-size:12px; }
+.chef-selector-option details summary { color:var(--ink-soft); cursor:pointer; font-weight:750; }
+.chef-selector-option details ul { display:grid; gap:3px; margin:7px 0 0; padding:0; list-style:none; }
+.chef-selector-option details li { display:flex; justify-content:space-between; gap:16px; }
 .chef-selector-actions { display:flex; justify-content:space-between; gap:8px; }
 .conflict-selector { gap:14px; }
 .conflict-selector .eyebrow { margin:0 0 4px; color:var(--muted); font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
