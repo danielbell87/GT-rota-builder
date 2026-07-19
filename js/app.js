@@ -35,6 +35,7 @@ let activeChefMode = 'create';
 let activeChefTriggerSelector = '#addChefBtn';
 let removeChefConfirmationOpen = false;
 let activeAssignmentTrigger = null;
+let issueCloseTimer = 0;
 
 function requireElement(id) {
   const element = document.getElementById(id);
@@ -56,6 +57,61 @@ function refreshAll() {
 function announce(message) {
   const live = document.getElementById('manualEditLive');
   if (live) live.textContent = message;
+}
+
+function getIssuePopover(button) {
+  return button ? document.getElementById(button.getAttribute('aria-controls')) : null;
+}
+
+function positionIssuePopover(button, popover) {
+  const anchor = button.getBoundingClientRect();
+  const gap = 7;
+  popover.style.visibility = 'hidden';
+  popover.hidden = false;
+  const width = popover.offsetWidth;
+  const height = popover.offsetHeight;
+  const left = Math.max(8, Math.min(window.innerWidth - width - 8, anchor.right - width));
+  const fitsAbove = anchor.top >= height + gap + 8;
+  const top = fitsAbove
+    ? anchor.top - height - gap
+    : Math.min(window.innerHeight - height - 8, anchor.bottom + gap);
+  popover.style.left = `${Math.round(left)}px`;
+  popover.style.top = `${Math.max(8, Math.round(top))}px`;
+  popover.dataset.placement = fitsAbove ? 'above' : 'below';
+  popover.style.visibility = '';
+}
+
+function closeIssuePopover(button = document.querySelector('[data-issue-toggle][aria-expanded="true"]')) {
+  if (!button) return;
+  button.setAttribute('aria-expanded', 'false');
+  delete button.dataset.issuePinned;
+  const popover = getIssuePopover(button);
+  if (popover) {
+    popover.hidden = true;
+    popover.style.left = '';
+    popover.style.top = '';
+  }
+}
+
+function openIssuePopover(button, { pinned = false } = {}) {
+  window.clearTimeout(issueCloseTimer);
+  document.querySelectorAll('[data-issue-toggle][aria-expanded="true"]').forEach((other) => {
+    if (other !== button) closeIssuePopover(other);
+  });
+  const popover = getIssuePopover(button);
+  if (!popover) return;
+  button.setAttribute('aria-expanded', 'true');
+  if (pinned) button.dataset.issuePinned = 'true';
+  positionIssuePopover(button, popover);
+}
+
+function scheduleIssuePopoverClose(button) {
+  window.clearTimeout(issueCloseTimer);
+  issueCloseTimer = window.setTimeout(() => {
+    const popover = getIssuePopover(button);
+    if (button.dataset.issuePinned === 'true' || button.matches(':hover') || popover?.matches(':hover') || popover?.contains(document.activeElement) || button === document.activeElement) return;
+    closeIssuePopover(button);
+  }, 60);
 }
 
 function closeChefSelector({ restoreFocus = true } = {}) {
@@ -367,6 +423,36 @@ function loadInitialState() {
 
 function attachEvents() {
   window.addEventListener('resize', () => updateRotaScrollAccessibility(document));
+  window.addEventListener('resize', () => {
+    const button = document.querySelector('[data-issue-toggle][aria-expanded="true"]');
+    const popover = getIssuePopover(button);
+    if (button && popover) positionIssuePopover(button, popover);
+  });
+  document.addEventListener('mouseover', (event) => {
+    const button = event.target.closest?.('[data-issue-toggle]');
+    const popover = event.target.closest?.('.issue-popover');
+    if (button && !button.contains(event.relatedTarget)) openIssuePopover(button);
+    if (popover) window.clearTimeout(issueCloseTimer);
+  });
+  document.addEventListener('mouseout', (event) => {
+    const button = event.target.closest?.('[data-issue-toggle]');
+    const popover = event.target.closest?.('.issue-popover');
+    if (button && !button.contains(event.relatedTarget)) scheduleIssuePopoverClose(button);
+    if (popover && !popover.contains(event.relatedTarget)) {
+      const owner = document.querySelector(`[data-issue-toggle][aria-controls="${popover.id}"]`);
+      if (owner) scheduleIssuePopoverClose(owner);
+    }
+  });
+  document.addEventListener('focusin', (event) => {
+    const button = event.target.closest?.('[data-issue-toggle]');
+    if (button) openIssuePopover(button);
+  });
+  document.addEventListener('focusout', (event) => {
+    const button = event.target.closest?.('[data-issue-toggle]');
+    const popover = event.target.closest?.('.issue-popover');
+    const owner = button || (popover ? document.querySelector(`[data-issue-toggle][aria-controls="${popover.id}"]`) : null);
+    if (owner) scheduleIssuePopoverClose(owner);
+  });
   document.addEventListener('change', (event) => {
     const conflictAction = event.target.closest?.('[data-conflict-action]');
     if (conflictAction) updateConflictPreview(conflictAction.closest('.chef-selector'));
@@ -494,18 +580,13 @@ function attachEvents() {
   document.addEventListener('click', (event) => {
     const issueToggle = event.target.closest('[data-issue-toggle]');
     if (issueToggle) {
-      const target = document.getElementById(issueToggle.getAttribute('aria-controls'));
       const expanded = issueToggle.getAttribute('aria-expanded') === 'true';
-      document.querySelectorAll('[data-issue-toggle][aria-expanded="true"]').forEach((button) => {
-        if (button === issueToggle) return;
-        button.setAttribute('aria-expanded', 'false');
-        const other = document.getElementById(button.getAttribute('aria-controls'));
-        if (other) other.hidden = true;
-      });
-      issueToggle.setAttribute('aria-expanded', String(!expanded));
-      if (target) target.hidden = expanded;
+      if (expanded && issueToggle.dataset.issuePinned === 'true') closeIssuePopover(issueToggle);
+      else openIssuePopover(issueToggle, { pinned: true });
       return;
     }
+    if (event.target.closest('.issue-popover')) return;
+    closeIssuePopover();
 
     if (event.target.closest('[data-generate-best-available]')) {
       renderResultsPanel({ forceBestAvailable: true });
@@ -673,6 +754,10 @@ function attachEvents() {
     }
 
     if (event.key !== 'Escape') return;
+    if (document.querySelector('[data-issue-toggle][aria-expanded="true"]')) {
+      closeIssuePopover();
+      return;
+    }
     if (document.querySelector('.chef-selector')) { closeChefSelector(); return; }
     if (document.getElementById('additionalChefModal')?.classList.contains('open')) {
       closeAdditionalChefModal();

@@ -136,14 +136,30 @@ function getDayFailures(view, day) {
   return (view?.visibleHardFailures || []).filter((failure) => failure.scope === 'day' && failure.date === day.date);
 }
 
-function renderIssueDisclosure(failures, week, state, id) {
+function getHardFailureTitle(failure, week, state) {
+  const day = getDayForFailure(week, failure);
+  const message = stripRuleIdPrefix(failure.message || '');
+  if (failure.ruleId === 'H025') {
+    const section = CORE_SECTIONS.find((name) => message.includes(name));
+    const assignment = day?.assignments.find((item) => item.section === section);
+    return assignment ? `Not qualified for ${section}` : `Missing ${section || 'required'} coverage`;
+  }
+  if (failure.ruleId === 'H019') return 'Chef unavailable';
+  if (failure.ruleId === 'H026') return 'Overlapping assignments';
+  if (failure.ruleId === 'H008') return 'Senior cover missing';
+  if (failure.ruleId === 'H006') return 'Breakfast coverage issue';
+  if (failure.ruleId === 'H007') return 'Breakfast pairing issue';
+  return 'Required rota rule';
+}
+
+function renderIssueDisclosure(failures, week, state, id, accessibleLabel) {
   if (!failures.length) return '';
-  const messages = [...new Set(failures.map((failure) => {
-    const explanation = explainHardRuleFailure(failure, week, state);
-    return `${failure.ruleId ? `Rule ${failure.ruleId}: ` : ''}${explanation}`;
-  }))];
-  return `<button type="button" class="issue-disclosure print-hidden" data-issue-toggle aria-expanded="false" aria-controls="${id}" aria-label="Explain ${messages.length} rota rule issue${messages.length === 1 ? '' : 's'}">!</button>
-    <div id="${id}" class="issue-popover print-hidden" role="note" hidden>${messages.map((message) => `<p>${escapeHtml(message)}</p>`).join('')}</div>`;
+  const issues = failures.filter((failure, index, list) => {
+    const key = `${failure.ruleId}|${explainHardRuleFailure(failure, week, state)}`;
+    return list.findIndex((candidate) => `${candidate.ruleId}|${explainHardRuleFailure(candidate, week, state)}` === key) === index;
+  });
+  return `<button type="button" class="issue-disclosure" data-issue-toggle aria-expanded="false" aria-controls="${id}" aria-label="${escapeHtml(accessibleLabel)}">!</button>
+    <div id="${id}" class="issue-popover print-hidden" role="tooltip" hidden>${issues.map((failure) => `<div class="issue-popover-item"><strong>${escapeHtml(getHardFailureTitle(failure, week, state))}</strong><span>${escapeHtml(explainHardRuleFailure(failure, week, state))}</span>${failure.ruleId ? `<small>Rule ${escapeHtml(failure.ruleId)}</small>` : ''}</div>`).join('')}</div>`;
 }
 
 function getExpectedLeaveHoursForChef(chefName, inputs, weekStart) {
@@ -878,7 +894,7 @@ function renderRotaTable(solveResult, view) {
     const issueId = `day-issues-${solveResult.weekIndex || 0}-${day.date}`;
     return `<th scope="col" class="${failures.length ? 'day-heading-affected' : ''}">
       <span>${day.dayName}<br><span class="small">${formatDate(day.date)}</span></span>
-      ${renderIssueDisclosure(failures, solveResult, state, issueId)}
+      ${renderIssueDisclosure(failures, solveResult, state, issueId, `Rule issue for ${day.dayName}, ${formatDate(day.date)}`)}
     </th>`;
   }).join('');
   const sectionCells = DISPLAY_SECTIONS.map((section) => {
@@ -900,7 +916,7 @@ function renderRotaTable(solveResult, view) {
         : `<span class="assignment-static" aria-label="${matches.length ? escapeHtml(`${section}: ${displayedChefs}`) : 'No assignment required'}">${displayedChefs ? escapeHtml(displayedChefs) : ''}</span>`;
       return `<td class="rota-assignment-cell${edited ? ' manually-edited' : ''}${affected ? ' hard-rule-affected' : ''}">
         ${content}
-        ${renderIssueDisclosure(failures, solveResult, state, issueId)}
+        ${renderIssueDisclosure(failures, solveResult, state, issueId, `Rule issue for ${displayedChefs || 'unfilled assignment'} on ${section}, ${day.dayName} ${formatDate(day.date)}`)}
       </td>`;
     }).join('');
     return `<tr><th scope="row">${section}</th>${cells}</tr>`;

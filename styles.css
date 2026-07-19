@@ -274,12 +274,14 @@ th { color: var(--ink-soft); font-size: 11px; font-weight: 800; letter-spacing: 
 .rota-assignment-cell.hard-rule-affected { box-shadow:inset 0 0 0 3px var(--bad); background:#fff0ed !important; }
 .rota-assignment-cell.hard-rule-affected .assignment-button { color:#7d2118; }
 .day-heading-affected { position:relative; color:#fff !important; background:#7d2118 !important; box-shadow:inset 0 0 0 3px #fff; }
-.issue-disclosure { position:absolute; z-index:4; top:4px; right:4px; display:inline-grid; place-items:center; width:20px; min-height:20px; padding:0; border:2px solid currentColor; border-radius:50%; background:#fff; color:#8f2118; font-size:12px; font-weight:900; line-height:1; box-shadow:none; }
+.issue-disclosure { position:absolute; z-index:4; top:3px; right:3px; display:inline-grid; place-items:center; width:20px; min-height:20px; padding:0; border:2px solid currentColor; border-radius:50%; background:#fff; color:#8f2118; font-size:12px; font-weight:900; line-height:1; box-shadow:none; }
 .issue-disclosure:hover { background:#fff4f1; }
 .issue-disclosure:focus-visible { outline:3px solid #111; outline-offset:2px; }
-.issue-popover { position:absolute; z-index:10; top:28px; right:4px; width:min(320px,calc(100vw - 48px)); padding:10px 12px; border:2px solid #8f2118; border-radius:8px; background:#fff; color:#3f1714; font-size:12px; font-weight:600; line-height:1.35; text-align:left; text-transform:none; letter-spacing:0; box-shadow:var(--shadow-lg); }
-.issue-popover p { margin:0; }
-.issue-popover p + p { margin-top:8px; padding-top:8px; border-top:1px solid #e8b8b2; }
+.issue-popover { position:fixed; z-index:80; width:min(300px,calc(100vw - 24px)); max-height:min(280px,calc(100vh - 24px)); overflow:auto; padding:10px 12px; border:1px solid #b85d54; border-radius:8px; background:#fff; color:#3f1714; font-size:12px; font-weight:600; line-height:1.35; text-align:left; text-transform:none; letter-spacing:0; box-shadow:var(--shadow-lg); }
+.issue-popover-item { display:grid; gap:3px; }
+.issue-popover-item + .issue-popover-item { margin-top:8px; padding-top:8px; border-top:1px solid #e8b8b2; }
+.issue-popover-item strong { color:#7d2118; font-size:13px; }
+.issue-popover-item small { color:var(--muted); font-size:10px; font-weight:750; }
 .assignment-static { display:block; min-height:48px; padding:11px 32px 11px 10px; }
 .manual-dot { margin-left:6px; color:var(--brass-dark); font-size:18px; line-height:0; }
 .chef-selector-backdrop { position:fixed; inset:0; z-index:30; background:rgba(25,27,23,.5); }
@@ -455,6 +457,8 @@ th { color: var(--ink-soft); font-size: 11px; font-weight: 800; letter-spacing: 
   .rota-table thead th { color: #fff; background: #353a31 !important; }
   .rota-table tbody th { background: #e8e1d5 !important; }
   .rota-assignment-cell.hard-rule-affected { background:#fff !important; box-shadow:inset 0 0 0 .8mm #8b1e16 !important; }
+  .issue-disclosure { position:absolute; top:1mm; right:1mm; width:4mm; min-height:4mm; border-width:.5mm; font-size:7pt; color:#8b1e16 !important; background:#fff !important; }
+  .issue-popover { display:none !important; }
   .rota-table thead th:first-child, .rota-table tbody th { position: static; left: auto; width: auto; min-width: 0; box-shadow: none; }
 }
 .generation-heading,
