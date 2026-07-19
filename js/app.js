@@ -22,8 +22,8 @@ import {
   setChefRemovalConfirmation,
   syncChefChoiceChipState
 } from './render.js?v=20260719s';
-import { renderChefSelector } from './render.js?v=20260719s';
-import { applyManualAssignment, findDuplicateCoreAssignment, redoManualEdit, resetAllManualEdits, resetManualCell, undoManualEdit } from './manual-edit.js';
+import { renderAssignmentConflict, renderAssignmentConflictPreview, renderChefSelector } from './render.js?v=20260719s';
+import { applyManualAssignment, findDuplicateCoreAssignment, getChefConcerns, redoManualEdit, resetAllManualEdits, resetManualCell, undoManualEdit } from './manual-edit.js';
 import { upsertPublishedHistory, upsertPublishedWeeks } from './history.js';
 import { openPrintWindow } from './print.js';
 import { createBackup, createBackupFilename, restoreBackup, serializeBackup } from './backup.js';
@@ -74,6 +74,39 @@ function openAssignmentSelector(button) {
     section: button.dataset.section
   }));
   document.querySelector('.chef-selector-option')?.focus();
+}
+
+function openAssignmentConflict({ selector, weekIndex, date, section, chef, duplicate, current }) {
+  const week = state.generatedRotas.latestResult.weeks[weekIndex];
+  const swapWarnings = current && section !== 'Float'
+    ? (getChefConcerns({ state, week, date, section: duplicate.section, chefName: current }) || []).filter((warning) => warning !== 'Already assigned elsewhere that day')
+    : [];
+  selector.previousElementSibling?.remove();
+  selector.outerHTML = renderAssignmentConflict({ weekIndex, date, section, chef, duplicateSection: duplicate.section, currentChef: current, swapWarnings });
+  document.getElementById('assignmentConflictTitle')?.focus();
+  announce(`${chef} is already assigned to ${duplicate.section}. Choose an action before applying any change.`);
+}
+
+function updateConflictPreview(selector) {
+  const action = selector.querySelector('[data-conflict-action]')?.value || '';
+  const apply = selector.querySelector('[data-apply-conflict]');
+  const preview = selector.querySelector('[data-conflict-preview]');
+  const chef = selector.dataset.conflictChef;
+  const current = selector.dataset.currentChef;
+  const target = selector.dataset.section;
+  const previous = selector.dataset.duplicateSection;
+  apply.disabled = !action;
+  preview.innerHTML = renderAssignmentConflictPreview({ action, chef, targetSection: target, currentChef: current, previousSection: previous });
+}
+
+function openResetManualConfirmation(button) {
+  closeChefSelector({ restoreFocus: false });
+  activeAssignmentTrigger = button;
+  document.body.insertAdjacentHTML('beforeend', `<div class="chef-selector-backdrop" data-close-chef-selector></div><section class="chef-selector conflict-selector" role="dialog" aria-modal="true" aria-labelledby="resetManualTitle" aria-describedby="resetManualMessage">
+    <div class="chef-selector-head"><div><h3 id="resetManualTitle" tabindex="-1">Reset manual changes?</h3><p id="resetManualMessage">This restores every manually edited assignment to the generated rota.</p></div><button type="button" class="secondary" data-close-chef-selector aria-label="Close reset confirmation without making changes">×</button></div>
+    <div class="chef-selector-actions"><button type="button" class="secondary" data-close-chef-selector>Cancel</button><button type="button" data-confirm-reset-manual>Reset changes</button></div>
+  </section>`);
+  document.getElementById('resetManualTitle')?.focus();
 }
 
 function refreshEditedRota(message = '') {
@@ -334,6 +367,10 @@ function loadInitialState() {
 
 function attachEvents() {
   window.addEventListener('resize', () => updateRotaScrollAccessibility(document));
+  document.addEventListener('change', (event) => {
+    const conflictAction = event.target.closest?.('[data-conflict-action]');
+    if (conflictAction) updateConflictPreview(conflictAction.closest('.chef-selector'));
+  });
 
   requireElement('weekStart').addEventListener('change', (event) => {
     const normalized = normalizeWeekStart(event.target.value || getDefaultWeek());
@@ -541,6 +578,29 @@ function attachEvents() {
     const editAssignment = event.target.closest('[data-edit-assignment]');
     if (editAssignment) { openAssignmentSelector(editAssignment); return; }
     if (event.target.closest('[data-close-chef-selector]')) { closeChefSelector(); return; }
+    const conflictAction = event.target.closest('[data-conflict-action]');
+    if (conflictAction) { updateConflictPreview(conflictAction.closest('.chef-selector')); return; }
+    const applyConflict = event.target.closest('[data-apply-conflict]');
+    if (applyConflict) {
+      const selector = applyConflict.closest('.chef-selector');
+      const returnFocus = activeAssignmentTrigger;
+      const result = applyManualAssignment({
+        state,
+        overallResult: state.generatedRotas.latestResult,
+        weekIndex: Number(selector.dataset.weekIndex),
+        date: selector.dataset.date,
+        section: selector.dataset.section,
+        chef: selector.dataset.conflictChef,
+        duplicateAction: selector.querySelector('[data-conflict-action]').value,
+        floatAction: 'add'
+      });
+      const { section, date, conflictChef: chef } = selector.dataset;
+      closeChefSelector({ restoreFocus: false });
+      if (result.applied) refreshEditedRota(`${chef} moved to ${section} on ${date}. Validation and totals updated.`);
+      else announce(result.reason || 'No change made.');
+      returnFocus?.focus();
+      return;
+    }
     const selectedChef = event.target.closest('[data-select-chef]');
     if (selectedChef) {
       const selector = selectedChef.closest('.chef-selector');
@@ -550,18 +610,12 @@ function attachEvents() {
       const floatAction = selectedChef.getAttribute('data-float-action') || 'add';
       const week = state.generatedRotas.latestResult.weeks[weekIndex];
       const duplicate = findDuplicateCoreAssignment(week, date, section, chef);
-      let duplicateAction = '';
       if (duplicate) {
         const current = week.rota.find((day) => day.date === date)?.assignments.find((item) => item.section === section)?.chef || '';
-        const choice = window.prompt(section !== 'Float' && current
-          ? `${chef} already covers ${duplicate.section}. Type SWAP, MOVE, or CANCEL.`
-          : `${chef} already covers ${duplicate.section}. Type MOVE or CANCEL.`, 'CANCEL');
-        const normalized = String(choice || 'cancel').trim().toLowerCase();
-        if (normalized === 'swap' && current && section !== 'Float') duplicateAction = 'swap';
-        else if (normalized === 'move') duplicateAction = 'move';
-        else duplicateAction = 'cancel';
+        openAssignmentConflict({ selector, weekIndex, date, section, chef, duplicate, current });
+        return;
       }
-      const result = applyManualAssignment({ state, overallResult: state.generatedRotas.latestResult, weekIndex, date, section, chef, duplicateAction, floatAction });
+      const result = applyManualAssignment({ state, overallResult: state.generatedRotas.latestResult, weekIndex, date, section, chef, floatAction });
       closeChefSelector({ restoreFocus: false });
       if (result.applied) {
         const actionMessage = section === 'Float'
@@ -575,7 +629,15 @@ function attachEvents() {
     if (event.target.closest('[data-manual-undo]')) { if (undoManualEdit(state, state.generatedRotas.latestResult)) refreshEditedRota('Manual change undone.'); return; }
     if (event.target.closest('[data-manual-redo]')) { if (redoManualEdit(state, state.generatedRotas.latestResult)) refreshEditedRota('Manual change redone.'); return; }
     if (event.target.closest('[data-reset-manual-all]')) {
-      if (window.confirm('Reset all manual assignment changes?') && resetAllManualEdits(state, state.generatedRotas.latestResult)) refreshEditedRota('All manual changes reset.');
+      openResetManualConfirmation(event.target.closest('[data-reset-manual-all]'));
+      return;
+    }
+    if (event.target.closest('[data-confirm-reset-manual]')) {
+      const returnFocus = activeAssignmentTrigger;
+      const changed = resetAllManualEdits(state, state.generatedRotas.latestResult);
+      closeChefSelector({ restoreFocus: false });
+      if (changed) refreshEditedRota('All manual changes reset.');
+      returnFocus?.focus();
       return;
     }
     if (event.target.closest('[data-reset-manual-cell]')) {

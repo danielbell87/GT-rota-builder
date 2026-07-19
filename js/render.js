@@ -1147,6 +1147,38 @@ export function renderChefSelector({ weekIndex, date, section }) {
   </section>`;
 }
 
+export function renderAssignmentConflict({ weekIndex, date, section, chef, duplicateSection, currentChef, swapWarnings = [] }) {
+  const canSwap = section !== 'Float' && !!currentChef;
+  const moveLabel = section === 'Float' ? `Move ${chef} from ${duplicateSection} to Float` : 'Move chef';
+  const options = [
+    '<option value="">Choose an action</option>',
+    canSwap ? '<option value="swap">Swap assignments</option>' : '',
+    `<option value="move">${escapeHtml(moveLabel)}</option>`
+  ].join('');
+  const swapNote = canSwap && swapWarnings.length
+    ? `<p class="conflict-option-warning" id="conflictSwapWarning"><strong>Swap warning:</strong> ${escapeHtml(swapWarnings.join(' · '))}. Managerial override remains available.</p>`
+    : '';
+  return `<div class="chef-selector-backdrop" data-close-chef-selector></div><section class="chef-selector conflict-selector" role="dialog" aria-modal="true" aria-labelledby="assignmentConflictTitle" aria-describedby="assignmentConflictMessage" data-week-index="${weekIndex}" data-date="${date}" data-section="${section}" data-conflict-chef="${escapeHtml(chef)}" data-duplicate-section="${escapeHtml(duplicateSection)}" data-current-chef="${escapeHtml(currentChef || '')}">
+    <div class="chef-selector-head"><div><p class="eyebrow">${escapeHtml(section)} · ${escapeHtml(formatDate(date))}</p><h3 id="assignmentConflictTitle" tabindex="-1">Assignment conflict</h3></div><button type="button" class="secondary" data-close-chef-selector aria-label="Close assignment conflict without making changes">×</button></div>
+    <div class="conflict-panel" aria-live="polite">
+      <p id="assignmentConflictMessage"><strong>${escapeHtml(chef)}</strong> is already assigned to <strong>${escapeHtml(duplicateSection)}</strong> on ${escapeHtml(formatDate(date))}.</p>
+      <label for="assignmentConflictAction">Choose an action</label>
+      <select id="assignmentConflictAction" data-conflict-action>${options}</select>
+      ${!canSwap && section !== 'Float' ? '<p class="small">Swap is unavailable because the target section is unfilled.</p>' : ''}
+      ${section === 'Float' ? '<p class="small">Existing Float chefs will be preserved.</p>' : ''}
+      ${swapNote}
+      <div class="conflict-preview" data-conflict-preview role="status" aria-live="polite" aria-atomic="true"><span class="small">Select an action to preview the result.</span></div>
+    </div>
+    <div class="chef-selector-actions"><button type="button" class="secondary" data-close-chef-selector>Cancel</button><button type="button" data-apply-conflict disabled>Apply change</button></div>
+  </section>`;
+}
+
+export function renderAssignmentConflictPreview({ action, chef, targetSection, currentChef, previousSection }) {
+  if (!action) return '<span class="small">Select an action to preview the result.</span>';
+  if (action === 'swap') return `<strong>Preview</strong><span>${escapeHtml(chef)} → ${escapeHtml(targetSection)}</span><span>${escapeHtml(currentChef)} → ${escapeHtml(previousSection)}</span>`;
+  return `<strong>Preview</strong><span>${escapeHtml(chef)} → ${escapeHtml(targetSection)}</span><span>${escapeHtml(previousSection)} → Unfilled</span>`;
+}
+
 export function renderAll() {
   renderPlanningHorizonSummary();
   renderAdditionalChefRequirements();

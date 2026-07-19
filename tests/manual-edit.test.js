@@ -10,7 +10,7 @@ import {
   resetManualCell,
   undoManualEdit
 } from '../js/manual-edit.js';
-import { explainHardRuleFailure } from '../js/render.js';
+import { explainHardRuleFailure, renderAssignmentConflict, renderAssignmentConflictPreview } from '../js/render.js';
 import { getGtChefNamesForDay, syncDayGtChefs } from '../js/rota-model.js';
 
 function makeOverall() {
@@ -47,8 +47,26 @@ export async function runManualEditTests(assert) {
 
   const duplicate = findDuplicateCoreAssignment(overall.weeks[0], day.date, 'Sauce', garnish.chef);
   assert(duplicate?.section === 'Garnish', 'Manual edit: duplicate core assignments are detected before applying');
+  const beforeConflict = JSON.stringify(overall.weeks);
+  const conflictMarkup = renderAssignmentConflict({ weekIndex: 0, date: day.date, section: 'Sauce', chef: garnish.chef, duplicateSection: 'Garnish', currentChef: originalSauce });
+  assert(conflictMarkup.includes(`${garnish.chef}</strong> is already assigned to <strong>Garnish`) && conflictMarkup.includes('Swap assignments') && conflictMarkup.includes('Move chef'), 'Manual conflict: visual panel names the chef and sections and offers labelled actions');
+  assert(conflictMarkup.includes('data-apply-conflict disabled') && !conflictMarkup.includes('Type SWAP') && !conflictMarkup.includes('prompt('), 'Manual conflict: Apply begins disabled and no typed command UI is rendered');
+  assert(renderAssignmentConflictPreview({ action: 'swap', chef: garnish.chef, targetSection: 'Sauce', currentChef: originalSauce, previousSection: 'Garnish' }).includes(`${garnish.chef} → Sauce`) && renderAssignmentConflictPreview({ action: 'swap', chef: garnish.chef, targetSection: 'Sauce', currentChef: originalSauce, previousSection: 'Garnish' }).includes(`${originalSauce} → Garnish`), 'Manual conflict: Swap preview identifies both exact chef moves');
+  assert(renderAssignmentConflictPreview({ action: 'move', chef: garnish.chef, targetSection: 'Sauce', currentChef: originalSauce, previousSection: 'Garnish' }).includes('Garnish → Unfilled'), 'Manual conflict: Move preview clearly identifies the newly unfilled section');
+  const warningMarkup = renderAssignmentConflict({ weekIndex: 0, date: day.date, section: 'Sauce', chef: garnish.chef, duplicateSection: 'Garnish', currentChef: originalSauce, swapWarnings: ['Should not cover this section'] });
+  assert(warningMarkup.includes('Swap warning:') && warningMarkup.includes('Managerial override remains available'), 'Manual conflict: unsuitable swaps explain the warning while preserving managerial override');
+  assert(warningMarkup.includes('aria-labelledby="assignmentConflictTitle"') && warningMarkup.includes('aria-label="Close assignment conflict without making changes"'), 'Manual conflict: dialog heading and close control have screen-reader labels');
+  assert(JSON.stringify(overall.weeks) === beforeConflict, 'Manual conflict: opening and rendering choices does not mutate the rota');
+  const cancelled = applyManualAssignment({ state, overallResult: overall, weekIndex: 0, date: day.date, section: 'Sauce', chef: garnish.chef, duplicateAction: 'cancel' });
+  assert(cancelled.cancelled && JSON.stringify(overall.weeks) === beforeConflict, 'Manual conflict: Cancel leaves every assignment unchanged');
   const moved = applyManualAssignment({ state, overallResult: overall, weekIndex: 0, date: day.date, section: 'Sauce', chef: garnish.chef, duplicateAction: 'move' });
   assert(moved.applied && !currentDay().assignments.some((item) => item.section === 'Garnish') && currentDay().assignments.some((item) => item.section === 'Sauce' && item.chef === garnish.chef), 'Manual edit: move clears the previous core section');
+  undoManualEdit(state, overall);
+  applyManualAssignment({ state, overallResult: overall, weekIndex: 0, date: day.date, section: 'Sauce', chef: '' });
+  const emptySwapMarkup = renderAssignmentConflict({ weekIndex: 0, date: day.date, section: 'Sauce', chef: garnish.chef, duplicateSection: 'Garnish', currentChef: '' });
+  assert(!emptySwapMarkup.includes('value="swap"') && emptySwapMarkup.includes('target section is unfilled'), 'Manual conflict: Swap is unavailable when the target section is empty');
+  const rejectedEmptySwap = applyManualAssignment({ state, overallResult: overall, weekIndex: 0, date: day.date, section: 'Sauce', chef: garnish.chef, duplicateAction: 'swap' });
+  assert(!rejectedEmptySwap.applied && !currentDay().assignments.some((item) => item.section === 'Sauce'), 'Manual conflict: model rejects a swap into an empty target instead of silently moving');
   undoManualEdit(state, overall);
   const swapped = applyManualAssignment({ state, overallResult: overall, weekIndex: 0, date: day.date, section: 'Sauce', chef: garnish.chef, duplicateAction: 'swap' });
   assert(swapped.applied && currentDay().assignments.some((item) => item.section === 'Garnish' && item.chef === originalSauce), 'Manual edit: swap exchanges two core assignments');
@@ -77,5 +95,7 @@ export async function runManualEditTests(assert) {
     assert(!duplicateGt.applied && duplicateGt.duplicate?.section === 'Sauce', 'Manual Float: a chef already covering Sauce cannot also be appended to Float');
     const invalidFloatSwap = applyManualAssignment({ state, overallResult: overall, weekIndex: 0, date: saturday.date, section: 'Float', chef: sauceChef, floatAction: 'add', duplicateAction: 'swap' });
     assert(!invalidFloatSwap.applied && saturday.assignments.some((item) => item.section === 'Float' && item.chef === 'Charlie'), 'Manual Float: whole-cell swaps are rejected so existing Float chefs cannot be displaced or duplicated elsewhere');
+    const floatConflictMarkup = renderAssignmentConflict({ weekIndex: 0, date: saturday.date, section: 'Float', chef: sauceChef, duplicateSection: 'Sauce', currentChef: 'Charlie' });
+    assert(!floatConflictMarkup.includes('value="swap"') && floatConflictMarkup.includes(`Move ${sauceChef} from Sauce to Float`) && floatConflictMarkup.includes('Existing Float chefs will be preserved'), 'Manual Float: conflict panel offers only a named move and promises to preserve existing Float chefs');
   }
 }

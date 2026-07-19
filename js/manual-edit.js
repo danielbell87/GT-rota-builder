@@ -97,10 +97,11 @@ export function applyManualAssignment({ state, overallResult, weekIndex, date, s
     : findDuplicateCoreAssignment(week, date, section, chef);
   if (duplicate && !duplicateAction) return { applied: false, duplicate, previousChef };
   if (duplicate && duplicateAction === 'cancel') return { applied: false, cancelled: true };
-  if (section === 'Float' && duplicate && duplicateAction === 'swap') {
-    return { applied: false, reason: 'Float additions can move the chef from another GT section, but cannot swap the whole Float cell.' };
+  if (duplicate && duplicateAction === 'swap' && (section === 'Float' || !previousChef)) {
+    return { applied: false, reason: section === 'Float'
+      ? 'Float additions can move the chef from another GT section, but cannot swap the whole Float cell.'
+      : 'Swap is unavailable because the target section is unfilled.' };
   }
-
   pushUndo(overallResult, manual);
   if (!Object.prototype.hasOwnProperty.call(manual.originals, key)) manual.originals[key] = section === 'Float' ? previousChefs : previousChef;
   if (duplicate) {
