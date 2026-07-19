@@ -1,6 +1,6 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota, summarizeRota } from '../js/solver.js';
-import { validateRotaHardRules, validateRotaSoftRules, isRotaValid, getStaffConfigurationWarnings } from '../js/validation.js?v=20260719s';
+import { validateRotaHardRules, validateRotaSoftRules, isRotaValid, getStaffConfigurationWarnings } from '../js/validation.js?v=20260719t';
 import { getGtChefNamesForDay, getGtDaysByChef, GT_SECTIONS, normalizeDayAssignments } from '../js/rota-model.js';
 
 function createSummary(state, annualLeaveHoursByChef = {}) {

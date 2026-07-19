@@ -8,7 +8,7 @@ import {
   getHoursForDay,
   getHoursForAssignment,
   scoreSoftPreferences
-} from './scoring.js?v=20260719s';
+} from './scoring.js?v=20260719t';
 import { canCoverSection, sectionCandidateScore } from './section-levels.js';
 import {
   isUnavailable,
@@ -19,9 +19,9 @@ import {
   validateRotaSoftRules,
   getAdjustedGtTargetsByChef,
   getAnnualLeaveDatesByChef
-} from './validation.js?v=20260719s';
+} from './validation.js?v=20260719t';
 import { filterAvailabilityForWeek, filterAdditionalChefRequirementsForWeek } from './weekly-inputs.js';
-import { getGtChefNamesForDay, hasGtAssignment, syncRotaGtChefs } from './rota-model.js?v=20260719s';
+import { getGtChefNamesForDay, hasGtAssignment, syncRotaGtChefs } from './rota-model.js?v=20260719t';
 
 const PASS_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
 const MIO_PRIMARY_DAYS = ['Monday', 'Tuesday', 'Wednesday'];

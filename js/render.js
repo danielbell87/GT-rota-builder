@@ -9,15 +9,15 @@ import {
   formatPlanningHorizonLabel,
   getWeekStartAtOffset
 } from './utils.js';
-import { scoreSoftPreferences } from './scoring.js?v=20260719s';
-import { buildRota, buildMultiWeekRota, summarizeRota } from './solver.js?v=20260719s';
+import { scoreSoftPreferences } from './scoring.js?v=20260719t';
+import { buildRota, buildMultiWeekRota, summarizeRota } from './solver.js?v=20260719t';
 import { getChefSoftPreferenceDetails } from './staff.js';
-import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260719s';
+import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260719t';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
-import { cellKey, ensureManualEditState, getChefConcerns, MANUALLY_EDITABLE_SECTIONS } from './manual-edit.js?v=20260719s';
-import { buildRotaDiagnostics, checkRotaFeasibility, summarizeDiagnostics } from './diagnostics.js?v=20260719s';
-import { getGtChefNamesForDay, syncRotaGtChefs } from './rota-model.js?v=20260719s';
-import { buildContextualScore, combineContextualScores } from './score-context.js?v=20260719s';
+import { cellKey, ensureManualEditState, getChefConcerns, MANUALLY_EDITABLE_SECTIONS } from './manual-edit.js?v=20260719t';
+import { buildRotaDiagnostics, checkRotaFeasibility, summarizeDiagnostics } from './diagnostics.js?v=20260719t';
+import { getGtChefNamesForDay, syncRotaGtChefs } from './rota-model.js?v=20260719t';
+import { buildContextualScore, combineContextualScores } from './score-context.js?v=20260719t';
 
 function getRequiredElement(id) {
   const element = document.getElementById(id);
@@ -405,8 +405,12 @@ function renderWeeklyTargets(view) {
   </section>`;
 }
 
-function renderRecentManualChanges() {
-  const actions = getState().manualEditing?.actions || [];
+function renderRecentManualChanges(view) {
+  const actions = (getState().manualEditing?.actions || []).filter((action) => (
+    action.weekStart
+      ? action.weekStart === view.week.weekStart
+      : action.weekIndex === view.week.weekIndex
+  ));
   if (!actions.length) return '';
   return `<section class="results-section recent-manual-changes"><h4>Recent manual changes</h4><ol>${actions.map((action) => `<li>${escapeHtml(action.description)}</li>`).join('')}</ol></section>`;
 }
@@ -546,7 +550,7 @@ function renderRotaSummary(view, fairnessHtml = '') {
       ${renderContextualScore(view)}
       ${renderDecisionPanel(view)}
       ${renderWeeklyTargets(view)}
-      ${renderRecentManualChanges()}
+      ${renderRecentManualChanges(view)}
       ${renderChefHoursSummary(view)}
       ${fairnessHtml}
       ${renderHardFailureSection(view)}
@@ -1084,6 +1088,7 @@ export function renderResultsPanel(options = {}) {
     return null;
   }
   if (!overallResult) {
+    state.manualEditing = null;
     overallResult = buildMultiWeekRota({
       ...inputs,
       weeklyMioSelections: { ...(state.weeklyInputs.weeklyMioSelections || {}) }

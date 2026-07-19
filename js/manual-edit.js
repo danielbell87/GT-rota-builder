@@ -1,8 +1,8 @@
 import { DISPLAY_SECTIONS, SHIFT_LENGTHS } from './constants.js';
-import { validateRotaHardRules, validateRotaSoftRules } from './validation.js?v=20260719s';
-import { scoreSoftPreferences } from './scoring.js?v=20260719s';
-import { buildRotaDiagnostics } from './diagnostics.js?v=20260719s';
-import { getGtChefNamesForDay, hasGtAssignment, syncDayGtChefs } from './rota-model.js?v=20260719s';
+import { validateRotaHardRules, validateRotaSoftRules } from './validation.js?v=20260719t';
+import { scoreSoftPreferences } from './scoring.js?v=20260719t';
+import { buildRotaDiagnostics } from './diagnostics.js?v=20260719t';
+import { getGtChefNamesForDay, hasGtAssignment, syncDayGtChefs } from './rota-model.js?v=20260719t';
 
 export const MANUAL_HISTORY_LIMIT = 10;
 export const MANUALLY_EDITABLE_SECTIONS = DISPLAY_SECTIONS.filter((section) => section !== 'MIO');
@@ -138,7 +138,12 @@ export function applyManualAssignment({ state, overallResult, weekIndex, date, s
   else if (!chef) description = `${section} assignment cleared`;
   else if (previousChef) description = `${previousChef} replaced by ${chef} on ${section}`;
   else description = `${chef} added to ${dayName} ${section}`;
-  manual.actions = [{ description, at: Date.now() }, ...(manual.actions || [])].slice(0, MANUAL_HISTORY_LIMIT);
+  manual.actions = [{
+    description,
+    at: Date.now(),
+    weekIndex,
+    weekStart: week.weekStart
+  }, ...(manual.actions || [])].slice(0, MANUAL_HISTORY_LIMIT);
   return { applied: true, previousChef, previousChefs, chef, description };
 }
 

@@ -1,7 +1,7 @@
-import { APP_BUILD_VERSION, CACHE_BUST_VERSION } from './constants.js?v=20260719s';
+import { APP_BUILD_VERSION, CACHE_BUST_VERSION } from './constants.js?v=20260719t';
 import { getState, getDefaultWeek, resetStateToDefaults, syncCompatibilityViews, setWeekStart, setMioChef, setNumWeeks, setWeeklyMioChef } from './state.js';
 import { normalizeWeekStart, getPlanningHorizon } from './utils.js';
-import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260719s';
+import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260719t';
 import { addChef, createBlankChefDraft, createChefDraft, getChefById, removeChef, updateChef } from './staff.js';
 import { addAvailabilityEntry, removeAvailabilityEntry, updateAvailabilityField, addAdditionalChefRequest, updateAdditionalChefRequest, removeAdditionalChefRequest, validateAdditionalChefDate, validateAdditionalChefCount } from './weekly-inputs.js';
 import {
@@ -21,8 +21,8 @@ import {
   showChefModalError,
   setChefRemovalConfirmation,
   syncChefChoiceChipState
-} from './render.js?v=20260719s';
-import { renderAssignmentConflict, renderAssignmentConflictPreview, renderChefSelector } from './render.js?v=20260719s';
+} from './render.js?v=20260719t';
+import { renderAssignmentConflict, renderAssignmentConflictPreview, renderChefSelector } from './render.js?v=20260719t';
 import { applyManualAssignment, findDuplicateCoreAssignment, getChefConcerns, redoManualEdit, resetAllManualEdits, resetManualCell, undoManualEdit } from './manual-edit.js';
 import { upsertPublishedHistory, upsertPublishedWeeks } from './history.js';
 import { openPrintWindow } from './print.js';
@@ -124,7 +124,11 @@ function closeIssuePopover(button = null, { restoreFocus = false } = {}) {
   document.querySelectorAll('[data-issue-toggle]').forEach(resetIssueElement);
   removeMobileIssueSheet();
   openWarningId = null;
-  if (restoreFocus && activeButton?.isConnected) activeButton.focus();
+  if (restoreFocus && activeButton?.isConnected) {
+    // Focus restoration is not a fresh request to reopen the warning.
+    lastInputModality = 'pointer';
+    activeButton.focus();
+  }
 }
 
 function openMobileIssueSheet(button, popover) {

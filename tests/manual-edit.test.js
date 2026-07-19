@@ -34,12 +34,14 @@ export async function runManualEditTests(assert) {
 
   const normal = applyManualAssignment({ state, overallResult: overall, weekIndex: 0, date: day.date, section: 'Sauce', chef: '' });
   assert(normal.applied && !day.assignments.some((item) => item.section === 'Sauce'), 'Manual edit: selecting None updates the rota model');
+  assert(state.manualEditing.actions[0].weekIndex === 0 && state.manualEditing.actions[0].weekStart === week.weekStart, 'Manual edit: recent action records its week index and week start');
   assert(JSON.stringify(day.chefs) === JSON.stringify(getGtChefNamesForDay(day)), 'Manual edit: visible GT assignments and day.chefs remain synchronized');
   assert(week.hardValidation.some((item) => item.passed === false), 'Manual edit: validation recalculates after an uncovered section');
   assert(!Object.prototype.hasOwnProperty.call(state.manualEditing, 'locks'), 'Manual edit: lock state is not created');
   const uncoveredFailure = week.hardValidation.find((item) => item.ruleId === 'H025' && item.passed === false && item.message.includes('Sauce'));
   assert(explainHardRuleFailure(uncoveredFailure, week, state).includes('Sauce is uncovered on 13 Jul 2026'), 'Manual edit: invalid edits produce a specific dated hard-rule explanation');
   assert(undoManualEdit(state, overall) && currentDay().assignments.some((item) => item.section === 'Sauce' && item.chef === originalSauce), 'Manual edit: undo restores the assignment');
+  assert(state.manualEditing.actions.length === 0, 'Manual edit: undo restores the recent-action history snapshot');
   assert(JSON.stringify(currentDay().chefs) === JSON.stringify(getGtChefNamesForDay(currentDay())), 'Manual edit: undo restores synchronized GT staffing');
   assert(redoManualEdit(state, overall) && !currentDay().assignments.some((item) => item.section === 'Sauce'), 'Manual edit: redo reapplies the assignment');
   assert(JSON.stringify(currentDay().chefs) === JSON.stringify(getGtChefNamesForDay(currentDay())), 'Manual edit: redo preserves synchronized GT staffing');

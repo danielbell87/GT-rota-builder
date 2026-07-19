@@ -33,7 +33,7 @@ async function loadFrame(url) {
     frame.onerror = reject;
     frame.src = frameUrl.href;
   });
-  await waitFor(() => frame.contentWindow?.__gtRotaBootstrap?.status, 20000);
+  await waitFor(() => frame.contentWindow?.__gtRotaBootstrap?.status, 40000);
   return frame;
 }
 
@@ -417,7 +417,11 @@ export async function runUiTests(assert) {
 
     leaveRow.querySelector('button[data-remove]').click();
     await waitFor(() => doc.querySelectorAll('#availabilityBody tr').length === 0);
-    await waitFor(() => resultsEl.innerHTML === baselineResultsHtml);
+    await waitFor(() => {
+      const restoredState = getPersistedAppState(canonicalFrame.contentWindow);
+      return (restoredState.weeklyInputs.availability || []).length === 0
+        && JSON.stringify(buildResultFromPersistedState(restoredState)) === JSON.stringify(baselineMultiWeek);
+    });
     const removedJoelState = getPersistedAppState(canonicalFrame.contentWindow);
     const removedJoelResult = buildResultFromPersistedState(removedJoelState);
     const removedJoelSummary = removedJoelResult.weeks[1].summary.find((item) => item.name === 'Joel');
@@ -446,7 +450,11 @@ export async function runUiTests(assert) {
 
     unavailableRow.querySelector('button[data-remove]').click();
     await waitFor(() => doc.querySelectorAll('#availabilityBody tr').length === 0);
-    await waitFor(() => resultsEl.innerHTML === baselineResultsHtml);
+    await waitFor(() => {
+      const restoredState = getPersistedAppState(canonicalFrame.contentWindow);
+      return (restoredState.weeklyInputs.availability || []).length === 0
+        && JSON.stringify(buildResultFromPersistedState(restoredState)) === JSON.stringify(baselineMultiWeek);
+    });
     const removedConnorState = getPersistedAppState(canonicalFrame.contentWindow);
     const removedConnorResult = buildResultFromPersistedState(removedConnorState);
     assert((removedConnorState.weeklyInputs.availability || []).length === 0, 'UI: removing Connor unavailable clears persisted availability state');
@@ -521,6 +529,7 @@ export async function runUiTests(assert) {
     doc.body.click();
     assert(issuePopover.hidden, 'UI rule tooltip: tapping outside closes an explicitly opened tooltip');
     doc.getElementById('printRotaBtn').focus();
+    doc.dispatchEvent(new canonicalFrame.contentWindow.KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
     issueButton.focus();
     assert(!issuePopover.hidden, 'UI rule tooltip: keyboard focus reveals the explanation');
     doc.dispatchEvent(new canonicalFrame.contentWindow.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));

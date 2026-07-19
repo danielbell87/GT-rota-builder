@@ -1,6 +1,6 @@
 import { DAY_FAIRNESS_WEIGHTS, SCORING_WEIGHTS, SHIFT_LENGTHS } from './constants.js';
 import { getSectionLevel, getSectionLevelLabel, SECTION_LEVELS } from './section-levels.js';
-import { getGtChefNamesForDay } from './rota-model.js?v=20260719s';
+import { getGtChefNamesForDay } from './rota-model.js?v=20260719t';
 
 export function getSectionScore(staff, section, ruleOverrides) {
   return getSectionLevel(staff, section);
