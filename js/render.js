@@ -9,15 +9,15 @@ import {
   formatPlanningHorizonLabel,
   getWeekStartAtOffset
 } from './utils.js';
-import { scoreSoftPreferences } from './scoring.js?v=20260719o';
-import { buildRota, buildMultiWeekRota, summarizeRota } from './solver.js?v=20260719o';
+import { scoreSoftPreferences } from './scoring.js?v=20260719s';
+import { buildRota, buildMultiWeekRota, summarizeRota } from './solver.js?v=20260719s';
 import { getChefSoftPreferenceDetails } from './staff.js';
-import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260719o';
+import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260719s';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
-import { cellKey, ensureManualEditState, getChefConcerns, MANUALLY_EDITABLE_SECTIONS } from './manual-edit.js?v=20260719o';
-import { buildRotaDiagnostics, checkRotaFeasibility, summarizeDiagnostics } from './diagnostics.js?v=20260719o';
-import { getGtChefNamesForDay, syncRotaGtChefs } from './rota-model.js?v=20260719o';
-import { buildContextualScore, combineContextualScores } from './score-context.js?v=20260719o';
+import { cellKey, ensureManualEditState, getChefConcerns, MANUALLY_EDITABLE_SECTIONS } from './manual-edit.js?v=20260719s';
+import { buildRotaDiagnostics, checkRotaFeasibility, summarizeDiagnostics } from './diagnostics.js?v=20260719s';
+import { getGtChefNamesForDay, syncRotaGtChefs } from './rota-model.js?v=20260719s';
+import { buildContextualScore, combineContextualScores } from './score-context.js?v=20260719s';
 
 function getRequiredElement(id) {
   const element = document.getElementById(id);
@@ -1124,14 +1124,25 @@ function renderManualToolbar(state) {
 export function renderChefSelector({ weekIndex, date, section }) {
   const state = getState();
   const week = state.generatedRotas.latestResult?.weeks?.[weekIndex];
-  const current = week?.rota?.find((day) => day.date === date)?.assignments?.find((item) => item.section === section)?.chef || '';
-  const option = (name, label) => {
+  const currentAssignments = week?.rota?.find((day) => day.date === date)?.assignments?.filter((item) => item.section === section) || [];
+  const currentChefs = new Set(currentAssignments.map((item) => item.chef));
+  const current = currentAssignments[0]?.chef || '';
+  const option = (name, label, floatAction = '') => {
     const concerns = getChefConcerns({ state, week, date, section, chefName: name });
-    return `<button type="button" class="chef-selector-option${name === current ? ' current' : ''}" data-select-chef="${escapeHtml(name)}"><span>${escapeHtml(label)}</span>${concerns.length ? `<small>${escapeHtml(concerns.join(' · '))}</small>` : ''}</button>`;
+    const selected = section === 'Float' ? currentChefs.has(name) : name === current;
+    return `<button type="button" class="chef-selector-option${selected ? ' current' : ''}" data-select-chef="${escapeHtml(name)}"${floatAction ? ` data-float-action="${floatAction}"` : ''}><span>${escapeHtml(label)}</span>${concerns.length ? `<small>${escapeHtml(concerns.join(' · '))}</small>` : ''}</button>`;
   };
+  const options = section === 'Float'
+    ? [
+        currentChefs.size ? option('', 'Clear all Float assignments', 'clear') : '',
+        ...state.staff.map((chef) => currentChefs.has(chef.name)
+          ? option(chef.name, `Remove ${chef.name}`, 'remove')
+          : option(chef.name, `Add ${chef.name}`, 'add'))
+      ].join('')
+    : `${option('', 'None')}${state.staff.map((chef) => option(chef.name, chef.name)).join('')}`;
   return `<div class="chef-selector-backdrop" data-close-chef-selector></div><section class="chef-selector" role="dialog" aria-modal="true" aria-labelledby="chefSelectorTitle" data-week-index="${weekIndex}" data-date="${date}" data-section="${section}">
-    <div class="chef-selector-head"><div><h3 id="chefSelectorTitle">${escapeHtml(section)} · ${escapeHtml(formatDate(date))}</h3><p>Choose any configured chef. Warnings do not prevent selection.</p></div><button type="button" class="secondary" data-close-chef-selector aria-label="Close chef selector">×</button></div>
-    <div class="chef-selector-options">${option('', 'None')}${state.staff.map((chef) => option(chef.name, chef.name)).join('')}</div>
+    <div class="chef-selector-head"><div><h3 id="chefSelectorTitle">${escapeHtml(section)} · ${escapeHtml(formatDate(date))}</h3><p>${section === 'Float' ? 'Add or remove individual Float chefs. Existing Float assignments are preserved when another chef is added.' : 'Choose any configured chef. Warnings do not prevent selection.'}</p></div><button type="button" class="secondary" data-close-chef-selector aria-label="Close chef selector">×</button></div>
+    <div class="chef-selector-options">${options}</div>
     <div class="chef-selector-actions"><button type="button" class="secondary" data-reset-manual-cell>Reset cell</button><button type="button" class="secondary" data-close-chef-selector>Cancel</button></div>
   </section>`;
 }

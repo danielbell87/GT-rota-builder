@@ -364,6 +364,20 @@ export async function runUiTests(assert) {
     const weekTwoVisibleFloatChefs = baselineMultiWeek.weeks[1].rota
       .flatMap((day) => day.assignments.filter((assignment) => assignment.section === 'Float').map((assignment) => assignment.chef));
     assert(weekTwoVisibleFloatChefs.every((chef) => weekTwoFloatText.includes(chef)), 'UI: every generated Float assignment is visible in the rota table, including additional chefs in the same cell');
+    const multiFloatDay = baselineMultiWeek.weeks
+      .flatMap((week, weekIndex) => week.rota.map((day) => ({ weekIndex, day })))
+      .find(({ day }) => day.assignments.filter((assignment) => assignment.section === 'Float').length > 1);
+    assert(!!multiFloatDay, 'UI Float editor: generated multi-week rota includes a multi-chef Float cell for interaction coverage');
+    if (multiFloatDay) {
+      const floatButton = getWeekPanel(doc, multiFloatDay.weekIndex)
+        ?.querySelector(`[data-edit-assignment][data-date="${multiFloatDay.day.date}"][data-section="Float"]`);
+      floatButton?.click();
+      await waitFor(() => doc.querySelector('.chef-selector[data-section="Float"]'));
+      const floatSelectorText = normalizeText(doc.querySelector('.chef-selector[data-section="Float"]').textContent);
+      const assignedFloatChefs = multiFloatDay.day.assignments.filter((assignment) => assignment.section === 'Float').map((assignment) => assignment.chef);
+      assert(assignedFloatChefs.every((chef) => floatSelectorText.includes(`Remove ${chef}`)) && floatSelectorText.includes('Add '), 'UI Float editor: multi-chef cells expose individual remove actions and preserve an add path');
+      doc.querySelector('.chef-selector [data-close-chef-selector]').click();
+    }
 
     let mioPersistenceFrame = null;
     try {
@@ -821,7 +835,7 @@ export async function runUiTests(assert) {
     assert(migratedState.staff.find((chef) => chef.name === 'Myles')?.mioEligible === true && migratedState.staff.find((chef) => chef.name === 'Dan')?.mioEligible === false, 'UI: legacy MIO eligibility map migrates into canonical chef records');
     assert(migratedState.staff.find((chef) => chef.name === 'Charlie')?.notes === 'User-entered migration note' && migratedState.staff.find((chef) => chef.name === 'Charlie')?.skills?.Sauce === 3, 'UI: schema migration preserves user notes and merges legacy structured profile data');
     assert(JSON.stringify(migratedState.weeklyInputs.availability) === JSON.stringify(legacyStaffState.weeklyInputs.availability), 'UI: schema migration preserves annual leave and unavailable entries');
-    assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '15', 'UI: storage schema version increments to 15');
+    assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '16', 'UI: storage schema version increments to 16 for canonical multi-assignment Float data');
     assert(migrationFrame.contentWindow.localStorage.getItem('gtRota.mioEligibilityByChef') === null && migrationFrame.contentWindow.localStorage.getItem('gtRota.staffProfilesByChef') === null, 'UI: legacy per-chef storage maps are removed after migration');
   } finally {
     destroyFrame(migrationFrame);
@@ -847,7 +861,7 @@ export async function runUiTests(assert) {
     assert(restoredState.staff.length === 10, 'UI: schema 12 restores the canonical chef list when saved staff is empty');
     assert(restoredState.staff.find((chef) => chef.name === 'Aled')?.senior === true && restoredState.staff.find((chef) => chef.name === 'Aled')?.skills?.Pass === 3, 'UI: restored defaults include canonical seniority and section strengths');
     assert(JSON.stringify(restoredState.staff.find((chef) => chef.name === 'Aled')?.preferredDaysOff) === JSON.stringify(['Saturday', 'Sunday']), 'UI: restored defaults include canonical chef preferences');
-    assert(restoredDefaultsFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '15', 'UI: empty-staff restoration completes the schema 15 migration');
+    assert(restoredDefaultsFrame.contentWindow.localStorage.getItem('gtRota.schemaVersion') === '16', 'UI: empty-staff restoration completes the schema 16 migration');
   } finally {
     destroyFrame(restoredDefaultsFrame);
   }
