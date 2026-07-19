@@ -36,6 +36,16 @@ let activeChefTriggerSelector = '#addChefBtn';
 let removeChefConfirmationOpen = false;
 let activeAssignmentTrigger = null;
 let issueCloseTimer = 0;
+let openWarningId = null;
+let lastInputModality = 'pointer';
+let warningTouchStart = null;
+let suppressWarningClick = false;
+
+const HOVER_CAPABILITY_QUERY = '(hover: hover) and (pointer: fine)';
+
+function supportsGenuineHover() {
+  return typeof window.matchMedia === 'function' && window.matchMedia(HOVER_CAPABILITY_QUERY).matches;
+}
 
 function requireElement(id) {
   const element = document.getElementById(id);
@@ -81,28 +91,52 @@ function positionIssuePopover(button, popover) {
   popover.style.visibility = '';
 }
 
-function closeIssuePopover(button = document.querySelector('[data-issue-toggle][aria-expanded="true"]')) {
-  if (!button) return;
+function removeMobileIssueSheet() {
+  document.querySelector('[data-mobile-issue-sheet]')?.remove();
+}
+
+function resetIssueElement(button) {
   button.setAttribute('aria-expanded', 'false');
   delete button.dataset.issuePinned;
-  const popover = getIssuePopover(button);
-  if (popover) {
-    popover.hidden = true;
-    popover.style.left = '';
-    popover.style.top = '';
-  }
+  const originalId = button.dataset.issuePopoverId || button.getAttribute('aria-controls');
+  if (originalId) button.setAttribute('aria-controls', originalId);
+  delete button.dataset.issuePopoverId;
+  const popover = originalId ? document.getElementById(originalId) : getIssuePopover(button);
+  if (!popover) return;
+  popover.hidden = true;
+  popover.removeAttribute('style');
+  delete popover.dataset.placement;
+  popover.removeAttribute('aria-hidden');
+}
+
+function closeIssuePopover(button = null, { restoreFocus = false } = {}) {
+  window.clearTimeout(issueCloseTimer);
+  const activeButton = button || (openWarningId ? document.querySelector(`[data-issue-toggle][aria-controls="${openWarningId}"], [data-issue-toggle][data-issue-popover-id="${openWarningId}"]`) : null);
+  document.querySelectorAll('[data-issue-toggle]').forEach(resetIssueElement);
+  removeMobileIssueSheet();
+  openWarningId = null;
+  if (restoreFocus && activeButton?.isConnected) activeButton.focus();
+}
+
+function openMobileIssueSheet(button, popover) {
+  const popoverId = popover.id;
+  const sheetId = 'mobile-rule-issue-sheet';
+  document.body.insertAdjacentHTML('beforeend', `<div class="mobile-issue-backdrop print-hidden" data-mobile-issue-sheet><section id="${sheetId}" class="mobile-issue-sheet" role="dialog" aria-modal="true" aria-labelledby="mobileRuleIssueTitle"><div class="mobile-issue-sheet-head"><h2 id="mobileRuleIssueTitle">Rule issue</h2><button type="button" class="secondary" data-close-mobile-issue>Close</button></div><div class="mobile-issue-sheet-body">${popover.innerHTML}</div></section></div>`);
+  button.dataset.issuePopoverId = popoverId;
+  button.setAttribute('aria-controls', sheetId);
+  document.querySelector('[data-close-mobile-issue]')?.focus({ preventScroll: true });
 }
 
 function openIssuePopover(button, { pinned = false } = {}) {
   window.clearTimeout(issueCloseTimer);
-  document.querySelectorAll('[data-issue-toggle][aria-expanded="true"]').forEach((other) => {
-    if (other !== button) closeIssuePopover(other);
-  });
+  closeIssuePopover();
   const popover = getIssuePopover(button);
   if (!popover) return;
+  openWarningId = popover.id;
   button.setAttribute('aria-expanded', 'true');
   if (pinned) button.dataset.issuePinned = 'true';
-  positionIssuePopover(button, popover);
+  if (!supportsGenuineHover()) openMobileIssueSheet(button, popover);
+  else positionIssuePopover(button, popover);
 }
 
 function scheduleIssuePopoverClose(button) {
@@ -424,17 +458,63 @@ function loadInitialState() {
 function attachEvents() {
   window.addEventListener('resize', () => updateRotaScrollAccessibility(document));
   window.addEventListener('resize', () => {
+    closeIssuePopover();
+  });
+  window.addEventListener('orientationchange', () => closeIssuePopover());
+  document.addEventListener('rota:before-results-render', () => closeIssuePopover());
+  document.addEventListener('scroll', (event) => {
+    if (event.target?.closest?.('.rota-table-scroll') || event.target?.classList?.contains('rota-table-scroll')) closeIssuePopover();
+  }, true);
+  document.addEventListener('pointerdown', (event) => {
+    lastInputModality = 'pointer';
+    if (event.pointerType === 'touch') {
+      warningTouchStart = { x: event.clientX, y: event.clientY, target: event.target.closest?.('[data-issue-toggle]') || null };
+      suppressWarningClick = false;
+    }
+  }, true);
+  document.addEventListener('pointermove', (event) => {
+    if (event.pointerType !== 'touch' || !warningTouchStart) return;
+    if (Math.abs(event.clientX - warningTouchStart.x) > 10 || Math.abs(event.clientY - warningTouchStart.y) > 10) {
+      suppressWarningClick = true;
+      closeIssuePopover();
+    }
+  }, true);
+  document.addEventListener('pointerup', () => { warningTouchStart = null; }, true);
+  document.addEventListener('touchstart', (event) => {
+    lastInputModality = 'pointer';
+    const touch = event.touches?.[0];
+    if (!touch) return;
+    warningTouchStart = { x: touch.clientX, y: touch.clientY, target: event.target.closest?.('[data-issue-toggle]') || null };
+    suppressWarningClick = false;
+  }, { capture: true, passive: true });
+  document.addEventListener('touchmove', (event) => {
+    const touch = event.touches?.[0];
+    if (!touch || !warningTouchStart) return;
+    if (Math.abs(touch.clientX - warningTouchStart.x) > 10 || Math.abs(touch.clientY - warningTouchStart.y) > 10) {
+      suppressWarningClick = true;
+      closeIssuePopover();
+    }
+  }, { capture: true, passive: true });
+  document.addEventListener('touchend', () => { warningTouchStart = null; }, { capture: true, passive: true });
+  document.addEventListener('keydown', (event) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    lastInputModality = 'keyboard';
+  }, true);
+  window.addEventListener('blur', () => { lastInputModality = 'pointer'; });
+  window.addEventListener('resize', () => {
     const button = document.querySelector('[data-issue-toggle][aria-expanded="true"]');
     const popover = getIssuePopover(button);
-    if (button && popover) positionIssuePopover(button, popover);
+    if (supportsGenuineHover() && button && popover) positionIssuePopover(button, popover);
   });
-  document.addEventListener('mouseover', (event) => {
+  const handleIssueMouseOver = (event) => {
+    if (!supportsGenuineHover()) return;
     const button = event.target.closest?.('[data-issue-toggle]');
     const popover = event.target.closest?.('.issue-popover');
     if (button && !button.contains(event.relatedTarget)) openIssuePopover(button);
     if (popover) window.clearTimeout(issueCloseTimer);
-  });
-  document.addEventListener('mouseout', (event) => {
+  };
+  const handleIssueMouseOut = (event) => {
+    if (!supportsGenuineHover()) return;
     const button = event.target.closest?.('[data-issue-toggle]');
     const popover = event.target.closest?.('.issue-popover');
     if (button && !button.contains(event.relatedTarget)) scheduleIssuePopoverClose(button);
@@ -442,12 +522,25 @@ function attachEvents() {
       const owner = document.querySelector(`[data-issue-toggle][aria-controls="${popover.id}"]`);
       if (owner) scheduleIssuePopoverClose(owner);
     }
-  });
+  };
+  let hoverHandlersAttached = false;
+  const hoverMedia = typeof window.matchMedia === 'function' ? window.matchMedia(HOVER_CAPABILITY_QUERY) : null;
+  const syncIssueHoverHandlers = () => {
+    const shouldAttach = !!hoverMedia?.matches;
+    if (shouldAttach === hoverHandlersAttached) return;
+    hoverHandlersAttached = shouldAttach;
+    document[shouldAttach ? 'addEventListener' : 'removeEventListener']('mouseover', handleIssueMouseOver);
+    document[shouldAttach ? 'addEventListener' : 'removeEventListener']('mouseout', handleIssueMouseOut);
+    if (!shouldAttach) closeIssuePopover();
+  };
+  syncIssueHoverHandlers();
+  hoverMedia?.addEventListener?.('change', syncIssueHoverHandlers);
   document.addEventListener('focusin', (event) => {
     const button = event.target.closest?.('[data-issue-toggle]');
-    if (button) openIssuePopover(button);
+    if (button && lastInputModality === 'keyboard') openIssuePopover(button);
   });
   document.addEventListener('focusout', (event) => {
+    if (!supportsGenuineHover()) return;
     const button = event.target.closest?.('[data-issue-toggle]');
     const popover = event.target.closest?.('.issue-popover');
     const owner = button || (popover ? document.querySelector(`[data-issue-toggle][aria-controls="${popover.id}"]`) : null);
@@ -580,11 +673,27 @@ function attachEvents() {
   document.addEventListener('click', (event) => {
     const issueToggle = event.target.closest('[data-issue-toggle]');
     if (issueToggle) {
+      if (suppressWarningClick) {
+        suppressWarningClick = false;
+        event.preventDefault();
+        return;
+      }
       const expanded = issueToggle.getAttribute('aria-expanded') === 'true';
       if (expanded && issueToggle.dataset.issuePinned === 'true') closeIssuePopover(issueToggle);
+      else if (expanded) closeIssuePopover(issueToggle);
       else openIssuePopover(issueToggle, { pinned: true });
       return;
     }
+    if (event.target.closest('[data-close-mobile-issue]')) {
+      closeIssuePopover(null, { restoreFocus: true });
+      return;
+    }
+    const mobileBackdrop = event.target.closest('[data-mobile-issue-sheet]');
+    if (mobileBackdrop && event.target === mobileBackdrop) {
+      closeIssuePopover(null, { restoreFocus: true });
+      return;
+    }
+    if (event.target.closest('.mobile-issue-sheet')) return;
     if (event.target.closest('.issue-popover')) return;
     closeIssuePopover();
 
@@ -731,6 +840,12 @@ function attachEvents() {
   });
 
   document.addEventListener('keydown', (event) => {
+    const issueButton = event.target.closest?.('[data-issue-toggle]');
+    if (issueButton && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      if (issueButton.getAttribute('aria-expanded') !== 'true') openIssuePopover(issueButton, { pinned: true });
+      return;
+    }
     const chefCard = event.target.closest?.('[data-open-chef-id]');
     if (chefCard && (event.key === 'Enter' || event.key === ' ')) {
       event.preventDefault();
@@ -754,8 +869,8 @@ function attachEvents() {
     }
 
     if (event.key !== 'Escape') return;
-    if (document.querySelector('[data-issue-toggle][aria-expanded="true"]')) {
-      closeIssuePopover();
+    if (openWarningId) {
+      closeIssuePopover(null, { restoreFocus: !!document.querySelector('[data-mobile-issue-sheet]') });
       return;
     }
     if (document.querySelector('.chef-selector')) { closeChefSelector(); return; }

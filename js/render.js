@@ -155,8 +155,8 @@ function getHardFailureTitle(failure, week, state) {
 function renderIssueDisclosure(failures, week, state, id, accessibleLabel) {
   if (!failures.length) return '';
   const issues = failures.filter((failure, index, list) => {
-    const key = `${failure.ruleId}|${explainHardRuleFailure(failure, week, state)}`;
-    return list.findIndex((candidate) => `${candidate.ruleId}|${explainHardRuleFailure(candidate, week, state)}` === key) === index;
+    const key = explainHardRuleFailure(failure, week, state);
+    return list.findIndex((candidate) => explainHardRuleFailure(candidate, week, state) === key) === index;
   });
   return `<button type="button" class="issue-disclosure" data-issue-toggle aria-expanded="false" aria-controls="${id}" aria-label="${escapeHtml(accessibleLabel)}">!</button>
     <div id="${id}" class="issue-popover print-hidden" role="tooltip" hidden>${issues.map((failure) => `<div class="issue-popover-item"><strong>${escapeHtml(getHardFailureTitle(failure, week, state))}</strong><span>${escapeHtml(explainHardRuleFailure(failure, week, state))}</span>${failure.ruleId ? `<small>Rule ${escapeHtml(failure.ruleId)}</small>` : ''}</div>`).join('')}</div>`;
@@ -998,6 +998,7 @@ export function renderWeekPanel(view, options = {}) {
 }
 
 export function renderResultsPanel(options = {}) {
+  if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent('rota:before-results-render'));
   const state = getState();
   const inputs = collectWeeklyInputsFromDom();
   const container = getRequiredElement('results');
