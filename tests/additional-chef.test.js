@@ -1,6 +1,6 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota } from '../js/solver.js';
-import { validateRotaHardRules } from '../js/validation.js?v=20260718h';
+import { validateRotaHardRules } from '../js/validation.js?v=20260719o';
 import {
   addAdditionalChefRequest,
   updateAdditionalChefRequest,
@@ -241,8 +241,8 @@ export async function runAdditionalChefTests(assert) {
 
   // Test 17: Hard validation rejects an impossible extra-staffing request
   {
-    // Requesting far too many chefs (e.g., +10) on a day should make the rota infeasible
-    // because there are not enough unique chefs available
+    // Requesting more chefs than exist must return the best visible candidate,
+    // with the unmet staffing requirement reported instead of hiding the rota.
     const state = setupBaseState();
     state.weeklyInputs.additionalChefRequirements = [{ date: FRIDAY_DATE, count: 5 }];
     // Friday needs 10 chefs (5 base + 5 extra). There are ~11 chefs so this might fail
@@ -259,7 +259,9 @@ export async function runAdditionalChefTests(assert) {
       { date: '2026-07-19', count: 5 }
     ];
     const extremeResult = buildRotaFromState(extremeState);
-    assert(extremeResult.status === 'infeasible', 'T17: Solver returns infeasible for impossible extra-staffing request');
+    assert(['invalid', 'incomplete'].includes(extremeResult.status) && extremeResult.rota.length === 7, 'T17a: impossible extra staffing returns the best seven-day rota');
+    assert(extremeResult.rota.some((day) => day.assignments.length > 0), 'T17b: impossible extra staffing retains meaningful assignments');
+    assert(extremeResult.hardValidation.some((issue) => !issue.passed && ['H009', 'H010'].includes(issue.ruleId) && issue.date && issue.suggestedAction), 'T17c: unmet daily staffing has a dated actionable validation issue');
   }
 
   // Test 18: Basic state initialisation includes additionalChefRequirements

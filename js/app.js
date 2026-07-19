@@ -1,7 +1,7 @@
-import { APP_BUILD_VERSION, CACHE_BUST_VERSION } from './constants.js?v=20260718s';
+import { APP_BUILD_VERSION, CACHE_BUST_VERSION } from './constants.js?v=20260719o';
 import { getState, getDefaultWeek, resetStateToDefaults, syncCompatibilityViews, setWeekStart, setMioChef, setNumWeeks, setWeeklyMioChef } from './state.js';
 import { normalizeWeekStart, getPlanningHorizon } from './utils.js';
-import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260718s';
+import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260719o';
 import { addChef, createBlankChefDraft, createChefDraft, getChefById, removeChef, updateChef } from './staff.js';
 import { addAvailabilityEntry, removeAvailabilityEntry, updateAvailabilityField, addAdditionalChefRequest, updateAdditionalChefRequest, removeAdditionalChefRequest, validateAdditionalChefDate, validateAdditionalChefCount } from './weekly-inputs.js';
 import {
@@ -21,8 +21,8 @@ import {
   showChefModalError,
   setChefRemovalConfirmation,
   syncChefChoiceChipState
-} from './render.js?v=20260718s';
-import { renderChefSelector } from './render.js?v=20260718s';
+} from './render.js?v=20260719o';
+import { renderChefSelector } from './render.js?v=20260719o';
 import { applyManualAssignment, findDuplicateCoreAssignment, redoManualEdit, resetAllManualEdits, resetManualCell, undoManualEdit } from './manual-edit.js';
 import { upsertPublishedHistory, upsertPublishedWeeks } from './history.js';
 import { openPrintWindow } from './print.js';
@@ -393,12 +393,13 @@ function attachEvents() {
   requireElement('generateRotaBtn').addEventListener('click', () => {
     const readiness = renderReadinessPanel();
     if (readiness?.status === 'blocked') {
-      announce('Rota generation is blocked by the readiness problems shown above.');
+      document.querySelector('[data-generate-best-available]')?.focus();
+      announce('Likely rule issues found. Choose Generate best available rota or Return to setup.');
       return;
     }
-    renderResultsPanel();
+    renderResultsPanel({ forceBestAvailable: true });
     persistState();
-    announce(readiness?.status === 'warnings' ? 'Rota generated with readiness warnings.' : 'Rota generated.');
+    announce(readiness?.status === 'ready' ? 'Rota generated.' : 'Rota generated with preference warnings.');
   });
   requireElement('downloadBackupBtn').addEventListener('click', downloadBackup);
   requireElement('restoreBackupBtn').addEventListener('click', () => requireElement('restoreBackupInput').click());
@@ -420,7 +421,7 @@ function attachEvents() {
 
     if (event.target.id === 'resultsWeekSelect') {
       state.uiState.selectedResultWeekIndex = Number.parseInt(event.target.value, 10) || 0;
-      renderResultsPanel();
+      renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
       return;
     }
 
@@ -454,6 +455,37 @@ function attachEvents() {
   });
 
   document.addEventListener('click', (event) => {
+    const issueToggle = event.target.closest('[data-issue-toggle]');
+    if (issueToggle) {
+      const target = document.getElementById(issueToggle.getAttribute('aria-controls'));
+      const expanded = issueToggle.getAttribute('aria-expanded') === 'true';
+      document.querySelectorAll('[data-issue-toggle][aria-expanded="true"]').forEach((button) => {
+        if (button === issueToggle) return;
+        button.setAttribute('aria-expanded', 'false');
+        const other = document.getElementById(button.getAttribute('aria-controls'));
+        if (other) other.hidden = true;
+      });
+      issueToggle.setAttribute('aria-expanded', String(!expanded));
+      if (target) target.hidden = expanded;
+      return;
+    }
+
+    if (event.target.closest('[data-generate-best-available]')) {
+      renderResultsPanel({ forceBestAvailable: true });
+      persistState();
+      announce('Best available draft rota generated. Review unresolved rule issues.');
+      document.querySelector('#results .status-card')?.focus?.();
+      return;
+    }
+
+    if (event.target.closest('[data-return-to-setup]')) {
+      const setup = requireElement('weekStart');
+      setup.focus();
+      setup.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+      announce('Returned to rota setup.');
+      return;
+    }
+
     const modalBackdrop = event.target.closest('#chefModal');
     if (modalBackdrop && event.target.id === 'chefModal' && !removeChefConfirmationOpen) {
       closeChefEditor();
@@ -502,7 +534,7 @@ function attachEvents() {
     const resultsTab = event.target.closest('button[data-results-week-index]');
     if (resultsTab) {
       state.uiState.selectedResultWeekIndex = Number.parseInt(resultsTab.getAttribute('data-results-week-index'), 10) || 0;
-      renderResultsPanel();
+      renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
       return;
     }
 

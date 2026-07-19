@@ -8,7 +8,7 @@ import {
   getHoursForDay,
   getHoursForAssignment,
   scoreSoftPreferences
-} from './scoring.js?v=20260718s';
+} from './scoring.js?v=20260719o';
 import { canCoverSection, sectionCandidateScore } from './section-levels.js';
 import {
   isUnavailable,
@@ -16,11 +16,12 @@ import {
   getCoreSections,
   PRIMARY_GT_SECTIONS,
   validateRotaHardRules,
+  validateRotaSoftRules,
   getAdjustedGtTargetsByChef,
   getAnnualLeaveDatesByChef
-} from './validation.js?v=20260718s';
+} from './validation.js?v=20260719o';
 import { filterAvailabilityForWeek, filterAdditionalChefRequirementsForWeek } from './weekly-inputs.js';
-import { getGtChefNamesForDay, hasGtAssignment, syncRotaGtChefs } from './rota-model.js?v=20260718s';
+import { getGtChefNamesForDay, hasGtAssignment, syncRotaGtChefs } from './rota-model.js?v=20260719o';
 
 const PASS_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
 const MIO_PRIMARY_DAYS = ['Monday', 'Tuesday', 'Wednesday'];
@@ -698,14 +699,12 @@ function buildDailyChefTargets({ state, dates, inputs, mioChefName, mioDays, mio
 
   const minimumCover = dayPlans.reduce((sum, day) => sum + day.requiredChefs, 0);
   const totalTarget = Object.values(gtTargetsByChef).reduce((sum, count) => sum + count, 0);
+  const warnings = [];
   if (totalTarget < minimumCover) {
-    return {
-      ok: false,
-      message: `Weekly GT targets total ${totalTarget}, but minimum cover requires ${minimumCover} GT assignments.`
-    };
+    warnings.push(`Weekly GT targets total ${totalTarget}, but minimum cover requires ${minimumCover} GT assignments.`);
   }
 
-  let remainingFloatSlots = totalTarget - minimumCover;
+  let remainingFloatSlots = Math.max(totalTarget - minimumCover, 0);
   while (remainingFloatSlots > 0) {
     const targetDay = dayPlans
       .filter((day) => FLOAT_PRIORITY_DAYS.includes(day.dayName))
@@ -718,10 +717,8 @@ function buildDailyChefTargets({ state, dates, inputs, mioChefName, mioDays, mio
       })[0];
 
     if (!targetDay) {
-      return {
-        ok: false,
-        message: `Not enough Thursday-to-Sunday GT capacity to place ${remainingFloatSlots} remaining Float shift${remainingFloatSlots === 1 ? '' : 's'} and meet exact weekly targets.`
-      };
+      warnings.push(`Not enough Thursday-to-Sunday GT capacity to place ${remainingFloatSlots} remaining Float shift${remainingFloatSlots === 1 ? '' : 's'} and meet exact weekly targets.`);
+      break;
     }
 
     targetDay.totalChefs += 1;
@@ -730,7 +727,8 @@ function buildDailyChefTargets({ state, dates, inputs, mioChefName, mioDays, mio
 
   return {
     ok: true,
-    dayPlans
+    dayPlans,
+    warnings
   };
 }
 
@@ -1535,7 +1533,7 @@ function buildGreedyCandidate({
   const breakfastCounts = {};
   const currentWeekDaysByChef = Object.fromEntries(state.staff.map((staff) => [staff.name, new Set()]));
   const completedDates = new Set();
-  const validation = [];
+  const validation = (dailyChefTargets.warnings || []).map((message) => ({ day: 'Overall', message, severity: 'bad' }));
   const rota = [];
   const forcedSeniorPassByDay = chooseSeniorPassPlan({ state, dates, ruleOverrides, mioChefName, mioDays, gtTargetsByChef });
 
@@ -1583,7 +1581,7 @@ function buildGreedyCandidate({
 
     if (!dayPlan) {
       validation.push({ day: dayName, message: 'Could not build a valid day plan with current hard constraints.', severity: 'bad' });
-      break;
+      continue;
     }
 
     const breakfastAssignment = dayPlan.assignments.find((assignment) => assignment.section === 'Breakfast');
@@ -1601,6 +1599,9 @@ function buildGreedyCandidate({
     completedDates.add(date);
   }
 
+  dates.forEach(({ dayName, date }) => {
+    if (!rota.some((day) => day.date === date)) rota.push({ dayName, date, chefs: [], assignments: [] });
+  });
   rota.sort((a, b) => a.date.localeCompare(b.date));
   const { summary } = summarizeRota({
     state,
@@ -1634,6 +1635,35 @@ function buildGreedyCandidate({
         severity: 'bad'
       })))
   };
+}
+
+function countMissingRequiredAssignments(candidate, inputs) {
+  return (candidate.rota || []).reduce((total, day) => {
+    const requiredSections = [...getCoreSections(day.dayName, inputs), 'Breakfast'];
+    return total + requiredSections.filter((section) => !day.assignments?.some((assignment) => assignment.section === section)).length;
+  }, 0);
+}
+
+function invalidCandidateRank(candidate, inputs) {
+  const failures = (candidate.hardValidation || []).filter((result) => result.passed === false);
+  const seriousRuleWeights = { H025: 100, H019: 100, H008: 90, H006: 80, H007: 80, H028: 80, H009: 70, H010: 70, H011: 70, H016: 40 };
+  return {
+    severity: failures.reduce((total, failure) => total + (seriousRuleWeights[failure.ruleId] || 20), 0),
+    failures: failures.length,
+    missing: countMissingRequiredAssignments(candidate, inputs),
+    assigned: (candidate.rota || []).reduce((total, day) => total + (day.assignments?.length || 0), 0),
+    signature: getRotaSignature(candidate.rota || [])
+  };
+}
+
+function compareInvalidCandidates(a, b, inputs) {
+  const rankA = invalidCandidateRank(a, inputs);
+  const rankB = invalidCandidateRank(b, inputs);
+  if (rankA.severity !== rankB.severity) return rankA.severity - rankB.severity;
+  if (rankA.failures !== rankB.failures) return rankA.failures - rankB.failures;
+  if (rankA.missing !== rankB.missing) return rankA.missing - rankB.missing;
+  if (rankA.assigned !== rankB.assigned) return rankB.assigned - rankA.assigned;
+  return rankA.signature.localeCompare(rankB.signature);
 }
 
 export function buildRota(inputs, options = {}) {
@@ -1673,29 +1703,10 @@ export function buildRota(inputs, options = {}) {
     };
   }
   const mioDays = getMioDayPlan(state, dates, mioChefName, ruleOverrides);
-  if (mioChefName && mioChef?.mioEligible && mioDays.size !== 3) {
-    return {
-      status: 'infeasible',
-      rota: [],
-      validation: [{ day: 'Overall', message: `${mioChefName}: cannot place exactly 3 MIO shifts due to availability/unavailability constraints.`, severity: 'bad' }],
-      summary: [],
-      fullWeekDates
-    };
-  }
-
   const mioGtDayPlanOptions = getMioGtDayPlanOptions(state, dates, mioChefName, mioDays, ruleOverrides);
-  if (mioChefName && mioChef?.mioEligible && !mioGtDayPlanOptions.length) {
-    return {
-      status: 'infeasible',
-      rota: [],
-      validation: [{ day: 'Overall', message: `${mioChefName}: cannot place exactly 2 GT shifts on non-MIO days due to availability/unavailability constraints.`, severity: 'bad' }],
-      summary: [],
-      fullWeekDates
-    };
-  }
-
   const attemptPlans = mioGtDayPlanOptions.length ? mioGtDayPlanOptions : [new Set()];
   const optimizedCandidates = [];
+  const invalidCandidates = [];
   let lastFailure = null;
 
   for (let variantIndex = 0; variantIndex < limits.initialCandidateCount; variantIndex += 1) {
@@ -1722,6 +1733,7 @@ export function buildRota(inputs, options = {}) {
         feasibleCandidate = greedyCandidate;
         break;
       }
+      if (greedyCandidate.rota?.length) invalidCandidates.push(greedyCandidate);
       lastFailure = greedyCandidate;
     }
 
@@ -1751,11 +1763,29 @@ export function buildRota(inputs, options = {}) {
   }
 
   if (!optimizedCandidates.length) {
+    invalidCandidates.sort((a, b) => compareInvalidCandidates(a, b, normalizedInputs));
+    const bestInvalid = invalidCandidates[0] || lastFailure;
+    const bestInvalidSoftScore = bestInvalid?.rota?.length
+      ? scoreSoftPreferences({
+        state,
+        rota: bestInvalid.rota,
+        hardValidation: bestInvalid.hardValidation || [],
+        fairnessContext: options.fairnessContext || null
+      })
+      : null;
+    const validationIssues = (bestInvalid?.hardValidation || []).filter((result) => result.passed === false);
     return {
-      status: 'infeasible',
-      rota: lastFailure?.rota || [],
-      validation: lastFailure?.validation || [{ day: 'Overall', message: 'Could not build a valid week plan with current hard constraints.', severity: 'bad' }],
-      summary: lastFailure?.summary || [],
+      status: bestInvalid && countMissingRequiredAssignments(bestInvalid, normalizedInputs) > 0 ? 'incomplete' : 'invalid',
+      fullyValid: false,
+      rota: bestInvalid?.rota || [],
+      validation: bestInvalid?.validation || [{ day: 'Overall', message: 'No meaningful rota data could be constructed.', severity: 'bad' }],
+      hardValidation: bestInvalid?.hardValidation || [],
+      validationIssues,
+      preferenceCompromises: validateRotaSoftRules({ rota: bestInvalid?.rota || [], state, inputs: normalizedInputs }).filter((result) => result.passed === false),
+      score: bestInvalidSoftScore?.score ?? null,
+      referenceScore: 100,
+      softScore: bestInvalidSoftScore,
+      summary: bestInvalid?.summary || [],
       fullWeekDates
     };
   }
@@ -1794,9 +1824,14 @@ export function buildRota(inputs, options = {}) {
 
   return {
     status: 'ok',
+    fullyValid: true,
     rota: best.rota,
     validation: [],
     hardValidation: best.hardValidation,
+    validationIssues: [],
+    preferenceCompromises: validateRotaSoftRules({ rota: best.rota, state, inputs: normalizedInputs }).filter((result) => result.passed === false),
+    score: best.softScore.score,
+    referenceScore: 100,
     softScore: best.softScore,
     summary: best.summary,
     fullWeekDates,
@@ -1825,6 +1860,7 @@ export function buildMultiWeekRota(inputs, legacyNumWeeks) {
       : (inputs.mioChef || '');
     const weekInputs = {
       ...inputs,
+      weekIndex,
       weekStart,
       mioChef,
       availability: filterAvailabilityForWeek(allAvailability, weekStart),
@@ -1855,24 +1891,11 @@ export function buildMultiWeekRota(inputs, legacyNumWeeks) {
     };
     weeks.push(weekRecord);
 
-    if (weekResult.status !== 'ok') {
-      return {
-        status: 'infeasible',
-        numberOfWeeks,
-        failedWeek: weekIndex + 1,
-        failedWeekStart: weekStart,
-        weeks,
-        validation: weekResult.validation || [],
-        fairnessApplied,
-        fairnessSummary: fairnessContext ? Object.values(fairnessContext.stats).map((entry) => ({ ...entry })) : []
-      };
-    }
-
-    if (fairnessContext) updateFairnessContext(fairnessContext, weekResult.rota, weekStart);
+    if (fairnessContext && weekResult.rota?.length) updateFairnessContext(fairnessContext, weekResult.rota, weekStart);
   }
 
   return {
-    status: 'ok',
+    status: weeks.every((week) => week.status === 'ok') ? 'ok' : 'invalid',
     numberOfWeeks,
     weeks,
     validation: [],

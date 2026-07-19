@@ -28,7 +28,7 @@ function getAssignmentNames(day, section) {
 
 export function buildPrintModel(overallResult) {
   const weeks = (overallResult?.weeks || [])
-    .filter((week) => week?.status === 'ok' && Array.isArray(week.rota) && week.rota.length > 0)
+    .filter((week) => Array.isArray(week?.rota) && week.rota.length > 0)
     .slice()
     .sort((a, b) => String(a.weekStart).localeCompare(String(b.weekStart)))
     .map((week, index) => ({
@@ -39,14 +39,25 @@ export function buildPrintModel(overallResult) {
       days: week.rota.map((day) => ({
         dayName: day.dayName,
         date: day.date,
+        issues: (week.hardValidation || []).filter((issue) => issue.passed === false && issue.scope === 'day' && issue.date === day.date).map((issue) => issue.message),
         sections: Object.fromEntries(DISPLAY_SECTIONS.map((section) => [
           section,
           getAssignmentNames(day, section)
+        ])),
+        cellIssues: Object.fromEntries(DISPLAY_SECTIONS.map((section) => [
+          section,
+          (week.hardValidation || []).filter((issue) => (
+            issue.passed === false
+            && (
+              (issue.affectedCells || []).some((cell) => cell.date === day.date && cell.section === section)
+              || (issue.scope !== 'day' && issue.scope !== 'week' && issue.date === day.date && issue.section === section)
+            )
+          )).map((issue) => issue.message)
         ]))
       })),
-      warnings: (week.hardValidation || [])
+      warnings: [...new Set((week.hardValidation || [])
         .filter((result) => result.passed === false)
-        .map((result) => result.message),
+        .map((result) => `${result.ruleId ? `Rule ${result.ruleId}: ` : ''}${result.message}`))],
       decisions: (week.diagnostics || [])
         .filter((item) => item.type === 'warning' || item.type === 'compromise')
         .slice(0, 5)
@@ -62,13 +73,15 @@ export function buildPrintModel(overallResult) {
 
 function renderPrintWeek(week, sections, isLast) {
   const dayHeaders = week.days.map((day) => `
-    <th scope="col">${escapePrintHtml(day.dayName)}<span>${escapePrintHtml(formatDate(day.date))}</span></th>`).join('');
+    <th scope="col" class="${day.issues.length ? 'print-day-error' : ''}">${day.issues.length ? '<strong class="print-error-icon" aria-hidden="true">!</strong>' : ''}${escapePrintHtml(day.dayName)}<span>${escapePrintHtml(formatDate(day.date))}</span></th>`).join('');
   const rows = sections.map((section) => `
     <tr>
       <th scope="row">${escapePrintHtml(section)}</th>
       ${week.days.map((day) => {
         const names = day.sections[section] || [];
-        return `<td>${names.length ? names.map(escapePrintHtml).join('<br>') : '<span class="empty">—</span>'}</td>`;
+        const issues = day.cellIssues?.[section] || [];
+        const errorLabel = issues.length ? ` title="${escapePrintHtml(issues.join(' '))}" aria-label="Error: ${escapePrintHtml(issues.join(' '))}"` : '';
+        return `<td class="${issues.length ? 'print-cell-error' : ''}"${errorLabel}>${issues.length ? '<strong class="print-error-icon" aria-hidden="true">!</strong>' : ''}${names.length ? names.map(escapePrintHtml).join('<br>') : ''}</td>`;
       }).join('')}
     </tr>`).join('');
   const warnings = week.warnings.length
@@ -90,6 +103,7 @@ function renderPrintWeek(week, sections, isLast) {
           ${week.mioChef ? `<span>MIO chef: ${escapePrintHtml(week.mioChef)}</span>` : ''}
         </div>
       </header>
+      ${week.warnings.length ? '<p class="draft-print-warning"><strong>Contains unresolved rule issues</strong></p>' : ''}
       <table>
         <thead><tr><th scope="col">Section</th>${dayHeaders}</tr></thead>
         <tbody>${rows}</tbody>
@@ -128,8 +142,11 @@ export function renderPrintDocument(model) {
     tbody th { background: #dbe5ee; text-align: left; }
     tbody tr:nth-child(even) td { background: #f3f4f6; }
     td { line-height: 1.25; font-weight: 600; }
-    .empty { color: #6b7280; font-weight: normal; }
+    .print-cell-error { border: 0.8mm double #7f1d1d; background: #fff !important; }
+    .print-day-error { outline:0.8mm double #fff; outline-offset:-1.2mm; background:#7f1d1d !important; }
+    .print-error-icon { display: inline-grid; place-items: center; width: 4.5mm; height: 4.5mm; margin-right: 1.5mm; border: 0.5mm solid #111; border-radius: 50%; font-size: 8pt; line-height: 1; }
     .warnings { margin-top: 4mm; padding: 3mm; border: 0.35mm solid #92400e; background: #fffbeb; font-size: 8pt; break-inside: avoid; page-break-inside: avoid; }
+    .draft-print-warning { margin:0 0 3mm; padding:2mm 3mm; border:0.5mm solid #7f1d1d; background:#fff1f2; font-size:9pt; }
     .warnings ul { margin: 1.5mm 0 0; padding-left: 5mm; }
     .decisions { margin-top: 4mm; padding: 3mm; border: 0.35mm solid #a68854; background: #faf7f0; font-size: 8pt; break-inside: avoid; page-break-inside: avoid; }
     .decisions ul { margin: 1.5mm 0 0; padding-left: 5mm; }

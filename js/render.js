@@ -9,15 +9,15 @@ import {
   formatPlanningHorizonLabel,
   getWeekStartAtOffset
 } from './utils.js';
-import { scoreSoftPreferences } from './scoring.js?v=20260718s';
-import { buildRota, buildMultiWeekRota, summarizeRota } from './solver.js?v=20260718s';
+import { scoreSoftPreferences } from './scoring.js?v=20260719o';
+import { buildRota, buildMultiWeekRota, summarizeRota } from './solver.js?v=20260719o';
 import { getChefSoftPreferenceDetails } from './staff.js';
-import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260718s';
+import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260719o';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
-import { cellKey, ensureManualEditState, getChefConcerns, MANUALLY_EDITABLE_SECTIONS } from './manual-edit.js?v=20260718s';
-import { buildRotaDiagnostics, checkRotaFeasibility, summarizeDiagnostics } from './diagnostics.js?v=20260718s';
-import { getGtChefNamesForDay, syncRotaGtChefs } from './rota-model.js?v=20260718s';
-import { buildContextualScore, combineContextualScores } from './score-context.js?v=20260718s';
+import { cellKey, ensureManualEditState, getChefConcerns, MANUALLY_EDITABLE_SECTIONS } from './manual-edit.js?v=20260719o';
+import { buildRotaDiagnostics, checkRotaFeasibility, summarizeDiagnostics } from './diagnostics.js?v=20260719o';
+import { getGtChefNamesForDay, syncRotaGtChefs } from './rota-model.js?v=20260719o';
+import { buildContextualScore, combineContextualScores } from './score-context.js?v=20260719o';
 
 function getRequiredElement(id) {
   const element = document.getElementById(id);
@@ -67,6 +67,7 @@ function renderStatusBadge(tone, text) {
 }
 
 function getDayForFailure(week, failure) {
+  if (failure.date) return (week.rota || []).find((day) => day.date === failure.date) || null;
   return (week.rota || []).find((day) => String(failure.message || '').startsWith(`${day.dayName}:`)) || null;
 }
 
@@ -103,18 +104,46 @@ export function explainHardRuleFailure(failure, week, state) {
 }
 
 function getHardFailureMessages(view, state) {
-  return [...new Set(view.visibleHardFailures.map((failure) => explainHardRuleFailure(failure, view.week, state)))];
+  return [...new Set(view.visibleHardFailures.map((failure) => {
+    const explanation = explainHardRuleFailure(failure, view.week, state);
+    const weekLabel = `Week ${view.week.weekNumber || (failure.weekIndex || 0) + 1}`;
+    const ruleLabel = failure.ruleId ? `Rule ${failure.ruleId}` : 'Required rule';
+    const detail = failure.suggestedAction ? `${explanation} ${failure.suggestedAction}` : explanation;
+    return `${weekLabel} · ${ruleLabel}: ${detail}`;
+  }))];
 }
 
 function isCellAffectedByFailure(failure, week, day, section, chefName, state) {
+  if (Array.isArray(failure.affectedCells) && failure.affectedCells.length) {
+    return failure.affectedCells.some((cell) => (
+      cell.date === day.date
+      && cell.section === section
+      && (!cell.chefName || !chefName || cell.chefName === chefName)
+    ));
+  }
+  if (failure.scope === 'day' || failure.scope === 'week') return false;
   const failureDay = getDayForFailure(week, failure);
   const failureChef = getChefFromFailure(state, failure)?.name || '';
-  if (failure.ruleId === 'H016') return !!failureChef && chefName === failureChef;
+  if (failure.ruleId === 'H016') return false;
   if (!failureDay || failureDay.date !== day.date) return false;
   if (failure.ruleId === 'H025') return String(failure.message).includes(section);
   if (failure.ruleId === 'H006' || failure.ruleId === 'H007' || failure.ruleId === 'H028') return section === 'Breakfast' || (!!failureChef && chefName === failureChef);
-  if (['H008', 'H009', 'H010', 'H011', 'H012'].includes(failure.ruleId)) return true;
+  if (['H011', 'H012'].includes(failure.ruleId)) return section === 'Pass';
   return !!failureChef && chefName === failureChef;
+}
+
+function getDayFailures(view, day) {
+  return (view?.visibleHardFailures || []).filter((failure) => failure.scope === 'day' && failure.date === day.date);
+}
+
+function renderIssueDisclosure(failures, week, state, id) {
+  if (!failures.length) return '';
+  const messages = [...new Set(failures.map((failure) => {
+    const explanation = explainHardRuleFailure(failure, week, state);
+    return `${failure.ruleId ? `Rule ${failure.ruleId}: ` : ''}${explanation}`;
+  }))];
+  return `<button type="button" class="issue-disclosure print-hidden" data-issue-toggle aria-expanded="false" aria-controls="${id}" aria-label="Explain ${messages.length} rota rule issue${messages.length === 1 ? '' : 's'}">!</button>
+    <div id="${id}" class="issue-popover print-hidden" role="note" hidden>${messages.map((message) => `<p>${escapeHtml(message)}</p>`).join('')}</div>`;
 }
 
 function getExpectedLeaveHoursForChef(chefName, inputs, weekStart) {
@@ -157,7 +186,7 @@ export function getWeekValidationView(week, state) {
     day: result.day || 'Overall',
     message: result.message || 'Unknown validation failure.'
   }));
-  const visibleHardFailures = week.status === 'infeasible' ? generationFailures : hardFailures;
+  const visibleHardFailures = hardFailures.length ? hardFailures : generationFailures;
   return {
     week,
     inputs,
@@ -195,21 +224,25 @@ export function renderReadinessPanel() {
   const readiness = checkRotaFeasibility({ state, inputs: { ...inputs, weeklyMioSelections: state.weeklyInputs.weeklyMioSelections || {} } });
   state.uiState.readiness = readiness;
   const tone = readiness.status === 'blocked' ? 'danger' : readiness.status === 'warnings' ? 'warning' : 'success';
-  const title = readiness.status === 'blocked' ? 'Cannot generate' : readiness.status === 'warnings' ? 'Warnings' : 'Ready';
+  const title = readiness.status === 'blocked' ? 'Likely rule issues' : readiness.status === 'warnings' ? 'Warnings' : 'Ready';
   const issues = readiness.issues.slice(0, 6);
   container.innerHTML = `<section class="readiness-card readiness-${tone}" aria-label="Rota readiness">
     <div class="readiness-title">${renderStatusBadge(tone, title)}<strong>Rota readiness</strong></div>
     <p>${readiness.status === 'ready'
       ? 'No obvious hard impossibilities were found.'
       : readiness.status === 'blocked'
-        ? `${readiness.errors.length} proven problem${readiness.errors.length === 1 ? '' : 's'} must be fixed before generation.`
+        ? `${readiness.errors.length} likely rule issue${readiness.errors.length === 1 ? '' : 's'} found. You can still generate the best available draft.`
         : `${readiness.warnings.length} tight constraint${readiness.warnings.length === 1 ? '' : 's'} found; generation is still allowed.`}</p>
     ${issues.length ? `<ul class="issue-list compact">${issues.map((issue) => `<li>${escapeHtml(issue.message)}</li>`).join('')}</ul>` : ''}
     ${readiness.issues.length > issues.length ? `<details><summary>Show all readiness details (${readiness.issues.length})</summary><ul class="issue-list compact">${readiness.issues.slice(issues.length).map((issue) => `<li>${escapeHtml(issue.message)}</li>`).join('')}</ul></details>` : ''}
+    ${readiness.status === 'blocked' ? `<div class="readiness-actions">
+      <button type="button" data-generate-best-available>Generate best available rota</button>
+      <button type="button" class="secondary" data-return-to-setup>Return to setup</button>
+    </div>` : ''}
     <p class="small">Passing this check does not guarantee that the full multi-week optimisation will find a solution.</p>
   </section>`;
   const button = document.getElementById('generateRotaBtn');
-  if (button) button.disabled = readiness.status === 'blocked';
+  if (button) button.disabled = false;
   return readiness;
 }
 
@@ -241,11 +274,9 @@ function renderOverallStatusCard(overallResult, weekViews) {
     return `
       <section class="status-card status-card-danger" aria-label="Rota status">
         <div class="status-card-head">${renderStatusBadge('danger', 'Needs attention')}</div>
-        <h4>${view.week.status === 'infeasible' ? 'Rota could not be generated' : 'Hard scheduling rules are broken'}</h4>
-        <p>${view.week.status === 'infeasible'
-          ? 'The current staffing inputs conflict with required rules.'
-          : 'Correct the following assignment problems:'}</p>
-        ${view.week.status === 'infeasible' ? '' : `<ul class="issue-list hard-failure-list">${getHardFailureMessages(view, getState()).map((message) => `<li>${escapeHtml(message)}</li>`).join('')}</ul>`}
+        <h4>Rota needs attention</h4>
+        <p>${view.visibleHardFailures.length} required rule${view.visibleHardFailures.length === 1 ? '' : 's'} could not be satisfied. The affected cells are highlighted in red.</p>
+        <ul class="issue-list hard-failure-list">${getHardFailureMessages(view, getState()).map((message, index) => `<li id="rota-warning-${index}">${escapeHtml(message)}</li>`).join('')}</ul>
       </section>`;
   }
 
@@ -280,29 +311,22 @@ function renderWeekChecksOverview(weekViews) {
 
 function renderWeekStatusCard(view) {
   if (view.valid) {
+    const preferencesCompromised = view.softFailures.length > 0;
     return `
       <section class="status-card status-card-success" aria-label="Week status">
-        <div class="status-card-head">${renderStatusBadge('success', 'Valid')}</div>
-        <h4>✓ Rota valid</h4>
-        <p>No hard-rule problems found.</p>
-      </section>`;
-  }
-
-  if (view.week.status === 'infeasible') {
-    return `
-      <section class="status-card status-card-danger" aria-label="Week status">
-        <div class="status-card-head">${renderStatusBadge('danger', 'Infeasible')}</div>
-        <h4>Rota could not be generated</h4>
-        <p>The current staffing inputs conflict with required rules.</p>
+        <div class="status-card-head">${renderStatusBadge('success', 'Rota ready')}${preferencesCompromised ? ` ${renderStatusBadge('warning', 'Preferences compromised')}` : ''}</div>
+        <h4>✓ Rota ready</h4>
+        <p>${preferencesCompromised
+          ? `${view.softFailures.length} preference${view.softFailures.length === 1 ? '' : 's'} could not be met; all required rules passed.`
+          : 'All required rules passed.'}</p>
       </section>`;
   }
 
   return `
-    <section class="status-card status-card-danger" aria-label="Week status">
-      <div class="status-card-head">${renderStatusBadge('danger', 'Needs attention')}</div>
-      <h4>Hard scheduling rules are broken</h4>
-      <p>Correct the following assignment problems:</p>
-      <ul class="issue-list hard-failure-list">${getHardFailureMessages(view, getState()).map((message) => `<li>${escapeHtml(message)}</li>`).join('')}</ul>
+    <section class="status-card status-card-warning draft-status-card" aria-label="Week status">
+      <div class="status-card-head">${renderStatusBadge('warning', 'Draft rota: rule issues found')}</div>
+      <h4>Draft rota: ${view.visibleHardFailures.length} rule issue${view.visibleHardFailures.length === 1 ? '' : 's'} need review</h4>
+      <p>Review highlighted locations and open Rota summary for full details.</p>
     </section>`;
 }
 
@@ -465,7 +489,7 @@ function renderContextualScore(view) {
     <h4>Preference score</h4>
     <p><strong>${contextual.valid
       ? `${contextual.achieved.toFixed(1)}/${contextual.available.toFixed(1)} applicable preference points · ${contextual.percentage}% · ${escapeHtml(contextual.rating)}`
-      : 'Invalid rota · no quality rating'}</strong></p>
+      : 'Draft rota · required rules need review before preference quality is rated'}</strong></p>
     <p class="section-note">${escapeHtml(contextual.explanation)}</p>
     ${contextual.valid ? `<table class="summary-table score-breakdown-table">
       <thead><tr><th>Category</th><th>Achieved</th><th>Applicable</th></tr></thead>
@@ -478,7 +502,7 @@ function renderRotaSummary(view, fairnessHtml = '') {
   const contextual = view.contextualScore;
   const label = contextual?.valid
     ? `Rota summary · ${contextual.percentage}% · ${contextual.rating}`
-    : 'Rota summary · Invalid';
+    : `Rota summary · Draft · ${view.visibleHardFailures.length} rule issues`;
   return `<details class="rota-summary">
     <summary>${escapeHtml(label)}</summary>
     <div class="rota-summary-content">
@@ -849,22 +873,34 @@ function renderRotaTable(solveResult, view) {
   if (!solveResult.rota?.length) return '';
   const state = getState();
   const manual = ensureManualEditState(state, state.generatedRotas.latestResult);
-  const dayHeaders = solveResult.rota.map((day) => `<th scope="col">${day.dayName}<br><span class="small">${formatDate(day.date)}</span></th>`).join('');
+  const dayHeaders = solveResult.rota.map((day) => {
+    const failures = getDayFailures(view, day);
+    const issueId = `day-issues-${solveResult.weekIndex || 0}-${day.date}`;
+    return `<th scope="col" class="${failures.length ? 'day-heading-affected' : ''}">
+      <span>${day.dayName}<br><span class="small">${formatDate(day.date)}</span></span>
+      ${renderIssueDisclosure(failures, solveResult, state, issueId)}
+    </th>`;
+  }).join('');
   const sectionCells = DISPLAY_SECTIONS.map((section) => {
     const cells = solveResult.rota.map((day) => {
       const matches = day.assignments.filter((assignment) => assignment.section === section);
       const chef = matches[0]?.chef || '';
       const displayedChefs = matches.map((assignment) => assignment.chef).join(', ');
-      if (!MANUALLY_EDITABLE_SECTIONS.includes(section)) return `<td>${matches.length ? escapeHtml(matches.map((assignment) => assignment.chef).join(', ')) : '—'}</td>`;
       const key = cellKey(solveResult.weekStart, day.date, section);
       const edited = Object.prototype.hasOwnProperty.call(manual.edits || {}, key);
       const failures = (view?.visibleHardFailures || []).filter((failure) => isCellAffectedByFailure(failure, solveResult, day, section, chef, state));
       const affected = failures.length > 0;
       const failureText = affected ? [...new Set(failures.map((failure) => explainHardRuleFailure(failure, solveResult, state)))].join(' ') : '';
-      return `<td class="rota-assignment-cell${edited ? ' manually-edited' : ''}${affected ? ' hard-rule-affected' : ''}"${failureText ? ` title="${escapeHtml(failureText)}"` : ''}>
-        <button type="button" class="assignment-button" data-edit-assignment data-week-index="${solveResult.weekIndex || 0}" data-date="${day.date}" data-section="${section}" aria-label="Edit ${escapeHtml(section)} on ${escapeHtml(formatDate(day.date))}${edited ? ', Manually edited' : ''}">
-          <span>${displayedChefs ? escapeHtml(displayedChefs) : 'None'}</span>${edited ? '<span class="manual-dot" aria-hidden="true">•</span><span class="visually-hidden">Manually edited</span>' : ''}
-        </button>
+      const emptyLabel = affected ? `Error: ${section} assignment requires attention. ${failureText}` : `No ${section} assignment${['Pass'].includes(section) && ['Monday', 'Tuesday', 'Wednesday'].includes(day.dayName) ? ' required' : ''}`;
+      const issueId = `cell-issues-${solveResult.weekIndex || 0}-${day.date}-${section}`;
+      const content = MANUALLY_EDITABLE_SECTIONS.includes(section)
+        ? `<button type="button" class="assignment-button" data-edit-assignment data-week-index="${solveResult.weekIndex || 0}" data-date="${day.date}" data-section="${section}" aria-label="${escapeHtml(displayedChefs ? `Edit ${section} on ${formatDate(day.date)}${affected ? ', has rule issues' : ''}` : emptyLabel)}">
+            <span>${displayedChefs ? escapeHtml(displayedChefs) : ''}</span>${edited ? '<span class="manual-dot" aria-hidden="true">•</span><span class="visually-hidden">Manually edited</span>' : ''}
+          </button>`
+        : `<span class="assignment-static" aria-label="${matches.length ? escapeHtml(`${section}: ${displayedChefs}`) : 'No assignment required'}">${displayedChefs ? escapeHtml(displayedChefs) : ''}</span>`;
+      return `<td class="rota-assignment-cell${edited ? ' manually-edited' : ''}${affected ? ' hard-rule-affected' : ''}">
+        ${content}
+        ${renderIssueDisclosure(failures, solveResult, state, issueId)}
       </td>`;
     }).join('');
     return `<tr><th scope="row">${section}</th>${cells}</tr>`;
@@ -940,7 +976,7 @@ export function renderWeekPanel(view, options = {}) {
       </div>` : ''}
       <p class="week-mio-summary"><strong>MIO chef:</strong> ${escapeHtml(view.inputs.mioChef || 'None')}</p>
       ${showStatus ? renderWeekStatusCard(view) : ''}
-      ${view.week.status === 'infeasible' ? '' : renderRotaTable(view.week, view)}
+      ${renderRotaTable(view.week, view)}
       ${renderRotaSummary(view, fairnessHtml)}
     </section>`;
 }
@@ -952,16 +988,12 @@ export function renderResultsPanel(options = {}) {
 
   let overallResult = options.overallResult || null;
   const readiness = renderReadinessPanel();
-  if (!overallResult && readiness?.status === 'blocked') {
-    const issuesByWeek = Array.from({ length: inputs.numWeeks || 1 }, (_, weekIndex) => readiness.errors.filter((issue) => issue.weekIndex === weekIndex));
-    overallResult = {
-      status: 'infeasible', numberOfWeeks: inputs.numWeeks || 1, preflight: readiness,
-      weeks: issuesByWeek.map((issues, weekIndex) => ({
-        weekIndex, weekNumber: weekIndex + 1, weekStart: getWeekStartAtOffset(inputs.weekStart, weekIndex), inputs,
-        status: 'infeasible', rota: [], summary: [], hardValidation: [],
-        validation: issues.map((issue) => ({ ruleId: issue.code, day: issue.dayName || 'Overall', severity: 'bad', message: issue.message }))
-      })), fairnessApplied: false, fairnessSummary: []
-    };
+  if (!overallResult && readiness?.status === 'blocked' && !options.forceBestAvailable) {
+    state.generatedRotas.current = null;
+    const printButton = document.getElementById('printRotaBtn');
+    if (printButton) printButton.disabled = true;
+    container.innerHTML = '<p class="section-note generation-awaiting-choice">Likely rule issues were found. Choose “Generate best available rota” above to continue, or return to setup.</p>';
+    return null;
   }
   if (!overallResult) {
     overallResult = buildMultiWeekRota({
@@ -990,7 +1022,7 @@ export function renderResultsPanel(options = {}) {
   ensureManualEditState(state, overallResult);
   const printButton = document.getElementById('printRotaBtn');
   if (printButton) {
-    printButton.disabled = !weeks.length || weeks.some((week) => week.status !== 'ok' || !week.rota?.length);
+    printButton.disabled = !weeks.length || weeks.every((week) => !week.rota?.length);
   }
   const activeWeekIndex = Math.max(0, Math.min(state.uiState.selectedResultWeekIndex || 0, Math.max(weeks.length - 1, 0)));
   state.uiState.selectedResultWeekIndex = activeWeekIndex;
@@ -999,8 +1031,8 @@ export function renderResultsPanel(options = {}) {
     view.contextualScore = buildContextualScore({ state, week: view.week, valid: view.valid });
   });
   const activeView = weekViews[activeWeekIndex] || null;
-  const firstOk = weeks.find((week) => week.status === 'ok');
-  state.generatedRotas.current = activeView?.week?.status === 'ok' ? activeView.week : (firstOk || null);
+  const firstRota = weeks.find((week) => week.rota?.length);
+  state.generatedRotas.current = activeView?.week?.rota?.length ? activeView.week : (firstRota || null);
   state.uiState.validation = activeView?.hardValidation || [];
   state.uiState.softValidation = activeView?.softValidation || [];
   state.uiState.validationByWeek = weekViews.map((view) => ({
@@ -1024,8 +1056,8 @@ export function renderResultsPanel(options = {}) {
         ${activeView ? renderWeekPanel(activeView, { showHeader: false, showStatus: true }) : ''}
       </div>`;
   } else {
-    const tabs = weeks.map((week, index) => `<button class="week-tab ${index === activeWeekIndex ? 'active' : ''}" data-results-week-index="${index}">Week ${index + 1}</button>`).join('');
-    const dropdownOptions = weeks.map((week, index) => `<option value="${index}" ${index === activeWeekIndex ? 'selected' : ''}>Week ${index + 1} · ${formatCompactWeekRange(week.weekStart)}</option>`).join('');
+    const tabs = weekViews.map((view, index) => `<button class="week-tab ${index === activeWeekIndex ? 'active' : ''}${view.valid ? '' : ' week-tab-warning'}" data-results-week-index="${index}" aria-label="Week ${index + 1}${view.valid ? '' : `, ${view.visibleHardFailures.length} rule issues`}">Week ${index + 1}${view.valid ? '' : ' <span class="week-warning-indicator" aria-hidden="true">!</span>'}</button>`).join('');
+    const dropdownOptions = weekViews.map((view, index) => `<option value="${index}" ${index === activeWeekIndex ? 'selected' : ''}>Week ${index + 1}${view.valid ? '' : ' ⚠'} · ${formatCompactWeekRange(view.week.weekStart)}</option>`).join('');
     const fairnessHtml = renderFairnessSummary(overallResult.fairnessSummary);
     const panels = weekViews.map((view, index) => renderWeekPanel(view, {
       hidden: index !== activeWeekIndex,

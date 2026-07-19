@@ -1,11 +1,11 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
-import { buildRota } from '../js/solver.js?v=20260718k';
-import { validateRotaHardRules } from '../js/validation.js?v=20260718h';
+import { buildRota } from '../js/solver.js?v=20260719o';
+import { validateRotaHardRules } from '../js/validation.js?v=20260719o';
 import { scoreSoftPreferences } from '../js/scoring.js';
-import { saveAppState, loadAppState } from '../js/storage.js?v=20260718h';
+import { saveAppState, loadAppState } from '../js/storage.js?v=20260719o';
 import { upsertPublishedHistory, upsertPublishedWeeks } from '../js/history.js';
 import { buildContextualScore, combineContextualScores } from '../js/score-context.js';
-import { migrateStorageIfNeeded } from '../js/storage.js?v=20260718s';
+import { migrateStorageIfNeeded } from '../js/storage.js?v=20260719o';
 
 function baseState() {
   resetStateToDefaults();

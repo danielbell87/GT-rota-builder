@@ -48,4 +48,40 @@ export async function runPrintTests(assert) {
   const unsafeHtml = renderPrintDocument(singleModel);
   assert(!unsafeHtml.includes(unsafeName) && unsafeHtml.includes('&lt;img src=x onerror=&quot;window.printAttack=1&quot;&gt;'), 'Print: user-editable chef names are safely escaped');
   assert(escapePrintHtml(`A&B <C> "D" 'E'`) === 'A&amp;B &lt;C&gt; &quot;D&quot; &#39;E&#39;', 'Print: HTML escaping covers all markup-significant characters');
+
+  const invalidWeek = makeWeek('2026-07-13', 'Chef');
+  invalidWeek.status = 'incomplete';
+  invalidWeek.rota[0].assignments = invalidWeek.rota[0].assignments.filter((assignment) => assignment.section !== 'Larder' && assignment.section !== 'Float');
+  invalidWeek.hardValidation = [{
+    ruleId: 'H025',
+    passed: false,
+    severity: 'hard',
+    scope: 'section',
+    date: '2026-07-13',
+    dayName: 'Monday',
+    section: 'Larder',
+    affectedCells: [{ date: '2026-07-13', section: 'Larder', chefName: '' }],
+    message: 'Monday 13 July: Larder has no assigned chef. Assign an eligible Larder chef or change availability.'
+  }];
+  const invalidPrintModel = buildPrintModel({ weeks: [invalidWeek] });
+  const invalidPrintHtml = renderPrintDocument(invalidPrintModel);
+  assert(invalidPrintModel.weeks.length === 1 && invalidPrintModel.weeks[0].warnings.length === 1, 'Print best effort: invalid rotas and their warnings remain in the print model');
+  assert(invalidPrintHtml.includes('class="print-cell-error"') && invalidPrintHtml.includes('class="print-error-icon"') && invalidPrintHtml.includes('>!</strong>'), 'Print best effort: error cells retain a non-colour-only indicator');
+  assert(invalidPrintHtml.includes('Larder has no assigned chef') && invalidPrintHtml.includes('<aside class="warnings">'), 'Print best effort: precise validation warnings are included');
+  assert(invalidPrintHtml.includes('Contains unresolved rule issues'), 'Print best effort: draft output has the required unresolved-rule warning');
+  assert(!invalidPrintHtml.includes('>None<') && !invalidPrintHtml.includes('<span class="empty">') && !invalidPrintHtml.includes('>—<'), 'Print best effort: empty cells stay blank and never render None or a placeholder dash');
+
+  invalidWeek.hardValidation.push({
+    ruleId: 'H008',
+    passed: false,
+    severity: 'hard',
+    scope: 'day',
+    date: '2026-07-14',
+    dayName: 'Tuesday',
+    section: '',
+    affectedCells: [],
+    message: 'Tuesday: at least one chef marked Senior chef is required'
+  });
+  const dayIssueHtml = renderPrintDocument(buildPrintModel({ weeks: [invalidWeek] }));
+  assert(dayIssueHtml.includes('class="print-day-error"') && (dayIssueHtml.match(/class="print-cell-error"/g) || []).length === 1, 'Print best effort: day-wide issues mark the heading without turning unrelated cells red');
 }

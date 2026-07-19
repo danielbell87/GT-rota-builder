@@ -57,12 +57,84 @@ export function getMioPlacement(dayName) {
   return 'Off';
 }
 
-function createResult(ruleId, passed, message) {
+function createResult(ruleId, passed, message, details = {}) {
   return {
     ruleId,
     passed,
     severity: 'hard',
-    message
+    message,
+    ...details
+  };
+}
+
+function addIssueContext(result, { rota, inputs, state }) {
+  const message = String(result.message || '');
+  const day = result.date
+    ? (rota || []).find((item) => item.date === result.date)
+    : (rota || []).find((item) => message.startsWith(`${item.dayName}:`) || message.startsWith(`${item.dayName} ${item.date}:`));
+  const chef = result.chefName
+    ? (state.staff || []).find((item) => item.name === result.chefName)
+    : (state.staff || []).find((item) => message.includes(item.name));
+  const inferredSection = [...CORE_SECTIONS, 'Float', 'Breakfast', 'MIO'].find((name) => message.includes(name));
+  const section = result.section || inferredSection
+    || (['H006', 'H007', 'H028'].includes(result.ruleId) ? 'Breakfast' : '');
+  const scopeByRule = {
+    H006: 'section', H007: 'cell', H008: 'day', H009: 'day', H010: 'day', H011: 'section', H012: 'section',
+    H013: 'day', H019: 'cell', H020: 'day', H023: 'cell', H025: 'section', H026: 'cell', H027: 'cell',
+    H028: 'cell', H030: 'cell', H031: 'cell'
+  };
+  const typeByRule = {
+    H006: 'missing-breakfast-cover', H007: 'breakfast-without-gt-assignment', H008: 'missing-senior-cover',
+    H009: 'incorrect-daily-staffing', H010: 'insufficient-daily-staffing', H011: 'missing-pass-cover',
+    H012: 'unexpected-pass-cover', H015: 'mio-shift-target', H016: 'weekly-gt-target',
+    H019: 'unavailable-chef-assigned', H020: 'excessive-annual-leave', H022: 'mio-gt-target',
+    H023: 'mio-gt-overlap', H025: 'invalid-section-cover', H026: 'duplicate-primary-assignment',
+    H028: 'breakfast-ineligible'
+  };
+  const scope = result.scope || scopeByRule[result.ruleId] || 'week';
+  const targetMatch = result.ruleId === 'H016' ? message.match(/expected exactly (\d+) GT days \(actual (\d+)\)/) : null;
+  const affectedCells = Array.isArray(result.affectedCells) ? result.affectedCells : [];
+  if (!affectedCells.length && scope !== 'day' && scope !== 'week' && day) {
+    if (section) affectedCells.push({ date: day.date, section, chefName: chef?.name || '' });
+    else if (chef) {
+      day.assignments.filter((assignment) => assignment.chef === chef.name).forEach((assignment) => {
+        affectedCells.push({ date: day.date, section: assignment.section, chefName: chef.name });
+      });
+    }
+  }
+  if (!affectedCells.length && result.ruleId === 'H016' && chef && targetMatch && Number(targetMatch[2]) > Number(targetMatch[1])) {
+    const excess = Number(targetMatch[2]) - Number(targetMatch[1]);
+    (rota || []).flatMap((rotaDay) => rotaDay.assignments
+      .filter((assignment) => PRIMARY_GT_SECTIONS.includes(assignment.section) && assignment.chef === chef.name)
+      .map((assignment) => ({ date: rotaDay.date, section: assignment.section, chefName: chef.name })))
+      .slice(-excess)
+      .forEach((cell) => affectedCells.push(cell));
+  }
+  const suggestedActions = {
+    H025: `Assign an eligible ${section || 'section'} chef or change availability.`,
+    H019: 'Remove the assignment or change the chef availability entry.',
+    H008: 'Assign an available chef marked as Senior chef.',
+    H006: 'Assign one Breakfast-eligible chef who is also working a GT section.',
+    H007: 'Give the Breakfast chef a core or Float assignment, or choose another Breakfast chef.',
+    H028: 'Choose a chef marked Breakfast eligible.',
+    H009: 'Add or remove a visible GT assignment to meet the required staffing count.',
+    H010: 'Fill an available Float or required-section position.',
+    H011: 'Assign an eligible chef to Pass.',
+    H016: 'Add or remove a visible GT assignment to meet the chef’s weekly target.'
+  };
+  return {
+    ...result,
+    type: result.type || typeByRule[result.ruleId] || `hard-rule-${String(result.ruleId || 'unknown').toLowerCase()}`,
+    scope,
+    weekIndex: Number.isInteger(inputs?.weekIndex) ? inputs.weekIndex : 0,
+    weekStart: inputs?.weekStart || '',
+    date: day?.date || '',
+    dayName: day?.dayName || '',
+    section: section || '',
+    chefId: chef?.id || null,
+    chefName: chef?.name || '',
+    affectedCells,
+    suggestedAction: result.passed ? '' : (suggestedActions[result.ruleId] || 'Review the highlighted assignments and adjust staffing or availability.')
   };
 }
 
@@ -231,7 +303,7 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
     ));
     canonicalGtChefs.forEach((chefName) => {
       const chef = getChef(state.staff, chefName);
-      results.push(createResult('H019', !!chef && !isUnavailable(chef, day.date, day.dayName, { _availability: availability }), `${day.dayName}: ${chefName} must be known and available`));
+      results.push(createResult('H019', !!chef && !isUnavailable(chef, day.date, day.dayName, { _availability: availability }), `${day.dayName}: ${chefName} must be known and available`, { date: day.date, dayName: day.dayName, chefName, scope: 'cell' }));
     });
     day.assignments.forEach((assignment) => {
       results.push(createResult('H030', knownChefNames.has(assignment.chef), `${day.dayName}: ${assignment.chef} assignment must reference a known chef`));
@@ -244,49 +316,55 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
       const validCoverage = assignments.length === 1
         && canonicalGtChefSet.has(assignments[0].chef)
         && canCoverSection(assignedChef, section);
-      results.push(createResult('H025', validCoverage, `${day.dayName}: ${section} must have exactly one eligible GT chef`));
+      results.push(createResult('H025', validCoverage, `${day.dayName}: ${section} must have exactly one eligible GT chef`, { date: day.date, dayName: day.dayName, section, chefName: assignments[0]?.chef || '', scope: 'section' }));
     });
 
     const breakfast = findAssignmentsBySection(day, 'Breakfast');
-    results.push(createResult('H006', breakfast.length === 1, `${day.dayName}: expected exactly one breakfast chef`));
+    results.push(createResult('H006', breakfast.length === 1, `${day.dayName}: expected exactly one breakfast chef`, { date: day.date, dayName: day.dayName, section: 'Breakfast', scope: 'section' }));
 
     if (breakfast.length === 1) {
       const breakfastChef = breakfast[0].chef;
       const breakfastStaff = getChef(state.staff, breakfastChef);
       const workingGtChefSet = new Set(day.assignments.filter((a) => PRIMARY_GT_SECTIONS.includes(a.section)).map((a) => a.chef));
-      results.push(createResult('H007', workingGtChefSet.has(breakfastChef), `${day.dayName}: breakfast chef must also have a core or Float GT assignment`));
-      results.push(createResult('H028', breakfastStaff?.breakfastEligible === true, `${day.dayName}: breakfast chef must be marked Breakfast eligible`));
+      results.push(createResult('H007', workingGtChefSet.has(breakfastChef), `${day.dayName}: breakfast chef must also have a core or Float GT assignment`, { date: day.date, dayName: day.dayName, section: 'Breakfast', chefName: breakfastChef, scope: 'cell' }));
+      results.push(createResult('H028', breakfastStaff?.breakfastEligible === true, `${day.dayName}: breakfast chef must be marked Breakfast eligible`, { date: day.date, dayName: day.dayName, section: 'Breakfast', chefName: breakfastChef, scope: 'cell' }));
     }
 
     const primaryAssignments = day.assignments.filter((assignment) => PRIMARY_GT_SECTIONS.includes(assignment.section));
     canonicalGtChefs.forEach((chefName) => {
       const primaryCount = primaryAssignments.filter((assignment) => assignment.chef === chefName).length;
-      results.push(createResult('H026', primaryCount === 1, `${day.dayName}: ${chefName} must have exactly one primary GT assignment`));
+      results.push(createResult('H026', primaryCount === 1, `${day.dayName}: ${chefName} must have exactly one primary GT assignment`, {
+        date: day.date,
+        dayName: day.dayName,
+        chefName,
+        scope: 'cell',
+        affectedCells: primaryAssignments.filter((assignment) => assignment.chef === chefName).map((assignment) => ({ date: day.date, section: assignment.section, chefName }))
+      }));
     });
     primaryAssignments.forEach((assignment) => {
       results.push(createResult('H027', canonicalGtChefSet.has(assignment.chef), `${day.dayName}: ${assignment.chef} has a primary GT assignment but is missing from canonical GT staffing`));
     });
 
     const hasSenior = canonicalGtChefs.some((name) => getChef(state.staff, name)?.senior === true);
-    results.push(createResult('H008', hasSenior, `${day.dayName}: at least one chef marked Senior chef is required`));
+    results.push(createResult('H008', hasSenior, `${day.dayName}: at least one chef marked Senior chef is required`, { date: day.date, dayName: day.dayName, scope: 'day' }));
 
     if (['Monday', 'Tuesday', 'Wednesday'].includes(day.dayName)) {
       const requiredCount = getRequiredChefCount(day.dayName, inputs, day.date);
-      results.push(createResult('H009', canonicalGtChefSet.size === requiredCount, `${day.dayName}: expected exactly ${requiredCount} visible GT chefs`));
-      results.push(createResult('H012', findAssignmentsBySection(day, 'Pass').length === 0, `${day.dayName}: Pass should not be assigned`));
+      results.push(createResult('H009', canonicalGtChefSet.size === requiredCount, `${day.dayName}: expected exactly ${requiredCount} visible GT chefs`, { date: day.date, dayName: day.dayName, scope: 'day' }));
+      results.push(createResult('H012', findAssignmentsBySection(day, 'Pass').length === 0, `${day.dayName}: Pass should not be assigned`, { date: day.date, dayName: day.dayName, section: 'Pass', scope: 'section' }));
     }
 
     if (['Thursday', 'Friday', 'Saturday', 'Sunday'].includes(day.dayName)) {
       const requiredCount = getRequiredChefCount(day.dayName, inputs, day.date);
-      results.push(createResult('H010', canonicalGtChefSet.size >= requiredCount, `${day.dayName}: expected at least ${requiredCount} visible GT chefs`));
-      results.push(createResult('H011', findAssignmentsBySection(day, 'Pass').length >= 1, `${day.dayName}: Pass must be covered`));
+      results.push(createResult('H010', canonicalGtChefSet.size >= requiredCount, `${day.dayName}: expected at least ${requiredCount} visible GT chefs`, { date: day.date, dayName: day.dayName, scope: 'day' }));
+      results.push(createResult('H011', findAssignmentsBySection(day, 'Pass').length >= 1, `${day.dayName}: Pass must be covered`, { date: day.date, dayName: day.dayName, section: 'Pass', scope: 'section' }));
     }
 
     const mioAssignments = findAssignmentsBySection(day, 'MIO');
     mioAssignments.forEach((assignment) => {
       const chef = getChef(state.staff, assignment.chef);
-      results.push(createResult('H019', !!chef && !isUnavailable(chef, day.date, day.dayName, { _availability: availability }), `${day.dayName}: ${assignment.chef} must be available for MIO`));
-      results.push(createResult('H023', !canonicalGtChefSet.has(assignment.chef), `${day.dayName}: ${assignment.chef} cannot overlap GT and MIO`));
+      results.push(createResult('H019', !!chef && !isUnavailable(chef, day.date, day.dayName, { _availability: availability }), `${day.dayName}: ${assignment.chef} must be available for MIO`, { date: day.date, dayName: day.dayName, section: 'MIO', chefName: assignment.chef, scope: 'cell' }));
+      results.push(createResult('H023', !canonicalGtChefSet.has(assignment.chef), `${day.dayName}: ${assignment.chef} cannot overlap GT and MIO`, { date: day.date, dayName: day.dayName, section: 'MIO', chefName: assignment.chef, scope: 'cell' }));
       results.push(createResult('H031', assignment.chef === inputs.mioChef, `${day.dayName}: only the selected MIO chef may receive MIO`));
     });
     if (['Saturday', 'Sunday'].includes(day.dayName)) {
@@ -298,7 +376,7 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
     });
 
     if (leavesByDate[day.date] > 1) {
-      results.push(createResult('H020', false, `${day.dayName}: more than one chef on annual leave`));
+      results.push(createResult('H020', false, `${day.dayName}: more than one chef on annual leave`, { date: day.date, dayName: day.dayName, scope: 'day' }));
     }
   });
 
@@ -306,7 +384,7 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
   const gtDaysByChef = Object.fromEntries(state.staff.map((chef) => [chef.name, calculatedGtDays[chef.name] || 0]));
   Object.entries(gtDaysByChef).forEach(([name, count]) => {
     const adjustedGtTarget = adjustedTargetsByChef[name] ?? getGtTargetForChef(name, inputs.mioChef);
-    results.push(createResult('H016', count === adjustedGtTarget, `${name}: expected exactly ${adjustedGtTarget} GT days (actual ${count})`));
+    results.push(createResult('H016', count === adjustedGtTarget, `${name}: expected exactly ${adjustedGtTarget} GT days (actual ${count})`, { chefName: name, scope: 'week' }));
   });
 
   const mioChef = inputs.mioChef;
@@ -360,7 +438,7 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
     results.push(createResult('H017', total >= 0, `${item.name}: target hour check evaluated (${Number(total).toFixed(1)}h)`));
   });
 
-  return results;
+  return results.map((result) => addIssueContext(result, { rota, inputs, state }));
 }
 
 export function getStaffConfigurationWarnings(staff = []) {

@@ -12,9 +12,9 @@ import {
   optimizeBreakfastAssignments,
   optimizeRotaCandidate,
   selectBreakfastChef
-} from '../js/solver.js?v=20260718k';
+} from '../js/solver.js?v=20260719o';
 import { isSenior, getHoursForDay, getHoursForAssignment, scoreSoftPreferences } from '../js/scoring.js';
-import { isUnavailable, validateRotaHardRules, validateRotaSoftRules } from '../js/validation.js?v=20260718h';
+import { getCoreSections, isUnavailable, validateRotaHardRules, validateRotaSoftRules } from '../js/validation.js?v=20260719o';
 import { canCoverSection, sectionCandidateScore } from '../js/section-levels.js';
 import { normalizeChefRecord } from '../js/staff.js';
 import { getGtChefNamesForDay, getVisibleGtChefDayTotal } from '../js/rota-model.js';
@@ -575,10 +575,10 @@ export async function runSolverTests(assert) {
   ];
   syncCompatibilityViews();
   const mioInfeasibleGt = runScenario(mioInfeasibleGtState);
-  assert(mioInfeasibleGt.status === 'infeasible', 'Solver returns infeasible when selected MIO chef cannot receive 2 GT shifts');
+  assert(['invalid', 'incomplete'].includes(mioInfeasibleGt.status) && mioInfeasibleGt.rota.length === 7, 'Best effort returns a seven-day rota when selected MIO chef cannot receive 2 GT shifts');
   assert(
-    mioInfeasibleGt.validation.some((item) => item.message.includes('exactly 2 GT shifts')),
-    'Infeasible result explains selected MIO GT pattern conflict'
+    mioInfeasibleGt.hardValidation.some((item) => item.ruleId === 'H022' && !item.passed && item.chefName === 'Dan' && item.suggestedAction),
+    'Best-effort result explains the selected MIO GT pattern conflict'
   );
 
   const mioInfeasibleMioState = setupBaseState();
@@ -587,10 +587,10 @@ export async function runSolverTests(assert) {
   ];
   syncCompatibilityViews();
   const mioInfeasibleMio = runScenario(mioInfeasibleMioState);
-  assert(mioInfeasibleMio.status === 'infeasible', 'Solver returns infeasible when selected MIO chef cannot receive 3 MIO shifts');
+  assert(['invalid', 'incomplete'].includes(mioInfeasibleMio.status) && mioInfeasibleMio.rota.length === 7, 'Best effort returns a seven-day rota when selected MIO chef cannot receive 3 MIO shifts');
   assert(
-    mioInfeasibleMio.validation.some((item) => item.message.includes('exactly 3 MIO shifts')),
-    'Infeasible result explains selected MIO shift conflict'
+    mioInfeasibleMio.hardValidation.some((item) => item.ruleId === 'H015' && !item.passed && item.chefName === 'Dan' && item.suggestedAction),
+    'Best-effort result explains the selected MIO shift conflict'
   );
 
   assert(getHoursForDay('Wednesday') === 12.5, 'Wednesday normal shift equals 12.5 hours');
@@ -885,9 +885,18 @@ export async function runSolverTests(assert) {
       { chef: 'Connor', type: 'Annual Leave', startDate: '2026-07-20', finishDate: '2026-07-26', notes: '' }
     ]
   });
-  assert(failedWeekTwo.status === 'infeasible', 'Multi-week: failed week 2 makes the overall result infeasible');
-  assert(failedWeekTwo.failedWeek === 2, 'Multi-week: structured infeasible result reports the failed week number');
-  assert(failedWeekTwo.weeks.length === 2, 'Multi-week: generation stops immediately after the failed week');
+  const bestEffortWeekTwo = failedWeekTwo.weeks[1];
+  assert(failedWeekTwo.status === 'invalid', 'Multi-week best effort: an invalid week marks the overall result as requiring attention');
+  assert(failedWeekTwo.weeks.length === 3 && failedWeekTwo.weeks[2].rota.length === 7, 'Multi-week best effort: generation continues through later weeks after an invalid week');
+  assert(bestEffortWeekTwo.status === 'incomplete' && bestEffortWeekTwo.rota.length === 7, 'Multi-week best effort: the affected week retains a complete Monday-to-Sunday table');
+  assert(bestEffortWeekTwo.rota.some((day) => getCoreSections(day.dayName).some((section) => !day.assignments.some((assignment) => assignment.section === section))), 'Multi-week best effort: unresolved required assignments remain blank');
+  assert(bestEffortWeekTwo.hardValidation.some((issue) => !issue.passed && issue.date && issue.section && issue.suggestedAction), 'Multi-week best effort: invalid output includes actionable cell-mappable validation issues');
+  assert(
+    bestEffortWeekTwo.validationIssues.every((issue) => issue.type && issue.scope && Number.isInteger(issue.weekIndex) && Array.isArray(issue.affectedCells)),
+    'Multi-week best effort: every failed rule exposes structured type, scope, week and affected-cell data'
+  );
+  assert(bestEffortWeekTwo.fullyValid === false && Number.isFinite(bestEffortWeekTwo.score) && bestEffortWeekTwo.referenceScore === 100 && Array.isArray(bestEffortWeekTwo.preferenceCompromises), 'Multi-week best effort: result exposes validity, score/reference score, and separate preference compromises');
+  assert(failedWeekTwo.weeks[0].fullyValid === true && failedWeekTwo.weeks[0].validationIssues.length === 0, 'Multi-week best effort: valid weeks retain an independent fully-valid status');
 
   const fairnessContext = {
     stats: {
@@ -919,6 +928,7 @@ export async function runSolverTests(assert) {
   const noPastryState = setupBaseState();
   noPastryState.staff = noPastryState.staff.map((chef) => ({ ...chef, skills: { ...chef.skills, Pastry: 0 } }));
   const noPastryResult = runScenario(noPastryState);
-  assert(noPastryResult.status === 'infeasible', 'Scenario C: solver returns infeasible when no valid Pastry cover exists');
+  assert(noPastryResult.status === 'incomplete' && noPastryResult.rota.length === 7, 'Scenario C best effort: missing Pastry eligibility returns an incomplete seven-day rota');
+  assert(noPastryResult.hardValidation.some((issue) => issue.ruleId === 'H025' && !issue.passed && issue.section === 'Pastry' && issue.suggestedAction.includes('eligible Pastry chef')), 'Scenario C best effort: every uncovered Pastry cell has a specific actionable validation issue');
   assert(!noPastryResult.rota.some((day) => day.assignments.some((assignment) => assignment.section === 'Pastry' && !canCoverSection(noPastryState.staff.find((chef) => chef.name === assignment.chef), 'Pastry'))), 'Scenario C: Should not cover Pastry chefs are never assigned Pastry');
 }

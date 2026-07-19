@@ -1,11 +1,11 @@
-import { runSolverTests } from './solver.test.js?v=20260718l';
+import { runSolverTests } from './solver.test.js?v=20260719o';
 import { runValidationTests } from './validation.test.js';
-import { runScoringTests } from './scoring.test.js?v=20260718k';
-import { runAdditionalChefTests } from './additional-chef.test.js';
-import { runUiTests } from './ui.test.js?v=20260718s';
-import { runPrintTests } from './print.test.js';
+import { runScoringTests } from './scoring.test.js?v=20260719o';
+import { runAdditionalChefTests } from './additional-chef.test.js?v=20260719o';
+import { runUiTests } from './ui.test.js?v=20260719o';
+import { runPrintTests } from './print.test.js?v=20260719o';
 import { runBackupTests } from './backup.test.js';
-import { runManualEditTests } from './manual-edit.test.js?v=20260718s';
+import { runManualEditTests } from './manual-edit.test.js?v=20260719o';
 import { runDiagnosticsTests } from './diagnostics.test.js';
 import { SOLVER_ENGINE_VERSION } from '../js/solver.js';
 

@@ -1,8 +1,8 @@
 import { DISPLAY_SECTIONS, SHIFT_LENGTHS } from './constants.js';
-import { validateRotaHardRules, validateRotaSoftRules } from './validation.js?v=20260718s';
-import { scoreSoftPreferences } from './scoring.js?v=20260718s';
-import { buildRotaDiagnostics } from './diagnostics.js?v=20260718s';
-import { getGtChefNamesForDay, hasGtAssignment, syncDayGtChefs } from './rota-model.js?v=20260718s';
+import { validateRotaHardRules, validateRotaSoftRules } from './validation.js?v=20260719o';
+import { scoreSoftPreferences } from './scoring.js?v=20260719o';
+import { buildRotaDiagnostics } from './diagnostics.js?v=20260719o';
+import { getGtChefNamesForDay, hasGtAssignment, syncDayGtChefs } from './rota-model.js?v=20260719o';
 
 export const MANUAL_HISTORY_LIMIT = 50;
 export const MANUALLY_EDITABLE_SECTIONS = DISPLAY_SECTIONS.filter((section) => section !== 'MIO');
@@ -165,10 +165,15 @@ export function recalculateEditedResult(state, overallResult) {
     week.hardValidation = validateRotaHardRules({ rota: week.rota, state, inputs: week.inputs || {}, summary: week.summary, fullWeekDates: week.fullWeekDates });
     week.softValidation = validateRotaSoftRules({ rota: week.rota, state, inputs: week.inputs || {} });
     week.softScore = scoreSoftPreferences({ state, rota: week.rota, hardValidation: week.hardValidation });
+    week.validationIssues = week.hardValidation.filter((result) => result.passed === false);
+    week.preferenceCompromises = week.softValidation.filter((result) => result.passed === false);
+    week.fullyValid = week.validationIssues.length === 0;
+    week.score = week.softScore.score;
+    week.referenceScore = 100;
     week.diagnostics = buildRotaDiagnostics({ state, week, hardValidation: week.hardValidation, softScore: week.softScore });
-    week.status = week.hardValidation.every((result) => result.passed) ? 'ok' : 'infeasible';
+    week.status = week.hardValidation.every((result) => result.passed) ? 'ok' : (week.rota.length >= 7 ? 'invalid' : 'incomplete');
   });
-  overallResult.status = (overallResult.weeks || []).every((week) => week.status === 'ok') ? 'ok' : 'infeasible';
+  overallResult.status = (overallResult.weeks || []).every((week) => week.status === 'ok') ? 'ok' : 'invalid';
   if ((overallResult.weeks || []).length > 1) {
     overallResult.fairnessSummary = state.staff.map((chef) => {
       const worked = { Friday: 0, Saturday: 0, Sunday: 0 };

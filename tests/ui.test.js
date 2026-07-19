@@ -20,6 +20,10 @@ async function waitFor(predicate, timeout = 5000) {
 
 async function loadFrame(url) {
   const frame = document.createElement('iframe');
+  const frameUrl = new URL(url, document.baseURI);
+  if (frameUrl.pathname.endsWith('/index.html')) {
+    frameUrl.searchParams.set('testFrame', `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  }
   frame.style.width = '0';
   frame.style.height = '0';
   frame.style.border = '0';
@@ -27,10 +31,9 @@ async function loadFrame(url) {
   await new Promise((resolve, reject) => {
     frame.onload = () => resolve();
     frame.onerror = reject;
-    frame.src = url;
+    frame.src = frameUrl.href;
   });
-  await waitFor(() => frame.contentWindow?.__gtRotaBootstrap?.status || frame.contentWindow?.location?.pathname.endsWith('/index.html'));
-  await wait(100);
+  await waitFor(() => frame.contentWindow?.__gtRotaBootstrap?.status, 20000);
   return frame;
 }
 
@@ -93,7 +96,7 @@ function normalizeText(value) {
 function getVisibleTextFromElement(element) {
   const clone = element.cloneNode(true);
   clone.querySelectorAll('.hidden').forEach((node) => node.remove());
-  clone.querySelectorAll('.technical-details:not([open])').forEach((details) => {
+  clone.querySelectorAll('details:not([open])').forEach((details) => {
     [...details.children].forEach((child) => {
       if (child.tagName !== 'SUMMARY') child.remove();
     });
@@ -145,7 +148,8 @@ function buildSyntheticWeekPanel() {
 
 async function setFieldValue(element, value) {
   element.value = value;
-  element.dispatchEvent(new Event('change', { bubbles: true }));
+  const EventConstructor = element.ownerDocument?.defaultView?.Event || Event;
+  element.dispatchEvent(new EventConstructor('change', { bubbles: true }));
   await wait(150);
 }
 
@@ -232,9 +236,11 @@ export async function runUiTests(assert) {
   const syntheticPanel = buildSyntheticWeekPanel();
   assert(!!syntheticPanel.querySelector('.week-panel'), 'UI: synthetic validation panel renders a week-panel wrapper');
   const syntheticVisibleText = getVisibleTextFromElement(syntheticPanel.querySelector('.week-panel'));
+  const syntheticSummary = syntheticPanel.querySelector('details.rota-summary');
   const syntheticDetails = syntheticPanel.querySelector('details.technical-details');
-  assert(syntheticVisibleText.includes('Scheduling compromises'), 'UI: soft failures render in a separate scheduling-compromises section');
-  assert(syntheticVisibleText.includes('Connor worked consecutive Sundays because senior Sauce cover was required.'), 'UI: failed soft preferences are shown to the user');
+  assert(syntheticVisibleText.includes('Preferences compromised'), 'UI: a valid rota with soft failures shows the compact Preferences compromised status');
+  assert(!syntheticVisibleText.includes('Connor worked consecutive Sundays because senior Sauce cover was required.') && normalizeText(syntheticSummary?.textContent).includes('Scheduling compromises'), 'UI: detailed soft failures stay out of the compact status and render in the collapsed scheduling-compromises summary');
+  assert(normalizeText(syntheticSummary?.textContent).includes('Connor worked consecutive Sundays because senior Sauce cover was required.'), 'UI: failed soft preferences remain available to the user in the rota summary');
   assert(!syntheticVisibleText.includes('Friday: senior chef Charlie assigned to Pass'), 'UI: successful soft preferences are hidden from the normal interface');
   assert(!syntheticVisibleText.includes('prefer-senior-on-pass'), 'UI: soft-rule IDs are hidden from normal user-facing text');
   assert(!!syntheticDetails && syntheticDetails.open === false, 'UI: technical details are collapsed by default');
@@ -252,19 +258,29 @@ export async function runUiTests(assert) {
     assert(!doc.getElementById('printRotaBtn').disabled, 'UI: print button is available when a successful rota exists');
     await setFieldValue(doc.getElementById('weekStart'), '2026-07-13');
     await setFieldValue(doc.getElementById('numWeeks'), '1');
-    await waitFor(() => doc.querySelector('details.technical-details'));
+    await waitFor(() => (
+      canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.weekStarts?.[0] === '2026-07-13'
+      && canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.numberOfWeeks === 1
+      && doc.querySelector('details.technical-details')
+    ), 15000);
     assert(doc.querySelectorAll('.rota-table-scroll').length === 1 && doc.querySelectorAll('.rota-swipe-guidance').length === 1, 'UI: a single-week rota renders one accessible mobile scroll wrapper and one swipe hint');
     assert(doc.querySelector('.rota-table-scroll')?.getAttribute('role') === 'region' && !!doc.querySelector('.rota-table-scroll')?.getAttribute('aria-label'), 'UI: rota scroll wrapper has an accessible region label while preserving the table element');
 
     assert(!doc.getElementById('singleMioControl').classList.contains('hidden') && doc.getElementById('weeklyMioSelectors').classList.contains('hidden'), 'UI: one week shows the single MIO chef selector only');
     assert([...doc.getElementById('mioChef').options].some((option) => option.value === '' && option.textContent === 'No MIO chef'), 'UI: one-week selector includes the explicit No MIO chef option');
     await setFieldValue(doc.getElementById('mioChef'), '');
-    await waitFor(() => canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.weekMioChefs?.[0] === '');
-    const oneWeekNoMioState = getPersistedAppState(canonicalFrame.contentWindow);
-    const oneWeekNoMioResult = buildResultFromPersistedState(oneWeekNoMioState).weeks[0];
-    assert(oneWeekNoMioResult.status === 'ok' && !oneWeekNoMioResult.rota.some((day) => day.assignments.some((assignment) => assignment.section === 'MIO')), 'UI: a one-week No MIO chef selection generates without MIO assignments');
+    await waitFor(() => (
+      canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.weekMioChefs?.[0] === ''
+      && canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.weekValidationSummary?.[0]?.status === 'ok'
+    ), 60000);
+    const oneWeekMioRow = [...doc.querySelectorAll('.rota-table tbody tr')]
+      .find((row) => row.querySelector('th')?.textContent.trim() === 'MIO');
+    assert(
+      canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.weekValidationSummary?.[0]?.status === 'ok'
+        && [...oneWeekMioRow.querySelectorAll('td')].every((cell) => cell.textContent.trim() === ''),
+      'UI: a one-week No MIO chef selection generates a valid rota without MIO assignments'
+    );
     assert(getVisibleResultsText(doc).includes('MIO chef: None'), 'UI: one-week summary clearly reports MIO chef: None');
-    await setFieldValue(doc.getElementById('mioChef'), 'Dan');
 
     const visibleSingleWeekText = getVisibleResultsText(doc);
     const singleWeekSummary = doc.querySelector('details.rota-summary');
@@ -278,7 +294,7 @@ export async function runUiTests(assert) {
     assert(doc.querySelectorAll('details.rota-summary').length === 1 && singleWeekSummary?.open === false, 'UI: one collapsed Rota summary consolidates secondary output for a one-week rota');
     assert(normalizeText(singleWeekSummary?.textContent || '').includes('%') && normalizeText(singleWeekSummary?.textContent || '').includes('applicable preference points'), 'UI: Rota summary explains the contextual percentage and its dynamic denominator');
     assert(!/Score\\s+\\d/i.test(visibleSingleWeekText), 'UI: raw unbounded solver scores are hidden from the main result');
-    assert(visibleSingleWeekText.includes('✓ Rota valid') && visibleSingleWeekText.includes('No hard-rule problems found.'), 'UI: valid one-week rota shows one concise success status');
+    assert(visibleSingleWeekText.includes('✓ Rota ready') && visibleSingleWeekText.includes('All required rules passed.'), 'UI: valid one-week rota shows the Rota ready status');
     assert(!visibleSingleWeekText.includes('H008') && !visibleSingleWeekText.includes('at least one Sous Chef or higher required'), 'UI: successful hard-rule checks are hidden from the normal one-week interface');
     assert(singleWeekDetails.open === false, 'UI: one-week technical details stay collapsed by default');
     assert(
@@ -326,8 +342,11 @@ export async function runUiTests(assert) {
 
     const weeklySelectors = [...doc.querySelectorAll('select[data-weekly-mio-start]')];
     await setFieldValue(weeklySelectors[0], 'Fred');
+    await waitFor(() => canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.weekMioChefs?.[0] === 'Fred', 15000);
     await setFieldValue(weeklySelectors[1], '');
+    await waitFor(() => canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.weekMioChefs?.[1] === '', 15000);
     await setFieldValue(weeklySelectors[2], 'Dan');
+    await waitFor(() => JSON.stringify(canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.weekMioChefs) === JSON.stringify(['Fred', '', 'Dan']), 15000);
     assert(JSON.stringify(canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.weekMioChefs) === JSON.stringify(['Fred', '', 'Dan']), 'UI: selected and no-MIO choices remain independent between weeks');
 
     const resultsEl = doc.getElementById('results');
@@ -349,7 +368,11 @@ export async function runUiTests(assert) {
     let mioPersistenceFrame = null;
     try {
       mioPersistenceFrame = await loadFrame('../index.html');
-      await waitFor(() => mioPersistenceFrame.contentDocument.querySelectorAll('select[data-weekly-mio-start]').length === 3);
+      await waitFor(() => (
+        mioPersistenceFrame.contentWindow.__gtRotaBootstrap?.status === 'ok'
+        && mioPersistenceFrame.contentWindow.__gtRotaBootstrap?.lastRender?.numberOfWeeks === 3
+        && mioPersistenceFrame.contentDocument.querySelectorAll('select[data-weekly-mio-start]').length === 3
+      ), 20000);
       const reloadedSelectors = [...mioPersistenceFrame.contentDocument.querySelectorAll('select[data-weekly-mio-start]')];
       const reloadedMioValues = reloadedSelectors.map((select) => select.value);
       assert(JSON.stringify(reloadedMioValues) === JSON.stringify(['Fred', '', 'Dan']), 'UI: every weekly MIO selection, including No MIO chef, persists after reload', JSON.stringify(reloadedMioValues));
@@ -433,17 +456,42 @@ export async function runUiTests(assert) {
     await setFieldValue(infeasibleRow.querySelector('.entry-type'), 'Annual Leave');
     await setFieldValue(infeasibleRow.querySelector('.entry-start-date'), '2026-07-20');
     await setFieldValue(infeasibleRow.querySelector('.entry-finish-date'), '2026-07-26');
-    await waitFor(() => doc.getElementById('generateRotaBtn').disabled && doc.getElementById('readiness').textContent.includes('Cannot generate'));
+    await waitFor(() => (
+      doc.querySelector('[data-generate-best-available]')
+      && doc.querySelector('[data-return-to-setup]')
+    ), 15000);
     assert(doc.getElementById('readiness').textContent.includes('Brooke cannot complete the required three MIO shifts and two GT shifts'), 'UI: multi-week preflight identifies the affected MIO week before solving');
-    assert(doc.getElementById('generateRotaBtn').disabled, 'UI: generation is blocked while a proven multi-week impossibility remains');
+    assert(doc.getElementById('readiness').textContent.includes('Generate best available rota') && doc.getElementById('readiness').textContent.includes('Return to setup'), 'UI feasibility warning offers both required actions');
+    doc.querySelector('[data-return-to-setup]').click();
+    assert(doc.activeElement === doc.getElementById('weekStart'), 'UI feasibility warning: Return to setup moves keyboard focus to setup');
+    doc.querySelector('[data-generate-best-available]').click();
+    await waitFor(() => (
+      canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.weekValidationSummary?.[1]?.status === 'incomplete'
+      && getWeekPanel(doc, 1)?.querySelector('table.rota-table')
+      && getWeekPanel(doc, 1)?.querySelector('.hard-rule-affected')
+    ), 30000);
 
     doc.querySelector('button[data-results-week-index="1"]').click();
     await waitFor(() => !getWeekPanel(doc, 1)?.classList.contains('hidden'));
     const visibleWeekTwoText = getVisibleResultsText(doc);
-    assert(visibleWeekTwoText.includes('Rota could not be generated') && visibleWeekTwoText.includes('cannot complete the required three MIO shifts and two GT shifts'), 'UI: infeasible weeks immediately show specific preflight failure reasons');
+    const bestEffortPanel = getWeekPanel(doc, 1);
+    const blankProblemCell = [...bestEffortPanel.querySelectorAll('.rota-assignment-cell.hard-rule-affected')]
+      .find((cell) => !cell.querySelector('.assignment-button')?.textContent.trim());
+    const draftSummary = bestEffortPanel.querySelector('details.rota-summary');
+    assert(visibleWeekTwoText.includes('Draft rota: rule issues found') && !visibleWeekTwoText.includes('Rota could not be generated'), 'UI best effort: incomplete week uses the draft rota status instead of a generic generation failure');
+    assert(!visibleWeekTwoText.includes('Assign an eligible Sauce chef') && normalizeText(draftSummary.textContent).includes('Rule H025') && normalizeText(draftSummary.textContent).includes('Assign an eligible Sauce chef'), 'UI best effort: concise status stays compact while actionable rule details remain in the collapsed summary');
+    assert(bestEffortPanel.querySelectorAll('.rota-table thead th').length === 8 && !!blankProblemCell, 'UI best effort: the seven-day table stays visible with unresolved required cells blank and highlighted');
+    assert(!!blankProblemCell.querySelector('button[data-edit-assignment]') && blankProblemCell.querySelector('.issue-disclosure')?.textContent === '!', 'UI best effort: highlighted blank assignments remain manually editable and include a non-colour error indicator');
+    blankProblemCell.querySelector('.issue-disclosure').click();
+    assert(blankProblemCell.querySelector('.issue-popover:not([hidden])')?.textContent.includes('Rule H025'), 'UI best effort: activating a highlighted cell reveals its rule explanation');
+    assert(bestEffortPanel.querySelectorAll('.day-heading-affected').length > 0 && bestEffortPanel.querySelector('.day-heading-affected .issue-disclosure'), 'UI best effort: day-wide failures highlight the day heading rather than every cell');
+    const neutralTuesdayPass = bestEffortPanel.querySelector('[data-edit-assignment][data-date="2026-07-21"][data-section="Pass"]')?.closest('td');
+    assert(neutralTuesdayPass && !neutralTuesdayPass.classList.contains('hard-rule-affected') && neutralTuesdayPass.textContent.trim() === '', 'UI best effort: intentionally unused cells remain blank and unhighlighted');
     assert(!visibleWeekTwoText.includes('H015'), 'UI: normal multi-week failure messaging hides hard-rule IDs');
     assert(canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.activeWeekHardFailureCount >= 1, 'UI: switching weeks updates the visible issue summary for the selected week');
-    assert(doc.getElementById('printRotaBtn').disabled, 'UI: print button is unavailable when the generated rota is not fully successful');
+    assert(!doc.getElementById('printRotaBtn').disabled, 'UI best effort: invalid but meaningful rotas remain printable');
+    assert(getWeekPanel(doc, 2)?.querySelector('table.rota-table') && canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.weekValidationSummary?.[2]?.status === 'ok', 'UI best effort: later valid weeks remain generated and visible');
+    assert(doc.querySelector('button[data-results-week-index="1"] .week-warning-indicator') && !doc.querySelector('button[data-results-week-index="2"] .week-warning-indicator'), 'UI best effort: only affected week navigation receives a warning indicator');
 
     infeasibleRow.querySelector('button[data-remove]').click();
     await waitFor(() => doc.querySelectorAll('#availabilityBody tr').length === 0);
