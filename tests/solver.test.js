@@ -13,9 +13,9 @@ import {
   optimizeRotaCandidate,
   repairExactGtTargetsWithFloat,
   selectBreakfastChef
-} from '../js/solver.js?v=20260719t';
+} from '../js/solver.js?v=20260719u';
 import { isSenior, getHoursForDay, getHoursForAssignment, scoreSoftPreferences } from '../js/scoring.js';
-import { getCoreSections, isUnavailable, validateRotaHardRules, validateRotaSoftRules } from '../js/validation.js?v=20260719t';
+import { getCoreSections, isUnavailable, validateRotaHardRules, validateRotaSoftRules } from '../js/validation.js?v=20260719u';
 import { canCoverSection, sectionCandidateScore } from '../js/section-levels.js';
 import { normalizeChefRecord } from '../js/staff.js';
 import { getGtChefNamesForDay, getGtDaysByChef, getVisibleGtChefDayTotal } from '../js/rota-model.js';

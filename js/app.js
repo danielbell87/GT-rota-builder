@@ -1,7 +1,7 @@
-import { APP_BUILD_VERSION, CACHE_BUST_VERSION } from './constants.js?v=20260719t';
+import { APP_BUILD_VERSION, CACHE_BUST_VERSION } from './constants.js?v=20260719u';
 import { getState, getDefaultWeek, resetStateToDefaults, syncCompatibilityViews, setWeekStart, setMioChef, setNumWeeks, setWeeklyMioChef } from './state.js';
 import { normalizeWeekStart, getPlanningHorizon } from './utils.js';
-import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260719t';
+import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260719u';
 import { addChef, createBlankChefDraft, createChefDraft, getChefById, removeChef, updateChef } from './staff.js';
 import { addAvailabilityEntry, removeAvailabilityEntry, updateAvailabilityField, addAdditionalChefRequest, updateAdditionalChefRequest, removeAdditionalChefRequest, validateAdditionalChefDate, validateAdditionalChefCount } from './weekly-inputs.js';
 import {
@@ -21,12 +21,13 @@ import {
   showChefModalError,
   setChefRemovalConfirmation,
   syncChefChoiceChipState
-} from './render.js?v=20260719t';
-import { renderAssignmentConflict, renderAssignmentConflictPreview, renderChefSelector } from './render.js?v=20260719t';
+} from './render.js?v=20260719u';
+import { renderAssignmentConflict, renderAssignmentConflictPreview, renderChefSelector } from './render.js?v=20260719u';
 import { applyManualAssignment, findDuplicateCoreAssignment, getChefConcerns, rateManualAssignmentActions, redoManualEdit, resetAllManualEdits, resetManualCell, undoManualEdit } from './manual-edit.js';
 import { upsertPublishedHistory, upsertPublishedWeeks } from './history.js';
 import { openPrintWindow } from './print.js';
 import { createBackup, createBackupFilename, restoreBackup, serializeBackup } from './backup.js';
+import { buildWeekClipboardText, icon } from './ui.js?v=20260719u';
 
 const state = getState();
 let editingReqDate = null;
@@ -41,6 +42,8 @@ let lastInputModality = 'pointer';
 let warningTouchStart = null;
 let suppressWarningClick = false;
 let undoToastTimer = 0;
+let generationActive = false;
+let generationSlowTimer = 0;
 
 const HOVER_CAPABILITY_QUERY = '(hover: hover) and (pointer: fine)';
 
@@ -73,7 +76,7 @@ function announce(message) {
 function showUndoToast(message) {
   window.clearTimeout(undoToastTimer);
   document.querySelector('[data-undo-toast]')?.remove();
-  document.body.insertAdjacentHTML('beforeend', `<div class="undo-toast print-hidden" data-undo-toast role="status"><span>${message}</span><button type="button" data-toast-undo>Undo</button><button type="button" class="toast-close" data-close-undo-toast aria-label="Close undo notification">×</button></div>`);
+  document.body.insertAdjacentHTML('beforeend', `<div class="undo-toast print-hidden" data-undo-toast role="status"><span>${message}</span><button type="button" data-toast-undo>${icon('undo')} Undo</button><button type="button" class="toast-close icon-button" data-close-undo-toast aria-label="Close undo notification">${icon('close')}</button></div>`);
   announce(`${message}. Undo available.`);
   undoToastTimer = window.setTimeout(() => document.querySelector('[data-undo-toast]')?.remove(), 8000);
 }
@@ -217,11 +220,86 @@ function updateConflictPreview(selector) {
 function openResetManualConfirmation(button) {
   closeChefSelector({ restoreFocus: false });
   activeAssignmentTrigger = button;
-  document.body.insertAdjacentHTML('beforeend', `<div class="chef-selector-backdrop" data-close-chef-selector></div><section class="chef-selector conflict-selector" role="dialog" aria-modal="true" aria-labelledby="resetManualTitle" aria-describedby="resetManualMessage">
-    <div class="chef-selector-head"><div><h3 id="resetManualTitle" tabindex="-1">Reset manual changes?</h3><p id="resetManualMessage">This restores every manually edited assignment to the generated rota.</p></div><button type="button" class="secondary" data-close-chef-selector aria-label="Close reset confirmation without making changes">×</button></div>
-    <div class="chef-selector-actions"><button type="button" class="secondary" data-close-chef-selector>Cancel</button><button type="button" data-confirm-reset-manual>Reset changes</button></div>
+  const count = Object.keys(state.manualEditing?.edits || {}).length;
+  document.body.insertAdjacentHTML('beforeend', `<div class="chef-selector-backdrop" data-close-chef-selector></div><section class="chef-selector conflict-selector reset-confirmation" role="dialog" aria-modal="true" aria-labelledby="resetManualTitle" aria-describedby="resetManualMessage">
+    <div class="chef-selector-head"><div><h3 id="resetManualTitle" tabindex="-1">Reset ${count} manual change${count === 1 ? '' : 's'} and restore the generated rota?</h3><p id="resetManualMessage">Assignments, warnings, totals and score will return to the generated version. Your setup and current week, day and view will stay unchanged.</p></div><button type="button" class="secondary icon-button" data-close-chef-selector aria-label="Keep changes and close">${icon('close')}</button></div>
+    <div class="chef-selector-actions"><button type="button" class="secondary" data-close-chef-selector>Keep changes</button><button type="button" class="danger" data-confirm-reset-manual>Reset rota</button></div>
   </section>`);
   document.getElementById('resetManualTitle')?.focus();
+}
+
+function updateGenerationProgress(stage, step, total = 6) {
+  const progress = document.getElementById('generationProgress');
+  if (!progress) return;
+  progress.classList.remove('hidden');
+  progress.innerHTML = `<div class="generation-progress-head"><strong>${stage}</strong><span>Step ${step} of ${total}</span></div><progress max="${total}" value="${step}">${step} of ${total}</progress><p data-generation-slow></p>`;
+}
+
+async function generateRota({ forceBestAvailable = false } = {}) {
+  if (generationActive) return;
+  const readiness = renderReadinessPanel();
+  if (readiness?.status === 'blocked' && !forceBestAvailable) {
+    document.querySelector('[data-generate-best-available]')?.focus();
+    announce('Likely rule issues found. Choose Generate best available rota or Return to setup.');
+    return;
+  }
+  generationActive = true;
+  const buttons = document.querySelectorAll('#generateRotaBtn,[data-sticky-generate],[data-generate-best-available]');
+  buttons.forEach((button) => { button.disabled = true; button.setAttribute('aria-busy', 'true'); });
+  updateGenerationProgress('Checking availability', 1);
+  generationSlowTimer = window.setTimeout(() => {
+    const slow = document.querySelector('[data-generation-slow]');
+    if (slow) slow.textContent = 'Still working. Complex availability can take a little longer.';
+  }, 4000);
+  await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+  const weeks = Number(state.weeklyInputs.numWeeks || 1);
+  updateGenerationProgress(`Building week 1 of ${weeks}`, 2);
+  try {
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    renderResultsPanel({ forceBestAvailable: true });
+    updateGenerationProgress('Preparing results', 6);
+    persistState();
+    announce(readiness?.status === 'ready' ? 'Rota generated.' : 'Best available draft rota generated. Review unresolved rule issues.');
+  } catch (error) {
+    state.uiState.lastError = error.message;
+    announce(`Rota generation failed: ${error.message}`);
+  } finally {
+    window.clearTimeout(generationSlowTimer);
+    generationActive = false;
+    buttons.forEach((button) => { button.disabled = false; button.removeAttribute('aria-busy'); });
+    window.setTimeout(() => document.getElementById('generationProgress')?.classList.add('hidden'), 500);
+  }
+}
+
+async function copySelectedWeek() {
+  const text = buildWeekClipboardText({ state, overallResult: state.generatedRotas.latestResult, weekIndex: state.uiState.selectedResultWeekIndex || 0 });
+  if (!text) return;
+  try {
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+    else {
+      const area = document.createElement('textarea'); area.value = text; area.className = 'clipboard-fallback'; document.body.appendChild(area); area.select();
+      if (!document.execCommand('copy')) throw new Error('Copy unavailable');
+      area.remove();
+    }
+    showUndoToast('Week copied to clipboard.');
+  } catch { announce('Could not copy automatically. Select the rota text and copy it manually.'); }
+}
+
+function filterChefOptions(selector) {
+  const query = selector.querySelector('[data-chef-search]')?.value.trim().toLowerCase() || '';
+  const active = selector.querySelector('[data-chef-filter][aria-pressed="true"]')?.dataset.chefFilter || 'all';
+  let alternatives = 0;
+  selector.querySelectorAll('[data-chef-option]').forEach((option) => {
+    const current = option.dataset.current === 'true';
+    const matchesName = !query || option.dataset.chefName.includes(query);
+    const matchesType = active === 'all' || (active === 'valid' ? option.dataset.valid === 'true' : option.dataset.valid === 'false');
+    const visible = current || (matchesName && matchesType);
+    option.hidden = !visible;
+    option.classList.toggle('filter-pinned', current && !(matchesName && matchesType));
+    if (visible && !current) alternatives += 1;
+  });
+  selector.querySelectorAll('[data-option-group]').forEach((group) => { group.hidden = !group.querySelector('[data-chef-option]:not([hidden])'); });
+  selector.querySelector('[data-chef-empty]')?.classList.toggle('hidden', alternatives > 0 || active === 'all' && !query);
 }
 
 function refreshEditedRota(message = '') {
@@ -631,17 +709,7 @@ function attachEvents() {
       message.textContent = 'Your browser blocked the printable rota. Allow pop-ups for this page, then try again.';
     }
   });
-  requireElement('generateRotaBtn').addEventListener('click', () => {
-    const readiness = renderReadinessPanel();
-    if (readiness?.status === 'blocked') {
-      document.querySelector('[data-generate-best-available]')?.focus();
-      announce('Likely rule issues found. Choose Generate best available rota or Return to setup.');
-      return;
-    }
-    renderResultsPanel({ forceBestAvailable: true });
-    persistState();
-    announce(readiness?.status === 'ready' ? 'Rota generated.' : 'Rota generated with preference warnings.');
-  });
+  requireElement('generateRotaBtn').addEventListener('click', () => generateRota());
   requireElement('downloadBackupBtn').addEventListener('click', downloadBackup);
   requireElement('restoreBackupBtn').addEventListener('click', () => requireElement('restoreBackupInput').click());
   requireElement('restoreBackupInput').addEventListener('change', async (event) => {
@@ -706,6 +774,7 @@ function attachEvents() {
   });
 
   document.addEventListener('input', (event) => {
+    if (event.target.matches('[data-chef-search]')) { filterChefOptions(event.target.closest('.chef-selector')); return; }
     if (event.target.classList.contains('entry-notes')) {
       updateAvailabilityField(Number(event.target.dataset.index), 'notes', event.target.value);
       renderResultsPanel();
@@ -753,13 +822,8 @@ function attachEvents() {
     if (event.target.closest('.issue-popover')) return;
     closeIssuePopover();
 
-    if (event.target.closest('[data-generate-best-available]')) {
-      renderResultsPanel({ forceBestAvailable: true });
-      persistState();
-      announce('Best available draft rota generated. Review unresolved rule issues.');
-      document.querySelector('#results .status-card')?.focus?.();
-      return;
-    }
+    if (event.target.closest('[data-generate-best-available]')) { generateRota({ forceBestAvailable: true }); return; }
+    if (event.target.closest('[data-sticky-generate]')) { generateRota({ forceBestAvailable: state.uiState.readiness?.status === 'blocked' }); return; }
 
     if (event.target.closest('[data-return-to-setup]')) {
       const setup = requireElement('weekStart');
@@ -816,6 +880,7 @@ function attachEvents() {
 
     const resultsTab = event.target.closest('button[data-results-week-index]');
     if (resultsTab) {
+      document.querySelector('[data-toolbar-more]')?.setAttribute('aria-expanded', 'false');
       state.uiState.selectedResultWeekIndex = Number.parseInt(resultsTab.getAttribute('data-results-week-index'), 10) || 0;
       renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
       return;
@@ -842,6 +907,34 @@ function attachEvents() {
       document.querySelector('[data-undo-toast]')?.remove();
       return;
     }
+    if (event.target.closest('[data-toggle-edit]')) {
+      state.uiState.editMode = !state.uiState.editMode;
+      renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
+      return;
+    }
+    if (event.target.closest('[data-toolbar-print]')) { requireElement('printRotaBtn').click(); return; }
+    if (event.target.closest('[data-copy-week]')) { const menu = document.getElementById('toolbarMoreMenu'); if (menu) menu.hidden = true; document.querySelector('[data-toolbar-more]')?.setAttribute('aria-expanded', 'false'); copySelectedWeek(); return; }
+    if (event.target.closest('[data-regenerate]')) { generateRota({ forceBestAvailable: true }); return; }
+    const moreButton = event.target.closest('[data-toolbar-more]');
+    if (moreButton) {
+      const menu = document.getElementById('toolbarMoreMenu');
+      const opening = moreButton.getAttribute('aria-expanded') !== 'true';
+      moreButton.setAttribute('aria-expanded', String(opening)); menu.hidden = !opening;
+      if (opening) menu.innerHTML = `<button type="button" data-copy-week>${icon('copy')} Copy week</button><button type="button" data-regenerate>${icon('regenerate')} Regenerate</button><button type="button" data-reset-manual-all ${Object.keys(state.manualEditing?.edits || {}).length ? '' : 'disabled'}>${icon('reset')} Reset manual changes</button>`;
+      return;
+    }
+    if (!event.target.closest('.toolbar-more')) { const menu = document.getElementById('toolbarMoreMenu'); if (menu) menu.hidden = true; document.querySelector('[data-toolbar-more]')?.setAttribute('aria-expanded', 'false'); }
+    const filter = event.target.closest('[data-chef-filter]');
+    if (filter) {
+      const selector = filter.closest('.chef-selector');
+      selector.querySelectorAll('[data-chef-filter]').forEach((button) => { const active = button === filter; button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active)); });
+      filterChefOptions(selector); return;
+    }
+    if (event.target.closest('[data-show-all-chefs]')) {
+      const selector = event.target.closest('.chef-selector'); selector.querySelector('[data-chef-search]').value = ''; selector.querySelector('[data-chef-filter="all"]').click(); return;
+    }
+    const setupTarget = event.target.closest('[data-setup-target]');
+    if (setupTarget) { const target = document.getElementById(setupTarget.dataset.setupTarget) || document.querySelector(`[data-setup-section="${setupTarget.dataset.setupTarget}"]`); target?.scrollIntoView({ behavior: 'smooth', block: 'start' }); target?.focus({ preventScroll: true }); return; }
     if (event.target.closest('[data-toast-undo]')) {
       if (undoManualEdit(state, state.generatedRotas.latestResult)) refreshEditedRota('Manual change undone.');
       document.querySelector('[data-undo-toast]')?.remove();
@@ -960,6 +1053,8 @@ function attachEvents() {
       closeIssuePopover(null, { restoreFocus: !!document.querySelector('[data-mobile-issue-sheet]') });
       return;
     }
+    const moreMenu = document.getElementById('toolbarMoreMenu');
+    if (moreMenu && !moreMenu.hidden) { moreMenu.hidden = true; const button = document.querySelector('[data-toolbar-more]'); button?.setAttribute('aria-expanded', 'false'); button?.focus(); return; }
     if (document.querySelector('.chef-selector')) { closeChefSelector(); return; }
     if (document.getElementById('additionalChefModal')?.classList.contains('open')) {
       closeAdditionalChefModal();

@@ -2,7 +2,7 @@ import { getState, syncCompatibilityViews } from './state.js';
 import { normalizeStaffRecords } from './staff.js';
 import { getWeekStartAtOffset, normalizeWeekStart } from './utils.js';
 import { DEFAULT_STAFF } from '../data/default-staff.js';
-import { normalizeOverallRotaResult, syncRotaGtChefs } from './rota-model.js?v=20260719t';
+import { normalizeOverallRotaResult, syncRotaGtChefs } from './rota-model.js?v=20260719u';
 
 export const STORAGE_KEYS = {
   schemaVersion: 'gtRota.schemaVersion',

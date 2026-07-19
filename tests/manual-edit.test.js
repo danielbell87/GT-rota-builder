@@ -86,6 +86,7 @@ export async function runManualEditTests(assert) {
   const breakfastChef = currentDay().assignments.find((item) => item.section === 'Breakfast').chef;
   assert(findDuplicateCoreAssignment(overall.weeks[0], day.date, 'Breakfast', breakfastChef) === null, 'Manual edit: Breakfast permits a chef who also has one core assignment');
   assert(resetAllManualEdits(state, overall) && Object.keys(state.manualEditing.edits).length === 0, 'Manual edit: reset all clears manual edits');
+  assert(state.manualEditing.undo.length === 0 && state.manualEditing.redo.length === 0 && state.manualEditing.actions.length === 0, 'Manual edit: confirmed reset clears Undo, Redo and recent-action history');
 
   const saturday = overall.weeks[0].rota.find((item) => item.dayName === 'Saturday');
   saturday.assignments = saturday.assignments.filter((item) => (

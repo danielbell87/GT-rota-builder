@@ -9,15 +9,16 @@ import {
   formatPlanningHorizonLabel,
   getWeekStartAtOffset
 } from './utils.js';
-import { scoreSoftPreferences } from './scoring.js?v=20260719t';
-import { buildRota, buildMultiWeekRota, summarizeRota } from './solver.js?v=20260719t';
+import { scoreSoftPreferences } from './scoring.js?v=20260719u';
+import { buildRota, buildMultiWeekRota, summarizeRota } from './solver.js?v=20260719u';
 import { getChefSoftPreferenceDetails } from './staff.js';
-import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260719t';
+import { validateRotaHardRules, validateRotaSoftRules, getStaffConfigurationWarnings } from './validation.js?v=20260719u';
 import { collectWeeklyInputsFromDom } from './weekly-inputs.js';
-import { cellKey, ensureManualEditState, getChefConcerns, MANUALLY_EDITABLE_SECTIONS, rateManualAssignmentCandidates } from './manual-edit.js?v=20260719t';
-import { buildRotaDiagnostics, checkRotaFeasibility, summarizeDiagnostics } from './diagnostics.js?v=20260719t';
-import { getGtChefNamesForDay, syncRotaGtChefs } from './rota-model.js?v=20260719t';
-import { buildContextualScore, combineContextualScores } from './score-context.js?v=20260719t';
+import { cellKey, ensureManualEditState, getChefConcerns, MANUALLY_EDITABLE_SECTIONS, rateManualAssignmentCandidates } from './manual-edit.js?v=20260719u';
+import { buildRotaDiagnostics, checkRotaFeasibility, summarizeDiagnostics } from './diagnostics.js?v=20260719u';
+import { getGtChefNamesForDay, syncRotaGtChefs } from './rota-model.js?v=20260719u';
+import { buildContextualScore, combineContextualScores } from './score-context.js?v=20260719u';
+import { getWeekLifecycle, icon } from './ui.js?v=20260719u';
 
 function getRequiredElement(id) {
   const element = document.getElementById(id);
@@ -259,10 +260,15 @@ export function renderReadinessPanel() {
   </section>`;
   const button = document.getElementById('generateRotaBtn');
   if (button) button.disabled = false;
+  const stickyButton = document.querySelector('[data-sticky-generate]');
+  const stickyLabel = document.getElementById('stickyGenerateReadiness');
+  const actionLabel = readiness.status === 'blocked' ? 'Generate best available' : 'Generate rota';
+  if (stickyButton) stickyButton.textContent = actionLabel;
+  if (stickyLabel) stickyLabel.textContent = readiness.status === 'ready' ? 'Ready to generate' : readiness.status === 'blocked' ? `${readiness.errors.length} feasibility issue${readiness.errors.length === 1 ? '' : 's'}` : `${readiness.warnings.length} setup warning${readiness.warnings.length === 1 ? '' : 's'}`;
   return readiness;
 }
 
-function renderResultsHeader(numberOfWeeks, weekStart) {
+function renderResultsHeader(numberOfWeeks, weekStart, lifecycle = 'Generated', issueCount = 0) {
   const heading = numberOfWeeks === 1 ? 'Results' : `${numberOfWeeks}-week rota`;
   const range = numberOfWeeks === 1
     ? `${formatWeekCommencing(weekStart)} – ${getWeekEnd(weekStart)}`
@@ -270,7 +276,7 @@ function renderResultsHeader(numberOfWeeks, weekStart) {
   return `
     <div class="results-header">
       <div>
-        <h3 class="results-title">${escapeHtml(heading)}</h3>
+        <div class="results-title-row"><h3 class="results-title">${escapeHtml(heading)}</h3><span class="lifecycle-badge lifecycle-${lifecycle.toLowerCase().replaceAll(' ', '-')}">${lifecycle === 'Published' ? icon('published') : ''}${escapeHtml(lifecycle)}${issueCount ? ` · Draft · ${issueCount} issue${issueCount === 1 ? '' : 's'}` : ''}</span></div>
         <p class="results-subtitle">${escapeHtml(range)}</p>
       </div>
     </div>`;
@@ -1144,7 +1150,7 @@ export function renderResultsPanel(options = {}) {
   if (overallResult.numberOfWeeks === 1) {
     container.innerHTML = `
       <div class="results-layout">
-        ${renderResultsHeader(1, inputs.weekStart)}
+        ${renderResultsHeader(1, inputs.weekStart, getWeekLifecycle(state, activeWeekIndex), activeView?.visibleHardFailures.length || 0)}
         ${renderManualToolbar(state)}
         ${activeView ? renderWeekPanel(activeView, { showHeader: false, showStatus: true }) : ''}
       </div>`;
@@ -1159,7 +1165,7 @@ export function renderResultsPanel(options = {}) {
 
     container.innerHTML = `
       <div class="results-layout">
-        ${renderResultsHeader(overallResult.numberOfWeeks, inputs.weekStart)}
+        ${renderResultsHeader(overallResult.numberOfWeeks, inputs.weekStart, getWeekLifecycle(state, activeWeekIndex), activeView?.visibleHardFailures.length || 0)}
         ${renderManualToolbar(state)}
         <div class="desktop-only week-tabs print-hidden" role="tablist">${tabs}</div>
         <label class="mobile-only print-hidden">Week<select id="resultsWeekSelect">${dropdownOptions}</select></label>
@@ -1206,11 +1212,14 @@ export function renderResultsPanel(options = {}) {
 function renderManualToolbar(state) {
   const manual = state.manualEditing || {};
   const hasEdits = Object.keys(manual.edits || {}).length > 0;
-  return `<div class="manual-edit-toolbar print-hidden" aria-label="Manual rota editing controls">
-    <button type="button" class="secondary" data-manual-undo ${manual.undo?.length ? '' : 'disabled'}>Undo</button>
-    <button type="button" class="secondary" data-manual-redo ${manual.redo?.length ? '' : 'disabled'}>Redo</button>
-    <button type="button" class="secondary" data-reset-manual-all ${hasEdits ? '' : 'disabled'}>Reset all manual changes</button>
-    <span class="small">Select any assignment to change it. Validation updates immediately.</span>
+  return `<div class="results-toolbar print-hidden" role="toolbar" aria-label="Rota results actions">
+    <button type="button" class="secondary" data-toggle-edit>${icon('edit')}<span>Edit rota</span></button>
+    <button type="button" class="secondary" data-manual-undo ${manual.undo?.length ? '' : 'disabled'}>${icon('undo')}<span>Undo</span></button>
+    <button type="button" data-toolbar-print>${icon('print')}<span>Print / PDF</span></button>
+    <button type="button" class="secondary toolbar-secondary" data-copy-week>${icon('copy')}<span>Copy week</span></button>
+    <button type="button" class="secondary toolbar-secondary" data-regenerate>${icon('regenerate')}<span>Regenerate</span></button>
+    <button type="button" class="secondary toolbar-secondary" data-reset-manual-all ${hasEdits ? '' : 'disabled'}>${icon('reset')}<span>Reset manual changes</span></button>
+    <div class="toolbar-more"><button type="button" class="secondary" data-toolbar-more aria-expanded="false" aria-controls="toolbarMoreMenu">${icon('more')}<span>More</span></button><div id="toolbarMoreMenu" class="toolbar-more-menu" hidden></div></div>
   </div>`;
 }
 
@@ -1220,6 +1229,8 @@ export function renderChefSelector({ weekIndex, date, section }) {
   const currentAssignments = week?.rota?.find((day) => day.date === date)?.assignments?.filter((item) => item.section === section) || [];
   const currentChefs = new Set(currentAssignments.map((item) => item.chef));
   const ratings = rateManualAssignmentCandidates({ state, overallResult: state.generatedRotas.latestResult, weekIndex, date, section });
+  const chefRatings = ratings.filter((rating) => rating.chefName);
+  const allExceptions = chefRatings.length > 0 && chefRatings.every((rating) => !rating.hardValid);
   const option = (rating) => {
     const name = rating.chefName;
     const selected = rating.current;
@@ -1228,9 +1239,9 @@ export function renderChefSelector({ weekIndex, date, section }) {
       : (name || 'Leave unfilled');
     const tone = rating.hardValid ? (rating.score >= 75 ? 'strong' : 'acceptable') : 'exception';
     const actionText = rating.action === 'swap' ? `Best outcome: swap assignments` : rating.action === 'move' ? `Best outcome: move from another section` : '';
-    const badges = [selected ? 'Current' : '', rating.recommendationLabel].filter(Boolean);
+    const badges = [selected ? (rating.recommended ? 'Current · Recommended' : 'Current') : '', !selected ? rating.recommendationLabel : ''].filter(Boolean);
     const breakdown = rating.breakdown.map((item) => `<li><span>${escapeHtml(item.label)}</span><strong>${item.final ? `${item.value}%` : `${item.value > 0 ? '+' : ''}${item.value}`}</strong></li>`).join('');
-    return `<article class="chef-selector-option ${tone}${selected ? ' current' : ''}">
+    return `<article class="chef-selector-option ${tone}${selected ? ' current pinned' : ''}" data-chef-option data-chef-name="${escapeHtml(name.toLowerCase())}" data-valid="${rating.hardValid}" data-current="${selected}">
       <button type="button" class="chef-option-select" data-select-chef="${escapeHtml(name)}" data-float-action="${rating.floatAction}">
         <span class="chef-option-main"><span class="chef-option-title"><strong>${escapeHtml(label)}</strong>${badges.map((badge) => `<em>${escapeHtml(badge)}</em>`).join('')}</span><small>${escapeHtml(rating.reasons.slice(0, 3).join(' · '))}</small>${actionText ? `<small>${escapeHtml(actionText)}</small>` : ''}</span>
         <span class="chef-option-score"><strong>${rating.score}%</strong><small>${escapeHtml(rating.label)}</small></span>
@@ -1238,10 +1249,18 @@ export function renderChefSelector({ weekIndex, date, section }) {
       <details><summary>Rating breakdown</summary><ul>${breakdown}</ul></details>
     </article>`;
   };
-  const options = ratings.map(option).join('');
+  const current = ratings.filter((item) => item.current);
+  const recommended = ratings.filter((item) => item.recommended && !item.current);
+  const suitable = ratings.filter((item) => item.chefName && item.hardValid && !item.recommended && !item.current).sort((a, b) => b.score - a.score);
+  const exceptions = ratings.filter((item) => item.chefName && !item.hardValid && !item.recommended && !item.current).sort((a, b) => b.score - a.score);
+  const unfilled = ratings.filter((item) => !item.chefName && !item.current);
+  const group = (title, items) => items.length ? `<section class="chef-option-group" data-option-group><h4>${escapeHtml(title)} <span>${items.length}</span></h4>${items.map(option).join('')}</section>` : '';
+  const options = `${group('Current assignment', current)}${group(allExceptions ? 'Best available exception' : 'Recommended', recommended)}${group('Suitable alternatives', suitable)}${group('Exceptions', exceptions)}${group('Other actions', unfilled)}`;
   return `<div class="chef-selector-backdrop" data-close-chef-selector></div><section class="chef-selector" role="dialog" aria-modal="true" aria-labelledby="chefSelectorTitle" data-week-index="${weekIndex}" data-date="${date}" data-section="${section}">
-    <div class="chef-selector-head"><div><h3 id="chefSelectorTitle">${escapeHtml(section)} · ${escapeHtml(formatDate(date))}</h3><p>${section === 'Float' ? 'Add or remove individual Float chefs. Existing Float assignments are preserved when another chef is added.' : 'Choose any configured chef. Warnings do not prevent selection.'}</p></div><button type="button" class="secondary" data-close-chef-selector aria-label="Close chef selector">×</button></div>
+    <div class="chef-selector-head"><div><h3 id="chefSelectorTitle">${escapeHtml(section)} · ${escapeHtml(formatDate(date))}</h3><p>${section === 'Float' ? 'Add or remove individual Float chefs. Existing Float assignments are preserved when another chef is added.' : 'Choose any configured chef. Warnings do not prevent selection.'}</p></div><button type="button" class="secondary icon-button" data-close-chef-selector aria-label="Close chef selector">${icon('close')}</button></div>
+    <div class="chef-selector-filters"><label><span class="visually-hidden">Search chefs</span><span class="search-field">${icon('search')}<input type="search" data-chef-search placeholder="Search chefs" autocomplete="off"></span></label><div class="filter-tabs" role="group" aria-label="Filter chef options"><button type="button" class="secondary active" data-chef-filter="all" aria-pressed="true">All</button><button type="button" class="secondary" data-chef-filter="valid" aria-pressed="false">Valid only</button><button type="button" class="secondary" data-chef-filter="exceptions" aria-pressed="false">Exceptions</button></div></div>
     <div class="chef-selector-options" aria-label="Chef options, current assignment first, then suitability order">${options}</div>
+    <div class="chef-filter-empty hidden" data-chef-empty role="status"><p>No valid alternatives for this assignment.</p><button type="button" class="secondary" data-show-all-chefs>Show all options</button></div>
     <div class="chef-selector-actions"><button type="button" class="secondary" data-reset-manual-cell>Reset cell</button><button type="button" class="secondary" data-close-chef-selector>Cancel</button></div>
   </section>`;
 }

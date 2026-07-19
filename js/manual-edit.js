@@ -1,8 +1,8 @@
 import { DISPLAY_SECTIONS, SHIFT_LENGTHS } from './constants.js';
-import { validateRotaHardRules, validateRotaSoftRules } from './validation.js?v=20260719t';
-import { scoreSoftPreferences } from './scoring.js?v=20260719t';
-import { buildRotaDiagnostics } from './diagnostics.js?v=20260719t';
-import { getGtChefNamesForDay, hasGtAssignment, syncDayGtChefs } from './rota-model.js?v=20260719t';
+import { validateRotaHardRules, validateRotaSoftRules } from './validation.js?v=20260719u';
+import { scoreSoftPreferences } from './scoring.js?v=20260719u';
+import { buildRotaDiagnostics } from './diagnostics.js?v=20260719u';
+import { getGtChefNamesForDay, hasGtAssignment, syncDayGtChefs } from './rota-model.js?v=20260719u';
 import { getSectionLevel, getSectionLevelLabel } from './section-levels.js';
 
 export const MANUAL_HISTORY_LIMIT = 10;
@@ -185,7 +185,6 @@ export function resetManualCell(state, overallResult, weekIndex, date, section) 
 export function resetAllManualEdits(state, overallResult) {
   const manual = ensureManualEditState(state, overallResult);
   if (!Object.keys(manual.originals).length) return false;
-  pushUndo(overallResult, manual);
   overallResult.weeks.forEach((week) => week.rota.forEach((day) => MANUALLY_EDITABLE_SECTIONS.forEach((section) => {
     const key = cellKey(week.weekStart, day.date, section);
     if (!Object.prototype.hasOwnProperty.call(manual.originals, key)) return;
@@ -194,6 +193,9 @@ export function resetAllManualEdits(state, overallResult) {
   })));
   manual.originals = {};
   manual.edits = {};
+  manual.undo = [];
+  manual.redo = [];
+  manual.actions = [];
   recalculateEditedResult(state, overallResult);
   return true;
 }

@@ -1,12 +1,13 @@
-import { runSolverTests } from './solver.test.js?v=20260719t';
+import { runSolverTests } from './solver.test.js?v=20260719u';
 import { runValidationTests } from './validation.test.js';
-import { runScoringTests } from './scoring.test.js?v=20260719t';
-import { runAdditionalChefTests } from './additional-chef.test.js?v=20260719t';
-import { runUiTests } from './ui.test.js?v=20260719t';
-import { runPrintTests } from './print.test.js?v=20260719t';
+import { runScoringTests } from './scoring.test.js?v=20260719u';
+import { runAdditionalChefTests } from './additional-chef.test.js?v=20260719u';
+import { runUiTests } from './ui.test.js?v=20260719u';
+import { runPrintTests } from './print.test.js?v=20260719u';
 import { runBackupTests } from './backup.test.js';
-import { runManualEditTests } from './manual-edit.test.js?v=20260719t';
+import { runManualEditTests } from './manual-edit.test.js?v=20260719u';
 import { runDiagnosticsTests } from './diagnostics.test.js';
+import { runUiPolishTests } from './ui-polish.test.js?v=20260719u';
 import { SOLVER_ENGINE_VERSION } from '../js/solver.js';
 
 const summaryEl = document.getElementById('testSummary');
@@ -37,6 +38,8 @@ async function runAllTests() {
     await runBackupTests(assert);
     summaryEl.textContent = 'Running manual-edit tests…';
     await runManualEditTests(assert);
+    summaryEl.textContent = 'Running UI polish tests…';
+    await runUiPolishTests(assert);
     summaryEl.textContent = 'Running UI tests…';
     await runUiTests(assert);
     summaryEl.textContent = 'Running diagnostics tests…';
