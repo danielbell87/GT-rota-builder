@@ -1,6 +1,6 @@
 import { DAY_FAIRNESS_WEIGHTS, SCORING_WEIGHTS, SHIFT_LENGTHS } from './constants.js';
 import { getSectionLevel, getSectionLevelLabel, SECTION_LEVELS } from './section-levels.js';
-import { getGtChefNamesForDay } from './rota-model.js?v=20260719o';
+import { getGtChefNamesForDay } from './rota-model.js?v=20260719s';
 
 export function getSectionScore(staff, section, ruleOverrides) {
   return getSectionLevel(staff, section);
@@ -89,6 +89,12 @@ export function scoreSoftPreferences({ state, rota, hardValidation = [], fairnes
 
   const breakfastCounts = {};
   rota.forEach((day) => {
+    const floatCount = day.assignments.filter((assignment) => assignment.section === 'Float').length;
+    if (floatCount > 1) {
+      const penalty = floatCount - 1;
+      score -= penalty;
+      explanations.push(`${day.dayName} uses ${floatCount} Float chefs to satisfy hard staffing targets.`);
+    }
     getGtChefNamesForDay(day).forEach((chefName) => {
       const chef = state.staff.find((candidate) => candidate.name === chefName);
       if (!chef?.preferredDaysOff?.includes(day.dayName)) return;

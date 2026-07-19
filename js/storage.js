@@ -2,6 +2,7 @@ import { getState, syncCompatibilityViews } from './state.js';
 import { normalizeStaffRecords } from './staff.js';
 import { getWeekStartAtOffset, normalizeWeekStart } from './utils.js';
 import { DEFAULT_STAFF } from '../data/default-staff.js';
+import { normalizeOverallRotaResult, syncRotaGtChefs } from './rota-model.js?v=20260719s';
 
 export const STORAGE_KEYS = {
   schemaVersion: 'gtRota.schemaVersion',
@@ -11,7 +12,14 @@ export const STORAGE_KEYS = {
 
 const LEGACY_MIO_ELIGIBILITY_KEY = 'gtRota.mioEligibilityByChef';
 const LEGACY_STAFF_PROFILES_KEY = 'gtRota.staffProfilesByChef';
-const CURRENT_SCHEMA_VERSION = 15;
+const CURRENT_SCHEMA_VERSION = 16;
+
+function normalizeGeneratedRotas(value) {
+  if (!value || typeof value !== 'object') return value;
+  if (value.current?.rota) syncRotaGtChefs(value.current.rota);
+  if (value.latestResult) normalizeOverallRotaResult(value.latestResult);
+  return value;
+}
 
 function normalizeManualEditing(value) {
   if (!value || typeof value !== 'object') return null;
@@ -176,6 +184,7 @@ export function migrateStorageIfNeeded() {
       saved.generatedRotas = { current: null, latestResult: null };
       saved.manualEditing = null;
     }
+    if (current < 16) saved.generatedRotas = normalizeGeneratedRotas(saved.generatedRotas);
     localStorage.setItem(STORAGE_KEYS.appState, JSON.stringify(saved));
   }
 
@@ -202,7 +211,7 @@ export function loadAppState() {
     }
     if (Array.isArray(persisted.history)) state.history = persisted.history;
     if (persisted.generatedRotas && typeof persisted.generatedRotas === 'object') {
-      state.generatedRotas = { ...state.generatedRotas, ...persisted.generatedRotas };
+      state.generatedRotas = { ...state.generatedRotas, ...normalizeGeneratedRotas(persisted.generatedRotas) };
     }
     if (persisted.uiState && typeof persisted.uiState === 'object') {
       state.uiState = { ...state.uiState, ...persisted.uiState };
@@ -215,6 +224,7 @@ export function loadAppState() {
 
 export function saveAppState(state) {
   try {
+    normalizeGeneratedRotas(state.generatedRotas);
     localStorage.setItem(STORAGE_KEYS.appState, JSON.stringify({
       staff: normalizeStaffRecords(state.staff),
       settings: state.settings,

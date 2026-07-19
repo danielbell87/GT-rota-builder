@@ -11,13 +11,14 @@ import {
   hardValidateRotaCandidate,
   optimizeBreakfastAssignments,
   optimizeRotaCandidate,
+  repairExactGtTargetsWithFloat,
   selectBreakfastChef
-} from '../js/solver.js?v=20260719o';
+} from '../js/solver.js?v=20260719s';
 import { isSenior, getHoursForDay, getHoursForAssignment, scoreSoftPreferences } from '../js/scoring.js';
-import { getCoreSections, isUnavailable, validateRotaHardRules, validateRotaSoftRules } from '../js/validation.js?v=20260719o';
+import { getCoreSections, isUnavailable, validateRotaHardRules, validateRotaSoftRules } from '../js/validation.js?v=20260719s';
 import { canCoverSection, sectionCandidateScore } from '../js/section-levels.js';
 import { normalizeChefRecord } from '../js/staff.js';
-import { getGtChefNamesForDay, getVisibleGtChefDayTotal } from '../js/rota-model.js';
+import { getGtChefNamesForDay, getGtDaysByChef, getVisibleGtChefDayTotal } from '../js/rota-model.js';
 
 const PRIMARY_GT_SECTIONS = ['Pass', 'Sauce', 'Garnish', 'Larder', 'Pastry', 'Float'];
 
@@ -369,6 +370,36 @@ export async function runSolverTests(assert) {
   assert(baseline.summary
     .filter((item) => item.floatDays > 0)
     .every((item) => item.gtHours === item.gtDays * getHoursForDay('Thursday', false) || item.gtHours > 0), 'Float days contribute to GT hours in the weekly summary');
+
+  const floatRepairState = setupBaseState();
+  floatRepairState.staff = floatRepairState.staff.filter((chef) => ['Charlie', 'Joel'].includes(chef.name));
+  const repairDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((dayName, index) => ({
+    dayName,
+    date: `2026-07-${String(13 + index).padStart(2, '0')}`,
+    chefs: [],
+    assignments: []
+  }));
+  ['Thursday', 'Friday', 'Sunday'].forEach((dayName) => {
+    repairDays.find((day) => day.dayName === dayName).assignments.push({ chef: 'Joel', section: 'Float' });
+  });
+  ['Thursday', 'Friday', 'Saturday', 'Sunday'].forEach((dayName) => {
+    repairDays.find((day) => day.dayName === dayName).assignments.push({ chef: 'Charlie', section: 'Float' });
+  });
+  const repairs = repairExactGtTargetsWithFloat({
+    rota: repairDays,
+    state: floatRepairState,
+    inputs: { weekStart: '2026-07-13', mioChef: '' },
+    gtTargetsByChef: { Charlie: 4, Joel: 4 },
+    ruleOverrides: { _availability: [] }
+  });
+  const repairedSaturdayFloat = repairDays.find((day) => day.dayName === 'Saturday').assignments
+    .filter((assignment) => assignment.section === 'Float')
+    .map((assignment) => assignment.chef);
+  const repairedCounts = getGtDaysByChef(repairDays);
+  assert(repairs.some((repair) => repair.chef === 'Joel' && repair.date === '2026-07-18'), 'Float target repair: Joel is automatically added on the only available fourth GT day');
+  assert(JSON.stringify(repairedSaturdayFloat) === JSON.stringify(['Charlie', 'Joel']), 'Float target repair: Charlie remains on Saturday Float when Joel is appended');
+  assert(repairedCounts.Charlie === 4 && repairedCounts.Joel === 4, 'Float target repair: both Charlie and Joel finish on exactly four unique GT dates');
+  assert(repairDays.every((day) => new Set(day.assignments.filter((assignment) => assignment.section === 'Float').map((assignment) => assignment.chef)).size === day.assignments.filter((assignment) => assignment.section === 'Float').length), 'Float target repair: automatic repair never duplicates a chef within one Float cell');
 
   const joelLeaveState = setupBaseState();
   joelLeaveState.weeklyInputs.availability = [{ chef: 'Joel', type: 'Annual Leave', startDate: '2026-07-13', finishDate: '2026-07-19', notes: '' }];

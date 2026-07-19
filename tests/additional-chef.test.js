@@ -1,6 +1,6 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota } from '../js/solver.js';
-import { validateRotaHardRules } from '../js/validation.js?v=20260719o';
+import { validateRotaHardRules } from '../js/validation.js?v=20260719s';
 import {
   addAdditionalChefRequest,
   updateAdditionalChefRequest,

@@ -1,7 +1,7 @@
 import { getState, resetStateToDefaults, syncCompatibilityViews } from '../js/state.js';
 import { buildRota, summarizeRota } from '../js/solver.js';
-import { validateRotaHardRules, validateRotaSoftRules, isRotaValid, getStaffConfigurationWarnings } from '../js/validation.js?v=20260719o';
-import { getGtChefNamesForDay, GT_SECTIONS } from '../js/rota-model.js';
+import { validateRotaHardRules, validateRotaSoftRules, isRotaValid, getStaffConfigurationWarnings } from '../js/validation.js?v=20260719s';
+import { getGtChefNamesForDay, getGtDaysByChef, GT_SECTIONS, normalizeDayAssignments } from '../js/rota-model.js';
 
 function createSummary(state, annualLeaveHoursByChef = {}) {
   return state.staff.map((chef) => {
@@ -47,6 +47,18 @@ function setupState() {
 }
 
 export async function runValidationTests(assert) {
+  const legacyFloatDay = {
+    dayName: 'Saturday',
+    date: '2026-07-18',
+    Float: 'Charlie',
+    assignments: [{ section: 'Float', chef: ['Charlie', 'Joel', 'Joel'] }]
+  };
+  normalizeDayAssignments(legacyFloatDay);
+  assert(JSON.stringify(legacyFloatDay.assignments) === JSON.stringify([
+    { section: 'Float', chef: 'Charlie' },
+    { section: 'Float', chef: 'Joel' }
+  ]), 'Float compatibility: legacy string/array formats normalize to unique assignment objects');
+  assert(getGtDaysByChef([legacyFloatDay]).Charlie === 1 && getGtDaysByChef([legacyFloatDay]).Joel === 1, 'Float compatibility: each chef receives one unique GT date after normalization');
   const state = setupState();
   const result = buildRota({
     weekStart: state.weeklyInputs.weekStart,

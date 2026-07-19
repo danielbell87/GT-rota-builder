@@ -1,8 +1,8 @@
 import { DISPLAY_SECTIONS, SHIFT_LENGTHS } from './constants.js';
-import { validateRotaHardRules, validateRotaSoftRules } from './validation.js?v=20260719o';
-import { scoreSoftPreferences } from './scoring.js?v=20260719o';
-import { buildRotaDiagnostics } from './diagnostics.js?v=20260719o';
-import { getGtChefNamesForDay, hasGtAssignment, syncDayGtChefs } from './rota-model.js?v=20260719o';
+import { validateRotaHardRules, validateRotaSoftRules } from './validation.js?v=20260719s';
+import { scoreSoftPreferences } from './scoring.js?v=20260719s';
+import { buildRotaDiagnostics } from './diagnostics.js?v=20260719s';
+import { getGtChefNamesForDay, hasGtAssignment, syncDayGtChefs } from './rota-model.js?v=20260719s';
 
 export const MANUAL_HISTORY_LIMIT = 50;
 export const MANUALLY_EDITABLE_SECTIONS = DISPLAY_SECTIONS.filter((section) => section !== 'MIO');
@@ -31,17 +31,29 @@ export function ensureManualEditState(state, overallResult = state.generatedRota
 }
 
 export function getCellChef(week, date, section) {
-  const day = week?.rota?.find((item) => item.date === date);
-  return day?.assignments?.find((item) => item.section === section)?.chef || '';
+  return getCellChefs(week, date, section)[0] || '';
 }
 
-function setCellChef(week, date, section, chef) {
+export function getCellChefs(week, date, section) {
+  const day = week?.rota?.find((item) => item.date === date);
+  return (day?.assignments || [])
+    .filter((item) => item.section === section)
+    .map((item) => item.chef);
+}
+
+function setCellChefs(week, date, section, chefs) {
   const day = week.rota.find((item) => item.date === date);
   if (!day) return false;
   day.assignments = (day.assignments || []).filter((item) => item.section !== section);
-  if (chef) day.assignments.push({ section, chef });
+  [...new Set((Array.isArray(chefs) ? chefs : [chefs]).filter(Boolean))].forEach((chef) => {
+    day.assignments.push({ section, chef });
+  });
   syncDayGtChefs(day);
   return true;
+}
+
+function setCellChef(week, date, section, chef) {
+  return setCellChefs(week, date, section, chef ? [chef] : []);
 }
 
 function snapshot(overallResult, manual) {
@@ -70,19 +82,27 @@ export function findDuplicateCoreAssignment(week, date, section, chef) {
   return day?.assignments?.find((item) => item.chef === chef && item.section !== 'Breakfast' && item.section !== 'MIO' && item.section !== section) || null;
 }
 
-export function applyManualAssignment({ state, overallResult, weekIndex, date, section, chef, duplicateAction = '' }) {
+export function applyManualAssignment({ state, overallResult, weekIndex, date, section, chef, duplicateAction = '', floatAction = 'add' }) {
   const manual = ensureManualEditState(state, overallResult);
   const week = overallResult.weeks[weekIndex];
   if (!week || !MANUALLY_EDITABLE_SECTIONS.includes(section)) return { applied: false, reason: 'Cell is not editable.' };
   const key = cellKey(week.weekStart, date, section);
+  const previousChefs = getCellChefs(week, date, section);
   const previousChef = getCellChef(week, date, section);
-  if (previousChef === chef) return { applied: false, reason: 'No change.' };
-  const duplicate = findDuplicateCoreAssignment(week, date, section, chef);
+  if (section === 'Float' && floatAction === 'add' && previousChefs.includes(chef)) return { applied: false, reason: 'Chef is already assigned to Float.' };
+  if (section === 'Float' && floatAction === 'remove' && !previousChefs.includes(chef)) return { applied: false, reason: 'Chef is not assigned to Float.' };
+  if (section !== 'Float' && previousChef === chef) return { applied: false, reason: 'No change.' };
+  const duplicate = section === 'Float' && floatAction === 'remove'
+    ? null
+    : findDuplicateCoreAssignment(week, date, section, chef);
   if (duplicate && !duplicateAction) return { applied: false, duplicate, previousChef };
   if (duplicate && duplicateAction === 'cancel') return { applied: false, cancelled: true };
+  if (section === 'Float' && duplicate && duplicateAction === 'swap') {
+    return { applied: false, reason: 'Float additions can move the chef from another GT section, but cannot swap the whole Float cell.' };
+  }
 
   pushUndo(overallResult, manual);
-  if (!Object.prototype.hasOwnProperty.call(manual.originals, key)) manual.originals[key] = previousChef;
+  if (!Object.prototype.hasOwnProperty.call(manual.originals, key)) manual.originals[key] = section === 'Float' ? previousChefs : previousChef;
   if (duplicate) {
     const duplicateKey = cellKey(week.weekStart, date, duplicate.section);
     if (!Object.prototype.hasOwnProperty.call(manual.originals, duplicateKey)) manual.originals[duplicateKey] = duplicate.chef;
@@ -94,10 +114,18 @@ export function applyManualAssignment({ state, overallResult, weekIndex, date, s
       manual.edits[duplicateKey] = '';
     }
   }
-  setCellChef(week, date, section, chef);
-  manual.edits[key] = chef;
+  if (section === 'Float') {
+    const nextChefs = chef
+      ? (floatAction === 'remove' ? previousChefs.filter((name) => name !== chef) : [...previousChefs, chef])
+      : [];
+    setCellChefs(week, date, section, nextChefs);
+    manual.edits[key] = [...new Set(nextChefs)];
+  } else {
+    setCellChef(week, date, section, chef);
+    manual.edits[key] = chef;
+  }
   recalculateEditedResult(state, overallResult);
-  return { applied: true, previousChef, chef };
+  return { applied: true, previousChef, previousChefs, chef };
 }
 
 export function undoManualEdit(state, overallResult) {
@@ -126,7 +154,8 @@ export function resetManualCell(state, overallResult, weekIndex, date, section) 
   const key = cellKey(week.weekStart, date, section);
   if (!Object.prototype.hasOwnProperty.call(manual.originals, key)) return false;
   pushUndo(overallResult, manual);
-  setCellChef(week, date, section, manual.originals[key]);
+  if (section === 'Float') setCellChefs(week, date, section, manual.originals[key]);
+  else setCellChef(week, date, section, manual.originals[key]);
   delete manual.originals[key];
   delete manual.edits[key];
   recalculateEditedResult(state, overallResult);
@@ -139,7 +168,9 @@ export function resetAllManualEdits(state, overallResult) {
   pushUndo(overallResult, manual);
   overallResult.weeks.forEach((week) => week.rota.forEach((day) => MANUALLY_EDITABLE_SECTIONS.forEach((section) => {
     const key = cellKey(week.weekStart, day.date, section);
-    if (Object.prototype.hasOwnProperty.call(manual.originals, key)) setCellChef(week, day.date, section, manual.originals[key]);
+    if (!Object.prototype.hasOwnProperty.call(manual.originals, key)) return;
+    if (section === 'Float') setCellChefs(week, day.date, section, manual.originals[key]);
+    else setCellChef(week, day.date, section, manual.originals[key]);
   })));
   manual.originals = {};
   manual.edits = {};

@@ -8,7 +8,7 @@ import {
   getHoursForDay,
   getHoursForAssignment,
   scoreSoftPreferences
-} from './scoring.js?v=20260719o';
+} from './scoring.js?v=20260719s';
 import { canCoverSection, sectionCandidateScore } from './section-levels.js';
 import {
   isUnavailable,
@@ -19,9 +19,9 @@ import {
   validateRotaSoftRules,
   getAdjustedGtTargetsByChef,
   getAnnualLeaveDatesByChef
-} from './validation.js?v=20260719o';
+} from './validation.js?v=20260719s';
 import { filterAvailabilityForWeek, filterAdditionalChefRequirementsForWeek } from './weekly-inputs.js';
-import { getGtChefNamesForDay, hasGtAssignment, syncRotaGtChefs } from './rota-model.js?v=20260719o';
+import { getGtChefNamesForDay, hasGtAssignment, syncRotaGtChefs } from './rota-model.js?v=20260719s';
 
 const PASS_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
 const MIO_PRIMARY_DAYS = ['Monday', 'Tuesday', 'Wednesday'];
@@ -48,6 +48,48 @@ export const SOLVER_SEARCH_LIMITS = Object.freeze({
 function getChefGtTarget(chefName, mioChefName, gtTargetsByChef = null) {
   if (gtTargetsByChef && Number.isFinite(gtTargetsByChef[chefName])) return gtTargetsByChef[chefName];
   return chefName === mioChefName ? 2 : 4;
+}
+
+export function repairExactGtTargetsWithFloat({
+  rota,
+  state,
+  inputs,
+  gtTargetsByChef,
+  ruleOverrides = {}
+}) {
+  syncRotaGtChefs(rota);
+  const counts = Object.fromEntries(state.staff.map((chef) => [
+    chef.name,
+    rota.filter((day) => hasGtAssignment(day, chef.name)).length
+  ]));
+  const repairs = [];
+
+  state.staff
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .forEach((chef) => {
+      const target = getChefGtTarget(chef.name, inputs.mioChef, gtTargetsByChef);
+      while ((counts[chef.name] || 0) < target) {
+        const candidate = rota
+          .filter((day) => FLOAT_PRIORITY_DAYS.includes(day.dayName))
+          .filter((day) => !hasGtAssignment(day, chef.name))
+          .filter((day) => !day.assignments.some((assignment) => assignment.section === 'MIO' && assignment.chef === chef.name))
+          .filter((day) => !isUnavailable(chef, day.date, day.dayName, ruleOverrides))
+          .sort((a, b) => {
+            const floatDifference = a.assignments.filter((assignment) => assignment.section === 'Float').length
+              - b.assignments.filter((assignment) => assignment.section === 'Float').length;
+            if (floatDifference !== 0) return floatDifference;
+            return FLOAT_PRIORITY_DAYS.indexOf(a.dayName) - FLOAT_PRIORITY_DAYS.indexOf(b.dayName);
+          })[0];
+        if (!candidate) break;
+        candidate.assignments.push({ chef: chef.name, section: 'Float' });
+        syncRotaGtChefs([candidate]);
+        counts[chef.name] += 1;
+        repairs.push({ chef: chef.name, date: candidate.date, section: 'Float' });
+      }
+    });
+
+  return repairs;
 }
 
 function clampNumWeeks(value) {
@@ -1603,6 +1645,13 @@ function buildGreedyCandidate({
     if (!rota.some((day) => day.date === date)) rota.push({ dayName, date, chefs: [], assignments: [] });
   });
   rota.sort((a, b) => a.date.localeCompare(b.date));
+  repairExactGtTargetsWithFloat({
+    rota,
+    state,
+    inputs,
+    gtTargetsByChef,
+    ruleOverrides
+  });
   const { summary } = summarizeRota({
     state,
     rota,

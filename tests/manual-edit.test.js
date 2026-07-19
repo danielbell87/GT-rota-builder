@@ -4,13 +4,14 @@ import {
   applyManualAssignment,
   ensureManualEditState,
   findDuplicateCoreAssignment,
+  recalculateEditedResult,
   redoManualEdit,
   resetAllManualEdits,
   resetManualCell,
   undoManualEdit
 } from '../js/manual-edit.js';
 import { explainHardRuleFailure } from '../js/render.js';
-import { getGtChefNamesForDay } from '../js/rota-model.js';
+import { getGtChefNamesForDay, syncDayGtChefs } from '../js/rota-model.js';
 
 function makeOverall() {
   const state = getState();
@@ -54,4 +55,27 @@ export async function runManualEditTests(assert) {
   const breakfastChef = currentDay().assignments.find((item) => item.section === 'Breakfast').chef;
   assert(findDuplicateCoreAssignment(overall.weeks[0], day.date, 'Breakfast', breakfastChef) === null, 'Manual edit: Breakfast permits a chef who also has one core assignment');
   assert(resetAllManualEdits(state, overall) && Object.keys(state.manualEditing.edits).length === 0, 'Manual edit: reset all clears manual edits');
+
+  const saturday = overall.weeks[0].rota.find((item) => item.dayName === 'Saturday');
+  saturday.assignments = saturday.assignments.filter((item) => (
+    item.section !== 'Float'
+    && !(item.chef === 'Charlie' && item.section !== 'Breakfast' && item.section !== 'MIO')
+    && !(item.chef === 'Joel' && item.section !== 'Breakfast' && item.section !== 'MIO')
+  ));
+  saturday.assignments.push({ chef: 'Charlie', section: 'Float' });
+  syncDayGtChefs(saturday);
+  recalculateEditedResult(state, overall);
+  const appendJoel = applyManualAssignment({ state, overallResult: overall, weekIndex: 0, date: saturday.date, section: 'Float', chef: 'Joel', floatAction: 'add' });
+  assert(appendJoel.applied && saturday.assignments.filter((item) => item.section === 'Float').map((item) => item.chef).join(', ') === 'Charlie, Joel', 'Manual Float: adding Joel appends him after Charlie without replacing Charlie');
+  const duplicateJoel = applyManualAssignment({ state, overallResult: overall, weekIndex: 0, date: saturday.date, section: 'Float', chef: 'Joel', floatAction: 'add' });
+  assert(!duplicateJoel.applied && saturday.assignments.filter((item) => item.section === 'Float' && item.chef === 'Joel').length === 1, 'Manual Float: adding Joel twice does not create a duplicate');
+  const removeJoel = applyManualAssignment({ state, overallResult: overall, weekIndex: 0, date: saturday.date, section: 'Float', chef: 'Joel', floatAction: 'remove' });
+  assert(removeJoel.applied && saturday.assignments.some((item) => item.section === 'Float' && item.chef === 'Charlie') && !saturday.assignments.some((item) => item.section === 'Float' && item.chef === 'Joel'), 'Manual Float: removing Joel leaves Charlie unchanged');
+  const sauceChef = saturday.assignments.find((item) => item.section === 'Sauce')?.chef;
+  if (sauceChef) {
+    const duplicateGt = applyManualAssignment({ state, overallResult: overall, weekIndex: 0, date: saturday.date, section: 'Float', chef: sauceChef, floatAction: 'add' });
+    assert(!duplicateGt.applied && duplicateGt.duplicate?.section === 'Sauce', 'Manual Float: a chef already covering Sauce cannot also be appended to Float');
+    const invalidFloatSwap = applyManualAssignment({ state, overallResult: overall, weekIndex: 0, date: saturday.date, section: 'Float', chef: sauceChef, floatAction: 'add', duplicateAction: 'swap' });
+    assert(!invalidFloatSwap.applied && saturday.assignments.some((item) => item.section === 'Float' && item.chef === 'Charlie'), 'Manual Float: whole-cell swaps are rejected so existing Float chefs cannot be displaced or duplicated elsewhere');
+  }
 }

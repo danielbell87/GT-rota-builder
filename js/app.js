@@ -1,7 +1,7 @@
-import { APP_BUILD_VERSION, CACHE_BUST_VERSION } from './constants.js?v=20260719o';
+import { APP_BUILD_VERSION, CACHE_BUST_VERSION } from './constants.js?v=20260719s';
 import { getState, getDefaultWeek, resetStateToDefaults, syncCompatibilityViews, setWeekStart, setMioChef, setNumWeeks, setWeeklyMioChef } from './state.js';
 import { normalizeWeekStart, getPlanningHorizon } from './utils.js';
-import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260719o';
+import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260719s';
 import { addChef, createBlankChefDraft, createChefDraft, getChefById, removeChef, updateChef } from './staff.js';
 import { addAvailabilityEntry, removeAvailabilityEntry, updateAvailabilityField, addAdditionalChefRequest, updateAdditionalChefRequest, removeAdditionalChefRequest, validateAdditionalChefDate, validateAdditionalChefCount } from './weekly-inputs.js';
 import {
@@ -21,8 +21,8 @@ import {
   showChefModalError,
   setChefRemovalConfirmation,
   syncChefChoiceChipState
-} from './render.js?v=20260719o';
-import { renderChefSelector } from './render.js?v=20260719o';
+} from './render.js?v=20260719s';
+import { renderChefSelector } from './render.js?v=20260719s';
 import { applyManualAssignment, findDuplicateCoreAssignment, redoManualEdit, resetAllManualEdits, resetManualCell, undoManualEdit } from './manual-edit.js';
 import { upsertPublishedHistory, upsertPublishedWeeks } from './history.js';
 import { openPrintWindow } from './print.js';
@@ -547,22 +547,28 @@ function attachEvents() {
       const weekIndex = Number(selector.dataset.weekIndex);
       const { date, section } = selector.dataset;
       const chef = selectedChef.getAttribute('data-select-chef');
+      const floatAction = selectedChef.getAttribute('data-float-action') || 'add';
       const week = state.generatedRotas.latestResult.weeks[weekIndex];
       const duplicate = findDuplicateCoreAssignment(week, date, section, chef);
       let duplicateAction = '';
       if (duplicate) {
         const current = week.rota.find((day) => day.date === date)?.assignments.find((item) => item.section === section)?.chef || '';
-        const choice = window.prompt(current
+        const choice = window.prompt(section !== 'Float' && current
           ? `${chef} already covers ${duplicate.section}. Type SWAP, MOVE, or CANCEL.`
           : `${chef} already covers ${duplicate.section}. Type MOVE or CANCEL.`, 'CANCEL');
         const normalized = String(choice || 'cancel').trim().toLowerCase();
-        if (normalized === 'swap' && current) duplicateAction = 'swap';
+        if (normalized === 'swap' && current && section !== 'Float') duplicateAction = 'swap';
         else if (normalized === 'move') duplicateAction = 'move';
         else duplicateAction = 'cancel';
       }
-      const result = applyManualAssignment({ state, overallResult: state.generatedRotas.latestResult, weekIndex, date, section, chef, duplicateAction });
+      const result = applyManualAssignment({ state, overallResult: state.generatedRotas.latestResult, weekIndex, date, section, chef, duplicateAction, floatAction });
       closeChefSelector({ restoreFocus: false });
-      if (result.applied) refreshEditedRota(`${section} on ${date} changed to ${chef || 'None'}. Validation and totals updated.`);
+      if (result.applied) {
+        const actionMessage = section === 'Float'
+          ? (floatAction === 'remove' ? `${chef} removed from Float` : (chef ? `${chef} added to Float` : 'Float assignments cleared'))
+          : `${section} changed to ${chef || 'None'}`;
+        refreshEditedRota(`${actionMessage} on ${date}. Validation and totals updated.`);
+      }
       else announce(result.cancelled ? 'Assignment change cancelled.' : result.reason || 'No change made.');
       return;
     }

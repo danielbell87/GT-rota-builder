@@ -1,11 +1,11 @@
-import { runSolverTests } from './solver.test.js?v=20260719o';
+import { runSolverTests } from './solver.test.js?v=20260719s';
 import { runValidationTests } from './validation.test.js';
-import { runScoringTests } from './scoring.test.js?v=20260719o';
-import { runAdditionalChefTests } from './additional-chef.test.js?v=20260719o';
-import { runUiTests } from './ui.test.js?v=20260719o';
-import { runPrintTests } from './print.test.js?v=20260719o';
+import { runScoringTests } from './scoring.test.js?v=20260719s';
+import { runAdditionalChefTests } from './additional-chef.test.js?v=20260719s';
+import { runUiTests } from './ui.test.js?v=20260719s';
+import { runPrintTests } from './print.test.js?v=20260719s';
 import { runBackupTests } from './backup.test.js';
-import { runManualEditTests } from './manual-edit.test.js?v=20260719o';
+import { runManualEditTests } from './manual-edit.test.js?v=20260719s';
 import { runDiagnosticsTests } from './diagnostics.test.js';
 import { SOLVER_ENGINE_VERSION } from '../js/solver.js';
 
@@ -23,14 +23,23 @@ async function runAllTests() {
   const assert = createAssert(results);
 
   try {
+    summaryEl.textContent = 'Running solver tests…';
     await runSolverTests(assert);
+    summaryEl.textContent = 'Running validation tests…';
     await runValidationTests(assert);
+    summaryEl.textContent = 'Running scoring tests…';
     await runScoringTests(assert);
+    summaryEl.textContent = 'Running additional-chef tests…';
     await runAdditionalChefTests(assert);
+    summaryEl.textContent = 'Running print tests…';
     await runPrintTests(assert);
+    summaryEl.textContent = 'Running backup tests…';
     await runBackupTests(assert);
+    summaryEl.textContent = 'Running manual-edit tests…';
     await runManualEditTests(assert);
+    summaryEl.textContent = 'Running UI tests…';
     await runUiTests(assert);
+    summaryEl.textContent = 'Running diagnostics tests…';
     await runDiagnosticsTests(assert);
   } catch (error) {
     results.push({

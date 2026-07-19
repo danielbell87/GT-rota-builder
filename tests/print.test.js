@@ -29,6 +29,10 @@ export async function runPrintTests(assert) {
   assert(singleModel.title === 'GT Rota' && singleModel.weeks[0].dateRange === '13 July 2026 – 19 July 2026', 'Print: single-week model contains the title and full date range');
   assert(JSON.stringify(singleModel.sections) === JSON.stringify(DISPLAY_SECTIONS), 'Print: model contains every required rota section');
   assert(singleModel.weeks[0].days.length === 7 && DISPLAY_SECTIONS.every((section) => singleModel.weeks[0].days.every((day) => day.sections[section].length === 1)), 'Print: model contains the complete seven-day rota table');
+  const multiFloatWeek = makeWeek('2026-07-13', 'Primary');
+  multiFloatWeek.rota[5].assignments.push({ section: 'Float', chef: 'Joel' });
+  const multiFloatHtml = renderPrintDocument(buildPrintModel({ weeks: [multiFloatWeek] }));
+  assert(multiFloatHtml.includes('Primary Float<br>Joel'), 'Print: multiple Float chefs are all included compactly in the same printed cell');
 
   const multiModel = buildPrintModel({
     weeks: [
