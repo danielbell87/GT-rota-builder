@@ -10,9 +10,10 @@ function wait(ms) {
 
 async function waitFor(predicate, timeout = 5000) {
   const started = Date.now();
-  while (Date.now() - started < timeout) {
+  while (true) {
     const value = predicate();
     if (value) return value;
+    if (Date.now() - started >= timeout) break;
     await wait(50);
   }
   throw new Error('Timed out waiting for condition');
@@ -202,16 +203,16 @@ function getModalText(doc) {
 
 export async function runUiTests(assert) {
   localStorage.clear();
-  const stateModule = await import('../js/state.js');
+  const stateModule = await import(`../js/state.js?v=${CACHE_BUST_VERSION}`);
   const appSource = await fetch(`../js/app.js?v=${CACHE_BUST_VERSION}`).then((response) => response.text());
-  const stateImportMatch = appSource.match(/import\s*\{([^}]+)\}\s*from\s*'\.\/state\.js'/);
+  const stateImportMatch = appSource.match(/import\s*\{([^}]+)\}\s*from\s*'\.\/state\.js\?v=[^']+'/);
   const importedSymbols = stateImportMatch?.[1]
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean) || [];
   assert(importedSymbols.every((symbol) => symbol in stateModule), 'UI: state.js exports every symbol imported by app.js');
 
-  const canonicalMarkup = await fetch('../index.html').then((response) => response.text());
+  const canonicalMarkup = await fetch(`../index.html?v=${CACHE_BUST_VERSION}`).then((response) => response.text());
   const canonicalDoc = new DOMParser().parseFromString(canonicalMarkup, 'text/html');
   assert(!!canonicalDoc.querySelector('#numWeeks'), 'UI: canonical page contains #numWeeks');
   assert(canonicalDoc.querySelector('#results').closest('.panel').querySelector('h2 + .print-action #printRotaBtn') === canonicalDoc.getElementById('printRotaBtn'), 'UI: Print / Save as PDF button appears immediately within the Generated rota section');
@@ -220,7 +221,7 @@ export async function runUiTests(assert) {
   assert(canonicalDoc.querySelector('label[for="mioChef"]')?.textContent.trim() === 'MIO chef', 'UI: one-week MIO selector has a visible associated label');
   assert(!canonicalDoc.querySelector('#chefWeekendRuleInput') && !canonicalDoc.querySelector('#chefFixedDayOffInput') && !!canonicalDoc.querySelector('#chefPreferredBreakfastInput') && !canonicalDoc.querySelector('#chefSkillBreakfastInput') && !canonicalMarkup.includes('Weekend rule') && !canonicalMarkup.includes('Fixed unavailable day'), 'UI: Preferred breakfast day is restored and Breakfast competency is absent');
   assert([...canonicalDoc.querySelectorAll('#chefPreferredBreakfastInput option')].map((option) => option.value).join(',') === ',Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday', 'UI: Preferred breakfast day offers no preference and every weekday');
-  const stylesText = await fetch('../styles.css').then((response) => response.text());
+  const stylesText = await fetch(`../styles.css?v=${CACHE_BUST_VERSION}`).then((response) => response.text());
   assert(stylesText.includes('.technical-details') && stylesText.includes('@media print'), 'UI: stylesheet includes technical-details and print rules for validation cleanup');
   assert(stylesText.includes('.week-panels .week-panel.hidden') && stylesText.includes('display: grid;'), 'UI: print stylesheet restores hidden week panels for printing');
   assert(stylesText.includes('@media (max-width: 900px)') && stylesText.includes('min-width: 860px') && stylesText.includes('-webkit-overflow-scrolling: touch'), 'UI: phone widths use a touch-scrollable rota with a readable minimum width');
@@ -488,19 +489,25 @@ export async function runUiTests(assert) {
     assert(doc.activeElement === doc.getElementById('weekStart'), 'UI feasibility warning: Return to setup moves keyboard focus to setup');
     doc.querySelector('[data-generate-best-available]').click();
     await waitFor(() => (
-      canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.weekValidationSummary?.[1]?.status === 'incomplete'
+      canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.weekValidationSummary?.[1]?.status === 'invalid'
       && getWeekPanel(doc, 1)?.querySelector('table.rota-table')
-      && getWeekPanel(doc, 1)?.querySelector('.hard-rule-affected')
     ), 30000);
 
     doc.querySelector('button[data-results-week-index="1"]').click();
     await waitFor(() => !getWeekPanel(doc, 1)?.classList.contains('hidden'));
+    let bestEffortPanel = getWeekPanel(doc, 1);
+    assert(bestEffortPanel.querySelectorAll('.rota-table thead th').length === 8 && !bestEffortPanel.querySelector('.rota-assignment-cell.hard-rule-affected'), 'UI best effort: improved spillover repair keeps all required core cells filled when only weekly target failures remain');
+    const sauceAssignment = bestEffortPanel.querySelector('[data-edit-assignment][data-section="Sauce"]');
+    sauceAssignment.click();
+    await waitFor(() => doc.querySelector('.chef-selector[data-section="Sauce"]'));
+    doc.querySelector('.chef-selector[data-section="Sauce"] [data-select-chef=""]').click();
+    await waitFor(() => getWeekPanel(doc, 1)?.querySelector('.rota-assignment-cell.hard-rule-affected'));
+    bestEffortPanel = getWeekPanel(doc, 1);
     const visibleWeekTwoText = getVisibleResultsText(doc);
-    const bestEffortPanel = getWeekPanel(doc, 1);
     const blankProblemCell = [...bestEffortPanel.querySelectorAll('.rota-assignment-cell.hard-rule-affected')]
-      .find((cell) => !cell.querySelector('.assignment-button')?.textContent.trim());
+      .find((cell) => !cell.querySelector('.assignment-button > span:first-child')?.textContent.trim());
     const draftSummary = bestEffortPanel.querySelector('details.rota-summary');
-    assert(visibleWeekTwoText.includes('Draft rota: rule issues found') && !visibleWeekTwoText.includes('Rota could not be generated'), 'UI best effort: incomplete week uses the draft rota status instead of a generic generation failure');
+    assert(visibleWeekTwoText.includes('Draft rota: rule issues found') && !visibleWeekTwoText.includes('Rota could not be generated'), 'UI best effort: invalid week uses the draft rota status instead of a generic generation failure');
     assert(!visibleWeekTwoText.includes('Assign an eligible Sauce chef') && normalizeText(draftSummary.textContent).includes('Rule H025') && normalizeText(draftSummary.textContent).includes('Assign an eligible Sauce chef'), 'UI best effort: concise status stays compact while actionable rule details remain in the collapsed summary');
     assert(bestEffortPanel.querySelectorAll('.rota-table thead th').length === 8 && !!blankProblemCell, 'UI best effort: the seven-day table stays visible with unresolved required cells blank and highlighted');
     assert(!!blankProblemCell.querySelector('button[data-edit-assignment]') && blankProblemCell.querySelector('.issue-disclosure')?.textContent === '!', 'UI best effort: highlighted blank assignments remain manually editable and include a non-colour error indicator');
@@ -528,6 +535,7 @@ export async function runUiTests(assert) {
     issueButton.click();
     doc.body.click();
     assert(issuePopover.hidden, 'UI rule tooltip: tapping outside closes an explicitly opened tooltip');
+    canonicalFrame.contentWindow.focus();
     doc.getElementById('printRotaBtn').focus();
     doc.dispatchEvent(new canonicalFrame.contentWindow.KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
     issueButton.focus();
@@ -606,6 +614,8 @@ export async function runUiTests(assert) {
     assert(getWeekPanel(doc, 2)?.querySelector('table.rota-table') && canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.weekValidationSummary?.[2]?.status === 'ok', 'UI best effort: later valid weeks remain generated and visible');
     assert(doc.querySelector('button[data-results-week-index="1"] .week-warning-indicator') && !doc.querySelector('button[data-results-week-index="2"] .week-warning-indicator'), 'UI best effort: only affected week navigation receives a warning indicator');
 
+    doc.querySelector('[data-reset-manual-all]').click();
+    doc.querySelector('[data-confirm-reset-manual]').click();
     infeasibleRow.querySelector('button[data-remove]').click();
     await waitFor(() => doc.querySelectorAll('#availabilityBody tr').length === 0);
     await waitFor(() => doc.querySelectorAll('section[data-week-panel]').length === 3);

@@ -1,8 +1,8 @@
 import { DISPLAY_SECTIONS, SHIFT_LENGTHS } from './constants.js';
-import { validateRotaHardRules, validateRotaSoftRules } from './validation.js?v=20260719u';
-import { scoreSoftPreferences } from './scoring.js?v=20260719u';
-import { buildRotaDiagnostics } from './diagnostics.js?v=20260719u';
-import { getGtChefNamesForDay, hasGtAssignment, syncDayGtChefs } from './rota-model.js?v=20260719u';
+import { validateRotaHardRules, validateRotaSoftRules } from './validation.js?v=20260719zf';
+import { scoreSoftPreferences } from './scoring.js?v=20260719zf';
+import { buildRotaDiagnostics } from './diagnostics.js?v=20260719zf';
+import { getGtChefNamesForDay, hasGtAssignment, syncDayGtChefs } from './rota-model.js?v=20260719zf';
 import { getSectionLevel, getSectionLevelLabel } from './section-levels.js';
 
 export const MANUAL_HISTORY_LIMIT = 10;
@@ -260,7 +260,7 @@ export function getChefConcerns({ state, week, date, section, chefName }) {
 }
 
 const AVAILABILITY_RULES = new Set(['H019', 'H023']);
-const COVERAGE_RULES = new Set(['H006', 'H007', 'H008', 'H009', 'H010', 'H011', 'H012']);
+const COVERAGE_RULES = new Set(['H006', 'H007', 'H008', 'H009', 'H010', 'H011', 'H012', 'H034']);
 const WEEKLY_TARGET_RULES = new Set(['H015', 'H016', 'H022']);
 
 function failedRuleKeys(week) {
@@ -311,7 +311,15 @@ function scoreSimulatedOutcome({ state, overallResult, weekIndex, date, section,
   const week = simulation.previewResult.weeks[weekIndex];
   const originalFailures = failedRuleKeys(beforeWeek);
   const failures = (week.hardValidation || []).filter((result) => result.passed === false);
-  const introduced = failures.filter((result) => !originalFailures.has(`${result.ruleId}|${result.date || ''}|${result.chefName || ''}|${result.section || ''}|${result.message || ''}`));
+  const introduced = failures.filter((result) => {
+    if (originalFailures.has(`${result.ruleId}|${result.date || ''}|${result.chefName || ''}|${result.section || ''}|${result.message || ''}`)) return false;
+    if (result.ruleId !== 'H016' || !result.chefName) return true;
+    if (result.chefName !== chefName) return false;
+    const beforeDays = beforeWeek.summary?.find((item) => item.name === result.chefName)?.gtDays;
+    const afterDays = week.summary?.find((item) => item.name === result.chefName)?.gtDays;
+    return beforeDays !== afterDays;
+  });
+  const resolved = (beforeWeek.hardValidation || []).filter((result) => result.passed === false && !failedRuleKeys(week).has(`${result.ruleId}|${result.date || ''}|${result.chefName || ''}|${result.section || ''}|${result.message || ''}`));
   const chef = state.staff.find((item) => item.name === chefName);
   const level = chefName && !['Breakfast', 'Float'].includes(section) ? getSectionLevel(chef, section) : null;
   const beforeSoft = Number(beforeWeek.softScore?.score ?? beforeWeek.score ?? 100);
@@ -338,6 +346,13 @@ function scoreSimulatedOutcome({ state, overallResult, weekIndex, date, section,
     score += softDelta;
     breakdown.push({ label: 'Preferences and fairness', value: softDelta });
   }
+  const resolvedCoverage = resolved.filter((failure) => failure.date === date && ['H025', 'H034'].includes(failure.ruleId));
+  if (resolvedCoverage.length) {
+    const coveragePoints = Math.min(24, resolvedCoverage.length * 12);
+    score += coveragePoints;
+    breakdown.push({ label: 'Required coverage repaired', value: coveragePoints });
+    reasons.push('Fills required core coverage using the resulting day arrangement');
+  }
   if (action === 'swap') {
     score -= 2;
     breakdown.push({ label: 'Assignment disruption', value: -2 });
@@ -346,15 +361,15 @@ function scoreSimulatedOutcome({ state, overallResult, weekIndex, date, section,
     breakdown.push({ label: 'Assignment disruption', value: -5 });
   }
 
-  const ruleIds = new Set(failures.map((failure) => failure.ruleId));
-  let cap = failures.length ? 59 : 100;
+  const ruleIds = new Set(introduced.map((failure) => failure.ruleId));
+  let cap = introduced.length ? 59 : 100;
   if ([...ruleIds].some((id) => COVERAGE_RULES.has(id))) cap = Math.min(cap, 39);
   if (ruleIds.has('H025') || level === 0) cap = Math.min(cap, 29);
   if ([...ruleIds].some((id) => AVAILABILITY_RULES.has(id))) cap = Math.min(cap, 10);
-  if (failures.length && [...ruleIds].every((id) => WEEKLY_TARGET_RULES.has(id))) cap = Math.min(cap, 59);
+  if (introduced.length && [...ruleIds].every((id) => WEEKLY_TARGET_RULES.has(id))) cap = Math.min(cap, 59);
   score -= Math.min(42, introduced.length * 12);
   if (introduced.length) breakdown.push({ label: 'Hard-rule outcome', value: -Math.min(42, introduced.length * 12) });
-  score = Math.max(failures.length ? 1 : 40, Math.min(cap, Math.round(score)));
+  score = Math.max(introduced.length ? 1 : 40, Math.min(cap, Math.round(score)));
 
   const day = week.rota.find((item) => item.date === date);
   const summary = week.summary?.find((item) => item.name === chefName);

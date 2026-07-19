@@ -8,7 +8,7 @@ import {
   getHoursForDay,
   getHoursForAssignment,
   scoreSoftPreferences
-} from './scoring.js?v=20260719u';
+} from './scoring.js?v=20260719zf';
 import { canCoverSection, sectionCandidateScore } from './section-levels.js';
 import {
   isUnavailable,
@@ -19,9 +19,9 @@ import {
   validateRotaSoftRules,
   getAdjustedGtTargetsByChef,
   getAnnualLeaveDatesByChef
-} from './validation.js?v=20260719u';
+} from './validation.js?v=20260719zf';
 import { filterAvailabilityForWeek, filterAdditionalChefRequirementsForWeek } from './weekly-inputs.js';
-import { getGtChefNamesForDay, hasGtAssignment, syncRotaGtChefs } from './rota-model.js?v=20260719u';
+import { getGtChefNamesForDay, hasGtAssignment, syncRotaGtChefs } from './rota-model.js?v=20260719zf';
 
 const PASS_DAYS = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
 const MIO_PRIMARY_DAYS = ['Monday', 'Tuesday', 'Wednesday'];
@@ -88,6 +88,29 @@ export function repairExactGtTargetsWithFloat({
         repairs.push({ chef: chef.name, date: candidate.date, section: 'Float' });
       }
     });
+
+  const repairedDates = new Set(repairs.map((repair) => repair.date));
+  if (repairedDates.size) {
+    const breakfastCounts = {};
+    rota.forEach((day) => {
+      if (repairedDates.has(day.date)) return;
+      const breakfast = day.assignments.find((assignment) => assignment.section === 'Breakfast');
+      if (breakfast) breakfastCounts[breakfast.chef] = (breakfastCounts[breakfast.chef] || 0) + 1;
+    });
+    rota.forEach((day, index) => {
+      if (!repairedDates.has(day.date)) return;
+      const rebuilt = rebuildDayAssignments({ day, state, inputs, breakfastCounts });
+      if (!rebuilt) return;
+      rota[index] = rebuilt;
+      const breakfast = rebuilt.assignments.find((assignment) => assignment.section === 'Breakfast');
+      if (breakfast) breakfastCounts[breakfast.chef] = (breakfastCounts[breakfast.chef] || 0) + 1;
+    });
+    repairs.forEach((repair) => {
+      repair.section = rota.find((day) => day.date === repair.date)?.assignments
+        .find((assignment) => assignment.chef === repair.chef && PRIMARY_GT_SECTIONS.includes(assignment.section))?.section || 'Float';
+    });
+    syncRotaGtChefs(rota);
+  }
 
   return repairs;
 }
@@ -1695,7 +1718,7 @@ function countMissingRequiredAssignments(candidate, inputs) {
 
 function invalidCandidateRank(candidate, inputs) {
   const failures = (candidate.hardValidation || []).filter((result) => result.passed === false);
-  const seriousRuleWeights = { H025: 100, H019: 100, H008: 90, H006: 80, H007: 80, H028: 80, H009: 70, H010: 70, H011: 70, H016: 40 };
+  const seriousRuleWeights = { H025: 100, H034: 140, H019: 100, H008: 90, H006: 80, H007: 80, H028: 80, H009: 70, H010: 70, H011: 70, H016: 40 };
   return {
     severity: failures.reduce((total, failure) => total + (seriousRuleWeights[failure.ruleId] || 20), 0),
     failures: failures.length,

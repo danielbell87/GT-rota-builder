@@ -13,9 +13,9 @@ import {
   optimizeRotaCandidate,
   repairExactGtTargetsWithFloat,
   selectBreakfastChef
-} from '../js/solver.js?v=20260719u';
+} from '../js/solver.js?v=20260719zf';
 import { isSenior, getHoursForDay, getHoursForAssignment, scoreSoftPreferences } from '../js/scoring.js';
-import { getCoreSections, isUnavailable, validateRotaHardRules, validateRotaSoftRules } from '../js/validation.js?v=20260719u';
+import { getCoreSections, isUnavailable, validateRotaHardRules, validateRotaSoftRules } from '../js/validation.js?v=20260719zf';
 import { canCoverSection, sectionCandidateScore } from '../js/section-levels.js';
 import { normalizeChefRecord } from '../js/staff.js';
 import { getGtChefNamesForDay, getGtDaysByChef, getVisibleGtChefDayTotal } from '../js/rota-model.js';
@@ -516,6 +516,24 @@ export async function runSolverTests(assert) {
   assert(mondayExtra.status === 'ok', 'An explicit Monday extra-chef request remains feasible');
   assert((mondayPlan?.chefs.length || 0) === 5, 'Monday to Wednesday adds the exact requested extra GT chef only when explicitly requested');
   assert((mondayPlan?.assignments.filter((assignment) => assignment.section === 'Float').length || 0) === 1, 'An explicit extra Monday chef is shown as Float once core sections are covered');
+
+  const passRepairState = setupBaseState();
+  const passRepairResult = runScenario(passRepairState);
+  const repairThursday = passRepairResult.rota.find((day) => day.dayName === 'Thursday');
+  const originalPassChef = repairThursday.assignments.find((assignment) => assignment.section === 'Pass')?.chef;
+  repairThursday.assignments = repairThursday.assignments.filter((assignment) => assignment.chef !== originalPassChef || assignment.section === 'Breakfast');
+  repairThursday.chefs = getGtChefNamesForDay(repairThursday);
+  const passRepairTargets = Object.fromEntries(passRepairState.staff.map((chef) => [chef.name, getGtDaysByChef(passRepairResult.rota)[chef.name] || 0]));
+  passRepairTargets[originalPassChef] = (passRepairTargets[originalPassChef] || 0) + 1;
+  const passRepairs = repairExactGtTargetsWithFloat({
+    rota: passRepairResult.rota,
+    state: passRepairState,
+    inputs: passRepairState.weeklyInputs,
+    gtTargetsByChef: passRepairTargets
+  });
+  const rebuiltRepairThursday = passRepairResult.rota.find((day) => day.dayName === 'Thursday');
+  assert(passRepairs.some((repair) => repair.chef === originalPassChef && repair.section === 'Pass'), 'Float spillover repair: an added Pass-eligible chef fills vacant required Pass instead of remaining on Float');
+  assert(rebuiltRepairThursday.assignments.some((assignment) => assignment.section === 'Pass' && assignment.chef === originalPassChef) && !rebuiltRepairThursday.assignments.some((assignment) => assignment.section === 'Float' && assignment.chef === originalPassChef), 'Float spillover repair: rebuilding removes the chef from Float after assigning the vacant core section');
 
   const preferredGarnish = createTestChef('Chef A', 'Chef de Partie', { Garnish: 3 });
   const competentGarnish = createTestChef('Chef B', 'Chef de Partie', { Garnish: 2 });

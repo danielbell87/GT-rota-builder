@@ -1,13 +1,13 @@
-import { runSolverTests } from './solver.test.js?v=20260719u';
+import { runSolverTests } from './solver.test.js?v=20260719zf';
 import { runValidationTests } from './validation.test.js';
-import { runScoringTests } from './scoring.test.js?v=20260719u';
-import { runAdditionalChefTests } from './additional-chef.test.js?v=20260719u';
-import { runUiTests } from './ui.test.js?v=20260719u';
-import { runPrintTests } from './print.test.js?v=20260719u';
+import { runScoringTests } from './scoring.test.js?v=20260719zf';
+import { runAdditionalChefTests } from './additional-chef.test.js?v=20260719zf';
+import { runUiTests } from './ui.test.js?v=20260719zf';
+import { runPrintTests } from './print.test.js?v=20260719zf';
 import { runBackupTests } from './backup.test.js';
-import { runManualEditTests } from './manual-edit.test.js?v=20260719u';
+import { runManualEditTests } from './manual-edit.test.js?v=20260719zf';
 import { runDiagnosticsTests } from './diagnostics.test.js';
-import { runUiPolishTests } from './ui-polish.test.js?v=20260719u';
+import { runUiPolishTests } from './ui-polish.test.js?v=20260719zf';
 import { SOLVER_ENGINE_VERSION } from '../js/solver.js';
 
 const summaryEl = document.getElementById('testSummary');

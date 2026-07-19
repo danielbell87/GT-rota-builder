@@ -1,7 +1,7 @@
-import { APP_BUILD_VERSION, CACHE_BUST_VERSION } from './constants.js?v=20260719u';
+import { APP_BUILD_VERSION, CACHE_BUST_VERSION } from './constants.js?v=20260719zf';
 import { getState, getDefaultWeek, resetStateToDefaults, syncCompatibilityViews, setWeekStart, setMioChef, setNumWeeks, setWeeklyMioChef } from './state.js';
 import { normalizeWeekStart, getPlanningHorizon } from './utils.js';
-import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260719u';
+import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260719zf';
 import { addChef, createBlankChefDraft, createChefDraft, getChefById, removeChef, updateChef } from './staff.js';
 import { addAvailabilityEntry, removeAvailabilityEntry, updateAvailabilityField, addAdditionalChefRequest, updateAdditionalChefRequest, removeAdditionalChefRequest, validateAdditionalChefDate, validateAdditionalChefCount } from './weekly-inputs.js';
 import {
@@ -21,13 +21,13 @@ import {
   showChefModalError,
   setChefRemovalConfirmation,
   syncChefChoiceChipState
-} from './render.js?v=20260719u';
-import { renderAssignmentConflict, renderAssignmentConflictPreview, renderChefSelector } from './render.js?v=20260719u';
+} from './render.js?v=20260719zf';
+import { renderAssignmentConflict, renderAssignmentConflictPreview, renderChefSelector } from './render.js?v=20260719zf';
 import { applyManualAssignment, findDuplicateCoreAssignment, getChefConcerns, rateManualAssignmentActions, redoManualEdit, resetAllManualEdits, resetManualCell, undoManualEdit } from './manual-edit.js';
 import { upsertPublishedHistory, upsertPublishedWeeks } from './history.js';
 import { openPrintWindow } from './print.js';
 import { createBackup, createBackupFilename, restoreBackup, serializeBackup } from './backup.js';
-import { buildWeekClipboardText, icon } from './ui.js?v=20260719u';
+import { buildWeekClipboardText, icon } from './ui.js?v=20260719zf';
 
 const state = getState();
 let editingReqDate = null;

@@ -1,4 +1,4 @@
-import { buildWeekClipboardText, getWeekLifecycle, icon } from '../js/ui.js?v=20260719u';
+import { buildWeekClipboardText, getWeekLifecycle, icon } from '../js/ui.js?v=20260719zf';
 
 export async function runUiPolishTests(assert) {
   const week = {

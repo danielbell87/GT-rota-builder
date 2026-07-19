@@ -81,7 +81,7 @@ function addIssueContext(result, { rota, inputs, state }) {
   const scopeByRule = {
     H006: 'section', H007: 'cell', H008: 'day', H009: 'day', H010: 'day', H011: 'section', H012: 'section',
     H013: 'day', H019: 'cell', H020: 'day', H023: 'cell', H025: 'section', H026: 'cell', H027: 'cell',
-    H028: 'cell', H030: 'cell', H031: 'cell'
+    H028: 'cell', H030: 'cell', H031: 'cell', H034: 'day'
   };
   const typeByRule = {
     H006: 'missing-breakfast-cover', H007: 'breakfast-without-gt-assignment', H008: 'missing-senior-cover',
@@ -89,7 +89,7 @@ function addIssueContext(result, { rota, inputs, state }) {
     H012: 'unexpected-pass-cover', H015: 'mio-shift-target', H016: 'weekly-gt-target',
     H019: 'unavailable-chef-assigned', H020: 'excessive-annual-leave', H022: 'mio-gt-target',
     H023: 'mio-gt-overlap', H025: 'invalid-section-cover', H026: 'duplicate-primary-assignment',
-    H028: 'breakfast-ineligible'
+    H028: 'breakfast-ineligible', H034: 'float-before-core-coverage'
   };
   const scope = result.scope || scopeByRule[result.ruleId] || 'week';
   const targetMatch = result.ruleId === 'H016' ? message.match(/expected exactly (\d+) GT days \(actual (\d+)\)/) : null;
@@ -120,6 +120,7 @@ function addIssueContext(result, { rota, inputs, state }) {
     H009: 'Add or remove a visible GT assignment to meet the required staffing count.',
     H010: 'Fill an available Float or required-section position.',
     H011: 'Assign an eligible chef to Pass.',
+    H034: 'Move an eligible Float chef into the vacant required core section, rebalancing core assignments if needed.',
     H016: 'Add or remove a visible GT assignment to meet the chef’s weekly target.'
   };
   return {
@@ -318,6 +319,20 @@ export function validateRotaHardRules({ rota, state, inputs, summary, fullWeekDa
         && canCoverSection(assignedChef, section);
       results.push(createResult('H025', validCoverage, `${day.dayName}: ${section} must have exactly one eligible GT chef`, { date: day.date, dayName: day.dayName, section, chefName: assignments[0]?.chef || '', scope: 'section' }));
     });
+
+    const floatChefNames = findAssignmentsBySection(day, 'Float').map((assignment) => assignment.chef);
+    const vacantCoverableSections = requiredCoreSections.filter((section) => {
+      if (findAssignmentsBySection(day, section).length > 0) return false;
+      return floatChefNames.some((name) => canCoverSection(getChef(state.staff, name), section));
+    });
+    results.push(createResult(
+      'H034',
+      vacantCoverableSections.length === 0,
+      vacantCoverableSections.length
+        ? `${day.dayName}: Float cannot be used while ${vacantCoverableSections.join(', ')} is vacant and coverable by a Float chef`
+        : `${day.dayName}: Float is used only after required core coverage`,
+      { date: day.date, dayName: day.dayName, section: vacantCoverableSections[0] || 'Float', scope: 'day' }
+    ));
 
     const breakfast = findAssignmentsBySection(day, 'Breakfast');
     results.push(createResult('H006', breakfast.length === 1, `${day.dayName}: expected exactly one breakfast chef`, { date: day.date, dayName: day.dayName, section: 'Breakfast', scope: 'section' }));

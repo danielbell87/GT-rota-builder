@@ -1,9 +1,9 @@
 import { WEEKDAYS } from './constants.js';
 import { parseLocalDate, toDateString, normalizeWeekStart, getWeekStartAtOffset } from './utils.js';
 import { canCoverSection, getSectionLevel } from './section-levels.js';
-import { getCoreSections, getRequiredChefCount, getAdjustedGtTargetsByChef, isUnavailable } from './validation.js?v=20260719u';
-import { isSenior } from './scoring.js?v=20260719u';
-import { getGtChefNamesForDay, hasGtAssignment } from './rota-model.js?v=20260719u';
+import { getCoreSections, getRequiredChefCount, getAdjustedGtTargetsByChef, isUnavailable } from './validation.js?v=20260719zf';
+import { isSenior } from './scoring.js?v=20260719zf';
+import { getGtChefNamesForDay, hasGtAssignment } from './rota-model.js?v=20260719zf';
 
 export const DIAGNOSTIC_CODES = Object.freeze({
   PREFERRED_DAY_OFF_SATISFIED: 'preferred-day-off-satisfied',

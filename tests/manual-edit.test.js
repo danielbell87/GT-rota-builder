@@ -89,6 +89,17 @@ export async function runManualEditTests(assert) {
   assert(state.manualEditing.undo.length === 0 && state.manualEditing.redo.length === 0 && state.manualEditing.actions.length === 0, 'Manual edit: confirmed reset clears Undo, Redo and recent-action history');
 
   const saturday = overall.weeks[0].rota.find((item) => item.dayName === 'Saturday');
+  const saturdayPassChef = saturday.assignments.find((item) => item.section === 'Pass')?.chef;
+  saturday.assignments = saturday.assignments.filter((item) => !(item.chef === saturdayPassChef && item.section !== 'Breakfast' && item.section !== 'MIO'));
+  saturday.assignments.push({ chef: saturdayPassChef, section: 'Float' });
+  syncDayGtChefs(saturday);
+  recalculateEditedResult(state, overall);
+  assert(saturday.hardValidation === undefined && overall.weeks[0].hardValidation.some((item) => item.ruleId === 'H034' && item.passed === false && item.date === saturday.date), 'Manual Float validation: a coverable required vacancy beside Float is explicitly flagged');
+  const correctiveRatings = rateManualAssignmentActions({ state, overallResult: overall, weekIndex: 0, date: saturday.date, section: 'Pass', chefName: saturdayPassChef });
+  const correctiveMove = correctiveRatings.find((item) => item.action === 'move');
+  assert(correctiveMove?.score >= 75 && correctiveMove.reasons.some((reason) => reason.includes('required core coverage')), 'Manual suitability: Float to vacant eligible Pass receives a strong rating with a matching coverage explanation');
+  const correctiveApply = applyManualAssignment({ state, overallResult: overall, weekIndex: 0, date: saturday.date, section: 'Pass', chef: saturdayPassChef, duplicateAction: 'move' });
+  assert(correctiveApply.applied && saturday.assignments.some((item) => item.section === 'Pass' && item.chef === saturdayPassChef) && !saturday.assignments.some((item) => item.section === 'Float' && item.chef === saturdayPassChef), 'Manual suitability: applying Float to Pass evaluates and persists the post-move rota without a phantom Float assignment');
   saturday.assignments = saturday.assignments.filter((item) => (
     item.section !== 'Float'
     && !(item.chef === 'Charlie' && item.section !== 'Breakfast' && item.section !== 'MIO')
