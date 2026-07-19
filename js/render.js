@@ -326,6 +326,7 @@ function renderWeekChecksOverview(weekViews) {
 }
 
 function renderWeekStatusCard(view) {
+  const summaryTarget = `rota-summary-${view.week.weekIndex || 0}`;
   if (view.valid) {
     const preferencesCompromised = view.softFailures.length > 0;
     return `
@@ -335,7 +336,8 @@ function renderWeekStatusCard(view) {
         <p>${preferencesCompromised
           ? `${view.softFailures.length} preference${view.softFailures.length === 1 ? '' : 's'} could not be met; all required rules passed.`
           : 'All required rules passed.'}</p>
-      </section>`;
+      </section>
+      <button type="button" class="mobile-status-bar status-bar-success print-hidden" data-open-rota-summary="${summaryTarget}" aria-label="Rota ready${preferencesCompromised ? ', preferences compromised; open rota summary' : ''}">✓ Rota ready${preferencesCompromised ? ' · Preferences compromised' : ''}</button>`;
   }
 
   return `
@@ -343,7 +345,8 @@ function renderWeekStatusCard(view) {
       <div class="status-card-head">${renderStatusBadge('warning', 'Draft rota: rule issues found')}</div>
       <h4>Draft rota: ${view.visibleHardFailures.length} rule issue${view.visibleHardFailures.length === 1 ? '' : 's'} need review</h4>
       <p>Review highlighted locations and open Rota summary for full details.</p>
-    </section>`;
+    </section>
+    <button type="button" class="mobile-status-bar status-bar-warning print-hidden" data-open-rota-summary="${summaryTarget}" aria-label="Draft rota, ${view.visibleHardFailures.length} issues; open rota summary">⚠ Draft rota · ${view.visibleHardFailures.length} issue${view.visibleHardFailures.length === 1 ? '' : 's'}</button>`;
 }
 
 function getChefRowProblems(item, view) {
@@ -388,6 +391,24 @@ function renderChefHoursSummary(view) {
         <tbody>${rows}</tbody>
       </table>
     </section>`;
+}
+
+function renderWeeklyTargets(view) {
+  const entries = (view.week.summary || []).map((item) => {
+    const target = item.adjustedGtTarget ?? (item.name === view.inputs.mioChef ? 2 : 4);
+    return { name: item.name, actual: item.gtDays ?? item.count ?? 0, target };
+  });
+  const exceptions = entries.filter((item) => item.actual !== item.target);
+  const rows = (items) => `<ul class="weekly-target-list">${items.map((item) => `<li><span>${escapeHtml(item.name)}</span><strong>${item.actual}/${item.target}${item.actual === item.target ? '' : ' ⚠'}</strong></li>`).join('')}</ul>`;
+  return `<section class="results-section weekly-targets"><h4>Weekly targets</h4>
+    ${exceptions.length ? `${rows(exceptions)}<details><summary>Show all chef totals</summary>${rows(entries.filter((item) => item.actual === item.target))}</details>` : '<p>All eligible chefs meet their weekly GT targets.</p>'}
+  </section>`;
+}
+
+function renderRecentManualChanges() {
+  const actions = getState().manualEditing?.actions || [];
+  if (!actions.length) return '';
+  return `<section class="results-section recent-manual-changes"><h4>Recent manual changes</h4><ol>${actions.map((action) => `<li>${escapeHtml(action.description)}</li>`).join('')}</ol></section>`;
 }
 
 function renderHardFailureSection(view) {
@@ -519,11 +540,13 @@ function renderRotaSummary(view, fairnessHtml = '') {
   const label = contextual?.valid
     ? `Rota summary · ${contextual.percentage}% · ${contextual.rating}`
     : `Rota summary · Draft · ${view.visibleHardFailures.length} rule issues`;
-  return `<details class="rota-summary">
+  return `<details class="rota-summary" id="rota-summary-${view.week.weekIndex || 0}">
     <summary>${escapeHtml(label)}</summary>
     <div class="rota-summary-content">
       ${renderContextualScore(view)}
       ${renderDecisionPanel(view)}
+      ${renderWeeklyTargets(view)}
+      ${renderRecentManualChanges()}
       ${renderChefHoursSummary(view)}
       ${fairnessHtml}
       ${renderHardFailureSection(view)}
@@ -925,11 +948,52 @@ function renderRotaTable(solveResult, view) {
   return `
     <section class="results-section">
       <h4>Rota table</h4>
-      <p class="rota-swipe-guidance">Swipe left or right to view the full week.</p>
-      <div class="rota-table-scroll" role="region" aria-label="Weekly rota table, horizontally scrollable on smaller screens">
+      <p class="rota-swipe-guidance${state.uiState.swipeHintSeen ? ' hidden' : ''}">Swipe left or right to view the full week.</p>
+      <div class="rota-table-scroll has-more-right" role="region" aria-label="Weekly rota table, horizontally scrollable on smaller screens">
         <table class="rota-table"><thead><tr><th scope="col">Section</th>${dayHeaders}</tr></thead><tbody>${sectionCells}</tbody></table>
       </div>
     </section>`;
+}
+
+function renderDayView(solveResult, view) {
+  if (!solveResult.rota?.length) return '';
+  const state = getState();
+  const manual = ensureManualEditState(state, state.generatedRotas.latestResult);
+  const selectedDate = state.uiState.selectedDayByWeek?.[solveResult.weekStart] || solveResult.rota[0].date;
+  const dayIndex = Math.max(0, solveResult.rota.findIndex((day) => day.date === selectedDate));
+  const day = solveResult.rota[dayIndex] || solveResult.rota[0];
+  const rows = DISPLAY_SECTIONS.map((section) => {
+    const matches = day.assignments.filter((assignment) => assignment.section === section);
+    const chefs = matches.map((assignment) => assignment.chef).join(', ');
+    const key = cellKey(solveResult.weekStart, day.date, section);
+    const edited = Object.prototype.hasOwnProperty.call(manual.edits || {}, key);
+    const failures = (view.visibleHardFailures || []).filter((failure) => isCellAffectedByFailure(failure, solveResult, day, section, matches[0]?.chef || '', state));
+    const issueId = `day-card-issues-${solveResult.weekIndex || 0}-${day.date}-${section}`;
+    const content = MANUALLY_EDITABLE_SECTIONS.includes(section)
+      ? `<button type="button" class="assignment-button day-assignment-button" data-edit-assignment data-week-index="${solveResult.weekIndex || 0}" data-date="${day.date}" data-section="${section}" aria-label="Edit ${section} on ${formatDate(day.date)}"><span>${escapeHtml(chefs)}</span>${edited ? '<span class="manual-dot" aria-hidden="true">•</span><span class="visually-hidden">Manually edited</span>' : ''}</button>`
+      : `<span class="assignment-static">${escapeHtml(chefs)}</span>`;
+    return `<div class="day-rota-row${edited ? ' manually-edited' : ''}${failures.length ? ' hard-rule-affected' : ''}"><strong>${section}</strong><div class="day-rota-assignment">${content}${renderIssueDisclosure(failures, solveResult, state, issueId, `Rule issue for ${section}, ${day.dayName} ${formatDate(day.date)}`)}</div></div>`;
+  }).join('');
+  const options = solveResult.rota.map((option, index) => `<option value="${option.date}" ${option.date === day.date ? 'selected' : ''}>${option.dayName} ${formatDate(option.date)}</option>`).join('');
+  return `<section class="results-section day-rota-view" aria-live="polite">
+    <div class="day-navigation print-hidden">
+      <button type="button" class="secondary" data-day-step="-1" ${dayIndex === 0 ? 'disabled' : ''} aria-label="${dayIndex === 0 ? 'Previous day unavailable, Monday selected' : `Previous day, ${solveResult.rota[dayIndex - 1].dayName}`}">‹</button>
+      <label class="visually-hidden" for="rotaDaySelect-${solveResult.weekIndex || 0}">Choose rota day</label>
+      <select id="rotaDaySelect-${solveResult.weekIndex || 0}" data-rota-day-select data-week-start="${solveResult.weekStart}">${options}</select>
+      <button type="button" class="secondary" data-day-step="1" ${dayIndex === solveResult.rota.length - 1 ? 'disabled' : ''} aria-label="${dayIndex === solveResult.rota.length - 1 ? 'Next day unavailable, Sunday selected' : `Next day, ${solveResult.rota[dayIndex + 1].dayName}`}">›</button>
+    </div>
+    <h4>${day.dayName} <span class="day-full-date">${formatDate(day.date)}</span></h4>
+    <div class="day-rota-list">${rows}</div>
+  </section>`;
+}
+
+function renderViewControls(state, weekIndex = 0) {
+  const view = state.uiState.rotaView || '';
+  return `<div class="results-view-controls print-hidden"><fieldset><legend>Rota view</legend>
+    <label><input type="radio" name="rotaView-${weekIndex}" value="day" ${view === 'day' ? 'checked' : ''}> Day view</label>
+    <label><input type="radio" name="rotaView-${weekIndex}" value="week" ${view === 'week' ? 'checked' : ''}> Week table</label>
+  </fieldset><label class="edit-mode-toggle"><input type="checkbox" data-edit-mode ${state.uiState.editMode ? 'checked' : ''}> Edit rota</label>
+  ${state.uiState.editMode ? '<span class="edit-mode-help">Tap an assignment to edit.</span>' : ''}</div>`;
 }
 
 export function updateRotaScrollAccessibility(root = document) {
@@ -992,7 +1056,9 @@ export function renderWeekPanel(view, options = {}) {
       </div>` : ''}
       <p class="week-mio-summary"><strong>MIO chef:</strong> ${escapeHtml(view.inputs.mioChef || 'None')}</p>
       ${showStatus ? renderWeekStatusCard(view) : ''}
-      ${renderRotaTable(view.week, view)}
+      ${renderViewControls(getState(), view.week.weekIndex || 0)}
+      <div class="rota-day-container">${renderDayView(view.week, view)}</div>
+      <div class="rota-week-container">${renderRotaTable(view.week, view)}</div>
       ${renderRotaSummary(view, fairnessHtml)}
     </section>`;
 }
@@ -1000,6 +1066,11 @@ export function renderWeekPanel(view, options = {}) {
 export function renderResultsPanel(options = {}) {
   if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent('rota:before-results-render'));
   const state = getState();
+  if (!state.uiState.rotaView) {
+    const mobileTouch = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 900px) and (pointer: coarse)').matches;
+    state.uiState.rotaView = mobileTouch ? 'day' : 'week';
+  }
+  state.uiState.selectedDayByWeek ||= {};
   const inputs = collectWeeklyInputsFromDom();
   const container = getRequiredElement('results');
 

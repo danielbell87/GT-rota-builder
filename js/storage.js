@@ -34,7 +34,8 @@ function normalizeManualEditing(value) {
     originals: clean.originals && typeof clean.originals === 'object' ? clean.originals : {},
     edits: clean.edits && typeof clean.edits === 'object' ? clean.edits : {},
     undo: Array.isArray(clean.undo) ? clean.undo.map(cleanSnapshot) : [],
-    redo: Array.isArray(clean.redo) ? clean.redo.map(cleanSnapshot) : []
+    redo: Array.isArray(clean.redo) ? clean.redo.map(cleanSnapshot) : [],
+    actions: Array.isArray(clean.actions) ? clean.actions.slice(0, 10) : []
   };
 }
 
@@ -215,6 +216,7 @@ export function loadAppState() {
     }
     if (persisted.uiState && typeof persisted.uiState === 'object') {
       state.uiState = { ...state.uiState, ...persisted.uiState };
+      state.uiState.editMode = false;
     }
     if (persisted.manualEditing && typeof persisted.manualEditing === 'object') state.manualEditing = normalizeManualEditing(persisted.manualEditing);
   }

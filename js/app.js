@@ -40,6 +40,7 @@ let openWarningId = null;
 let lastInputModality = 'pointer';
 let warningTouchStart = null;
 let suppressWarningClick = false;
+let undoToastTimer = 0;
 
 const HOVER_CAPABILITY_QUERY = '(hover: hover) and (pointer: fine)';
 
@@ -67,6 +68,14 @@ function refreshAll() {
 function announce(message) {
   const live = document.getElementById('manualEditLive');
   if (live) live.textContent = message;
+}
+
+function showUndoToast(message) {
+  window.clearTimeout(undoToastTimer);
+  document.querySelector('[data-undo-toast]')?.remove();
+  document.body.insertAdjacentHTML('beforeend', `<div class="undo-toast print-hidden" data-undo-toast role="status"><span>${message}</span><button type="button" data-toast-undo>Undo</button><button type="button" class="toast-close" data-close-undo-toast aria-label="Close undo notification">×</button></div>`);
+  announce(`${message}. Undo available.`);
+  undoToastTimer = window.setTimeout(() => document.querySelector('[data-undo-toast]')?.remove(), 8000);
 }
 
 function getIssuePopover(button) {
@@ -640,6 +649,24 @@ function attachEvents() {
       renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
       return;
     }
+    if (event.target.matches('input[name^="rotaView-"]')) {
+      state.uiState.rotaView = event.target.value;
+      renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
+      persistState();
+      return;
+    }
+    if (event.target.matches('[data-rota-day-select]')) {
+      state.uiState.selectedDayByWeek[event.target.dataset.weekStart] = event.target.value;
+      renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
+      persistState();
+      announce(`${event.target.selectedOptions[0]?.textContent || 'Day'} selected.`);
+      return;
+    }
+    if (event.target.matches('[data-edit-mode]')) {
+      state.uiState.editMode = event.target.checked;
+      renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
+      return;
+    }
 
     if (event.target.matches('input[data-preferred-day-off]')) {
       syncChefChoiceChipState(event.target);
@@ -669,6 +696,19 @@ function attachEvents() {
       persistState();
     }
   });
+
+  document.addEventListener('scroll', (event) => {
+    const wrapper = event.target.closest?.('.rota-table-scroll');
+    if (!wrapper) return;
+    const max = wrapper.scrollWidth - wrapper.clientWidth;
+    wrapper.classList.toggle('has-more-left', wrapper.scrollLeft > 2);
+    wrapper.classList.toggle('has-more-right', wrapper.scrollLeft < max - 2);
+    if (!state.uiState.swipeHintSeen && wrapper.scrollLeft > 8) {
+      state.uiState.swipeHintSeen = true;
+      wrapper.closest('.results-section')?.querySelector('.rota-swipe-guidance')?.classList.add('hidden');
+      persistState();
+    }
+  }, true);
 
   document.addEventListener('click', (event) => {
     const issueToggle = event.target.closest('[data-issue-toggle]');
@@ -764,6 +804,33 @@ function attachEvents() {
       renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
       return;
     }
+    const dayStep = event.target.closest('[data-day-step]');
+    if (dayStep) {
+      const select = dayStep.parentElement.querySelector('[data-rota-day-select]');
+      const next = Math.max(0, Math.min(select.options.length - 1, select.selectedIndex + Number(dayStep.dataset.dayStep)));
+      select.selectedIndex = next;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      return;
+    }
+    const statusBar = event.target.closest('[data-open-rota-summary]');
+    if (statusBar) {
+      const summary = document.getElementById(statusBar.dataset.openRotaSummary);
+      if (summary) {
+        summary.open = true;
+        summary.querySelector('summary')?.focus();
+        summary.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+      }
+      return;
+    }
+    if (event.target.closest('[data-close-undo-toast]')) {
+      document.querySelector('[data-undo-toast]')?.remove();
+      return;
+    }
+    if (event.target.closest('[data-toast-undo]')) {
+      if (undoManualEdit(state, state.generatedRotas.latestResult)) refreshEditedRota('Manual change undone.');
+      document.querySelector('[data-undo-toast]')?.remove();
+      return;
+    }
 
     const editAssignment = event.target.closest('[data-edit-assignment]');
     if (editAssignment) { openAssignmentSelector(editAssignment); return; }
@@ -786,7 +853,10 @@ function attachEvents() {
       });
       const { section, date, conflictChef: chef } = selector.dataset;
       closeChefSelector({ restoreFocus: false });
-      if (result.applied) refreshEditedRota(`${chef} moved to ${section} on ${date}. Validation and totals updated.`);
+      if (result.applied) {
+        refreshEditedRota(`${result.description}. Validation and totals updated.`);
+        showUndoToast(result.description);
+      }
       else announce(result.reason || 'No change made.');
       returnFocus?.focus();
       return;
@@ -812,6 +882,7 @@ function attachEvents() {
           ? (floatAction === 'remove' ? `${chef} removed from Float` : (chef ? `${chef} added to Float` : 'Float assignments cleared'))
           : `${section} changed to ${chef || 'None'}`;
         refreshEditedRota(`${actionMessage} on ${date}. Validation and totals updated.`);
+        showUndoToast(result.description || actionMessage);
       }
       else announce(result.cancelled ? 'Assignment change cancelled.' : result.reason || 'No change made.');
       return;

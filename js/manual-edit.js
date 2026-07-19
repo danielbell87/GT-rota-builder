@@ -4,7 +4,7 @@ import { scoreSoftPreferences } from './scoring.js?v=20260719s';
 import { buildRotaDiagnostics } from './diagnostics.js?v=20260719s';
 import { getGtChefNamesForDay, hasGtAssignment, syncDayGtChefs } from './rota-model.js?v=20260719s';
 
-export const MANUAL_HISTORY_LIMIT = 50;
+export const MANUAL_HISTORY_LIMIT = 10;
 export const MANUALLY_EDITABLE_SECTIONS = DISPLAY_SECTIONS.filter((section) => section !== 'MIO');
 
 export function createGenerationId(overallResult) {
@@ -24,7 +24,8 @@ export function ensureManualEditState(state, overallResult = state.generatedRota
       originals: {},
       edits: {},
       undo: [],
-      redo: []
+      redo: [],
+      actions: []
     };
   }
   return state.manualEditing;
@@ -60,7 +61,8 @@ function snapshot(overallResult, manual) {
   return {
     weeks: structuredClone(overallResult.weeks),
     originals: { ...manual.originals },
-    edits: { ...manual.edits }
+    edits: { ...manual.edits },
+    actions: structuredClone(manual.actions || [])
   };
 }
 
@@ -68,6 +70,7 @@ function restore(overallResult, manual, value) {
   overallResult.weeks = structuredClone(value.weeks);
   manual.originals = { ...value.originals };
   manual.edits = { ...value.edits };
+  manual.actions = structuredClone(value.actions || []);
 }
 
 function pushUndo(overallResult, manual) {
@@ -126,7 +129,17 @@ export function applyManualAssignment({ state, overallResult, weekIndex, date, s
     manual.edits[key] = chef;
   }
   recalculateEditedResult(state, overallResult);
-  return { applied: true, previousChef, previousChefs, chef };
+  const dayName = week.rota.find((day) => day.date === date)?.dayName || date;
+  let description;
+  if (duplicateAction === 'swap') description = `${chef} and ${previousChef} swapped`;
+  else if (section === 'Float') description = chef
+    ? `${chef} ${floatAction === 'remove' ? 'removed from' : 'added to'} ${dayName} Float`
+    : `${dayName} Float cleared`;
+  else if (!chef) description = `${section} assignment cleared`;
+  else if (previousChef) description = `${previousChef} replaced by ${chef} on ${section}`;
+  else description = `${chef} added to ${dayName} ${section}`;
+  manual.actions = [{ description, at: Date.now() }, ...(manual.actions || [])].slice(0, MANUAL_HISTORY_LIMIT);
+  return { applied: true, previousChef, previousChefs, chef, description };
 }
 
 export function undoManualEdit(state, overallResult) {

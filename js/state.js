@@ -36,7 +36,11 @@ function buildInitialState() {
       validationByWeek: [],
       softScore: null,
       lastError: '',
-      selectedResultWeekIndex: 0
+      selectedResultWeekIndex: 0,
+      rotaView: '',
+      selectedDayByWeek: {},
+      swipeHintSeen: false,
+      editMode: false
     },
     availability: [],
     dailyOverrides: {}
