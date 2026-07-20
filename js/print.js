@@ -2,6 +2,8 @@ import { DISPLAY_SECTIONS } from './constants.js';
 import { formatDate, parseLocalDate } from './utils.js';
 import { composeDateNotes } from './rota-notes.js?v=20260720notes';
 
+const PRINT_ASSET_BASE = new URL('../', import.meta.url).href;
+
 export function escapePrintHtml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -96,12 +98,18 @@ function renderPrintWeek(week, sections, isLast) {
 
   return `
     <section class="print-week${isLast ? ' print-week-last' : ''}">
-      <header>
-        <div>
-          <div class="print-brand"><img src="assets/general-tarleton-logo.svg" alt="The General Tarleton"><span>Rota</span></div>
-          <h2>Week ${week.weekNumber}</h2>
+      <header class="print-masthead">
+        <img class="print-feather" src="assets/tarleton-feather.svg" alt="" aria-hidden="true">
+        <div class="print-brand">
+          <img class="print-wordmark" src="assets/general-tarleton-logo.svg" alt="The General Tarleton">
+          <span class="print-divider" aria-hidden="true"></span>
+          <div class="print-product">
+            <span>Kitchen planning</span>
+            <strong>Rota Builder</strong>
+          </div>
         </div>
         <div class="week-details">
+          <span class="week-number">Week ${week.weekNumber}</span>
           <strong>${escapePrintHtml(week.dateRange)}</strong>
           ${week.mioChef ? `<span>MIO chef: ${escapePrintHtml(week.mioChef)}</span>` : ''}
         </div>
@@ -113,6 +121,7 @@ function renderPrintWeek(week, sections, isLast) {
       </table>
       ${warnings}
       ${decisions}
+      <footer class="print-footer"><span>The General Tarleton · Kitchen rota</span><span>Week ${week.weekNumber}</span></footer>
     </section>`;
 }
 
@@ -122,44 +131,52 @@ export function renderPrintDocument(model) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <base href="${escapePrintHtml(PRINT_ASSET_BASE)}">
   <title>${escapePrintHtml(model.title)}</title>
   <style>
     @page { size: A4 landscape; margin: 10mm; }
     * { box-sizing: border-box; }
-    body { margin: 0; background: #eef1f4; color: #111827; font-family: Arial, Helvetica, sans-serif; }
-    .print-week { width: min(100%, 277mm); min-height: 190mm; margin: 12px auto; padding: 10mm; background: #fff; break-after: page; page-break-after: always; }
+    body { margin: 0; background: #ebeae6; color: #252525; font-family: Arial, Helvetica, sans-serif; }
+    .print-week { width: min(100%, 277mm); min-height: 190mm; margin: 12px auto; padding: 10mm; background: #fffefa; break-after: page; page-break-after: always; }
     .print-week-last { break-after: auto; page-break-after: auto; }
-    header { display: flex; align-items: end; justify-content: space-between; gap: 12mm; margin-bottom: 5mm; break-after: avoid; page-break-after: avoid; }
-    .print-brand { display: flex; align-items: center; gap: 4mm; }
-    .print-brand img { width: 43mm; height: auto; }
-    .print-brand span { padding-left: 4mm; border-left: 0.35mm solid #a68854; font-size: 18pt; font-weight: 700; line-height: 1; }
-    h2 { margin: 2mm 0 0; color: #374151; font-size: 12pt; }
-    .week-details { display: grid; gap: 1.5mm; text-align: right; font-size: 10pt; }
+    .print-masthead { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 10mm; min-height: 24mm; margin-bottom: 4mm; padding: 4mm 5mm; overflow: hidden; color: #fff; background: #2f2f2f; break-after: avoid; page-break-after: avoid; }
+    .print-feather { position: absolute; z-index: 0; right: 19mm; top: -22mm; width: 47mm; height: auto; opacity: .11; transform: rotate(35deg); }
+    .print-brand, .week-details { position: relative; z-index: 1; }
+    .print-brand { display: flex; align-items: center; gap: 4mm; min-width: 0; }
+    .print-wordmark { width: 42mm; height: auto; filter: invert(1) grayscale(1) brightness(3); }
+    .print-divider { align-self: stretch; width: .3mm; min-height: 14mm; background: rgba(255,255,255,.3); }
+    .print-product { display: grid; gap: .8mm; text-transform: uppercase; }
+    .print-product span { color: #d9d9d6; font-size: 5.5pt; font-weight: 700; letter-spacing: .16em; }
+    .print-product strong { font-family: Georgia, "Times New Roman", serif; font-size: 16pt; font-weight: 400; letter-spacing: .015em; line-height: .92; }
+    .week-details { display: grid; gap: 1mm; max-width: 72mm; text-align: right; font-size: 8.5pt; }
+    .week-number { color: #d9d9d6; font-size: 6pt; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    .week-details strong { font-size: 10pt; }
     table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 8.5pt; break-inside: avoid; page-break-inside: avoid; }
     thead { display: table-header-group; }
     tr { break-inside: avoid; page-break-inside: avoid; }
-    th, td { border: 0.35mm solid #4b5563; padding: 2.2mm 1.8mm; vertical-align: top; overflow-wrap: anywhere; }
-    thead th { background: #243b53; color: #fff; text-align: center; }
+    th, td { border: 0.35mm solid #555; padding: 2.2mm 1.8mm; vertical-align: top; overflow-wrap: anywhere; }
+    thead th { background: #2f2f2f; color: #fff; text-align: center; }
     thead th:first-child, tbody th { width: 25mm; }
     thead span { display: block; margin-top: 1mm; font-size: 7.5pt; font-weight: normal; }
-    tbody th { background: #dbe5ee; text-align: left; }
-    tbody tr:nth-child(even) td { background: #f3f4f6; }
+    tbody th { background: #e9e8e4; text-align: left; }
+    tbody tr:nth-child(even) td { background: #f6f5f1; }
     td { line-height: 1.25; font-weight: 600; }
     .print-cell-error { border: 0.8mm double #7f1d1d; background: #fff !important; }
     .print-day-error { outline:0.8mm double #fff; outline-offset:-1.2mm; background:#7f1d1d !important; }
     .print-error-icon { display: inline-grid; place-items: center; width: 4.5mm; height: 4.5mm; margin-right: 1.5mm; border: 0.5mm solid #111; border-radius: 50%; font-size: 8pt; line-height: 1; }
     .print-notes-row { break-inside: avoid; page-break-inside: avoid; }
-    .print-notes-row th, .print-notes-row td { height: auto; min-height: 9mm; padding: 1.5mm; color: #4b5563; font-size: 6.7pt; line-height: 1.25; vertical-align: top; }
+    .print-notes-row th, .print-notes-row td { height: auto; min-height: 9mm; padding: 1.5mm; color: #555; font-size: 6.7pt; line-height: 1.25; vertical-align: top; }
     .print-notes-row td span { display: block; white-space: pre-wrap; }
     .print-notes-row td span + span { margin-top: 0.8mm; }
     .warnings { margin-top: 4mm; padding: 3mm; border: 0.35mm solid #92400e; background: #fffbeb; font-size: 8pt; break-inside: avoid; page-break-inside: avoid; }
     .draft-print-warning { margin:0 0 3mm; padding:2mm 3mm; border:0.5mm solid #7f1d1d; background:#fff1f2; font-size:9pt; }
     .warnings ul { margin: 1.5mm 0 0; padding-left: 5mm; }
-    .decisions { margin-top: 4mm; padding: 3mm; border: 0.35mm solid #a68854; background: #faf7f0; font-size: 8pt; break-inside: avoid; page-break-inside: avoid; }
+    .decisions { margin-top: 4mm; padding: 3mm; border: 0.35mm solid #777; background: #f6f5f1; font-size: 8pt; break-inside: avoid; page-break-inside: avoid; }
     .decisions ul { margin: 1.5mm 0 0; padding-left: 5mm; }
+    .print-footer { display: flex; justify-content: space-between; margin-top: 4mm; padding-top: 2mm; border-top: .3mm solid #bdbbb5; color: #777; font-size: 6pt; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; break-inside: avoid; page-break-inside: avoid; }
     @media print {
       body { background: #fff; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-      .print-week { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
+      .print-week { width: auto; min-height: 0; margin: 0; padding: 0; background: #fff; box-shadow: none; }
     }
     @media screen and (max-width: 760px) {
       body { overflow-x: auto; }

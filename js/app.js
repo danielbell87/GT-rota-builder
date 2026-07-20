@@ -25,7 +25,7 @@ import {
 import { renderAssignmentConflict, renderAssignmentConflictPreview, renderChefSelector } from './render.js?v=20260720notes';
 import { applyManualAssignment, findDuplicateCoreAssignment, getChefConcerns, rateManualAssignmentActions, redoManualEdit, resetAllManualEdits, resetManualCell, undoManualEdit } from './manual-edit.js';
 import { upsertPublishedHistory, upsertPublishedWeeks } from './history.js';
-import { openPrintWindow } from './print.js?v=20260720notes';
+import { openPrintWindow } from './print.js?v=20260720tarleton';
 import { createBackup, createBackupFilename, restoreBackup, serializeBackup } from './backup.js';
 import { buildWeekClipboardText, icon } from './ui.js?v=20260719zf';
 import { initChefPresence } from './chef-presence.js?v=20260720cp';

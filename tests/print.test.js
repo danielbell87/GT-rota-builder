@@ -48,6 +48,9 @@ export async function runPrintTests(assert) {
   assert((html.match(/class="print-week/g) || []).length === 3 && html.includes('break-after: page') && html.includes('page-break-after: always'), 'Print: each week is a separate page-break block');
   assert(html.includes('@page { size: A4 landscape;') && html.includes('thead { display: table-header-group; }'), 'Print: document uses A4 landscape and repeatable table headers');
   assert(!html.includes('rota-table-scroll') && !html.includes('rota-swipe-guidance') && !html.includes('position: sticky'), 'Print: dedicated PDF document has no app scroll wrappers, swipe guidance, or sticky columns');
+  assert(html.includes('class="print-masthead"') && html.includes('assets/tarleton-feather.svg') && html.includes('Kitchen planning') && html.includes('Rota Builder'), 'Print branding: dedicated document uses the Tarleton feather masthead and product lockup');
+  assert(html.includes('background: #2f2f2f') && html.includes('class="print-footer"') && html.includes('The General Tarleton · Kitchen rota'), 'Print branding: charcoal palette and branded footer are included on every week');
+  assert(/<base href="[^"]+\/">/.test(html), 'Print branding: print-window assets resolve from the application root');
 
   const unsafeHtml = renderPrintDocument(singleModel);
   assert(!unsafeHtml.includes(unsafeName) && unsafeHtml.includes('&lt;img src=x onerror=&quot;window.printAttack=1&quot;&gt;'), 'Print: user-editable chef names are safely escaped');
