@@ -35,6 +35,24 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
+function getAssignmentChefId(assignment, state) {
+  if (assignment?.chefId && state.staff.some((chef) => chef.id === assignment.chefId)) return assignment.chefId;
+  return state.staff.find((chef) => chef.name === assignment?.chef)?.id || '';
+}
+
+function renderChefPresenceNames(assignments, state, weekIndex) {
+  return assignments.map((assignment) => {
+    const chefId = getAssignmentChefId(assignment, state);
+    if (!chefId) return escapeHtml(assignment.chef || '');
+    return `<span class="chef-presence-name" role="button" tabindex="0" aria-pressed="false" data-chef-presence-trigger data-chef-id="${escapeHtml(chefId)}" data-week-index="${weekIndex}" aria-label="Show ${escapeHtml(assignment.chef)}’s weekly presence">${escapeHtml(assignment.chef)}</span>`;
+  }).join('<span class="assignment-separator" aria-hidden="true"> / </span>');
+}
+
+function getCellPresenceAttributes(matches, state, day, weekIndex) {
+  const chefIds = matches.map((assignment) => getAssignmentChefId(assignment, state)).filter(Boolean);
+  return `data-rota-cell data-date="${day.date}" data-week-index="${weekIndex}" data-chef-count="${matches.length}" data-chef-ids="${escapeHtml(chefIds.join(' '))}"`;
+}
+
 function hasFairnessActivity(entry) {
   return entry.weightedBurden > 0
     || entry.fridayCount > 0
@@ -925,7 +943,7 @@ function renderRotaTable(solveResult, view) {
   const dayHeaders = solveResult.rota.map((day) => {
     const failures = getDayFailures(view, day);
     const issueId = `day-issues-${solveResult.weekIndex || 0}-${day.date}`;
-    return `<th scope="col" class="${failures.length ? 'day-heading-affected' : ''}">
+    return `<th scope="col" data-rota-day-header data-date="${day.date}" class="${failures.length ? 'day-heading-affected' : ''}">
       <span>${day.dayName}<br><span class="small">${formatDate(day.date)}</span></span>
       ${renderIssueDisclosure(failures, solveResult, state, issueId, `Rule issue for ${day.dayName}, ${formatDate(day.date)}`)}
     </th>`;
@@ -942,12 +960,14 @@ function renderRotaTable(solveResult, view) {
       const failureText = affected ? [...new Set(failures.map((failure) => explainHardRuleFailure(failure, solveResult, state)))].join(' ') : '';
       const emptyLabel = affected ? `Error: ${section} assignment requires attention. ${failureText}` : `No ${section} assignment${['Pass'].includes(section) && ['Monday', 'Tuesday', 'Wednesday'].includes(day.dayName) ? ' required' : ''}`;
       const issueId = `cell-issues-${solveResult.weekIndex || 0}-${day.date}-${section}`;
+      const weekIndex = solveResult.weekIndex || 0;
+      const chefNames = renderChefPresenceNames(matches, state, weekIndex);
       const content = MANUALLY_EDITABLE_SECTIONS.includes(section)
         ? `<button type="button" class="assignment-button" data-edit-assignment data-week-index="${solveResult.weekIndex || 0}" data-date="${day.date}" data-section="${section}" aria-label="${escapeHtml(displayedChefs ? `Edit ${section} on ${formatDate(day.date)}${affected ? ', has rule issues' : ''}` : emptyLabel)}">
-            <span>${displayedChefs ? escapeHtml(displayedChefs) : ''}</span>${edited ? '<span class="manual-dot" aria-hidden="true">•</span><span class="visually-hidden">Manually edited</span>' : ''}
+            <span>${chefNames}</span>${edited ? '<span class="manual-dot" aria-hidden="true">•</span><span class="visually-hidden">Manually edited</span>' : ''}
           </button>`
-        : `<span class="assignment-static" aria-label="${matches.length ? escapeHtml(`${section}: ${displayedChefs}`) : 'No assignment required'}">${displayedChefs ? escapeHtml(displayedChefs) : ''}</span>`;
-      return `<td class="rota-assignment-cell${edited ? ' manually-edited' : ''}${affected ? ' hard-rule-affected' : ''}">
+        : `<span class="assignment-static" aria-label="${matches.length ? escapeHtml(`${section}: ${displayedChefs}`) : 'No assignment required'}">${chefNames}</span>`;
+      return `<td ${getCellPresenceAttributes(matches, state, day, weekIndex)} class="rota-assignment-cell${edited ? ' manually-edited' : ''}${affected ? ' hard-rule-affected' : ''}">
         ${content}
         ${renderIssueDisclosure(failures, solveResult, state, issueId, `Rule issue for ${displayedChefs || 'unfilled assignment'} on ${section}, ${day.dayName} ${formatDate(day.date)}`)}
       </td>`;
@@ -979,13 +999,15 @@ function renderDayView(solveResult, view) {
     const edited = Object.prototype.hasOwnProperty.call(manual.edits || {}, key);
     const failures = (view.visibleHardFailures || []).filter((failure) => isCellAffectedByFailure(failure, solveResult, day, section, matches[0]?.chef || '', state));
     const issueId = `day-card-issues-${solveResult.weekIndex || 0}-${day.date}-${section}`;
+    const weekIndex = solveResult.weekIndex || 0;
+    const chefNames = renderChefPresenceNames(matches, state, weekIndex);
     const content = MANUALLY_EDITABLE_SECTIONS.includes(section)
-      ? `<button type="button" class="assignment-button day-assignment-button" data-edit-assignment data-week-index="${solveResult.weekIndex || 0}" data-date="${day.date}" data-section="${section}" aria-label="Edit ${section} on ${formatDate(day.date)}"><span>${escapeHtml(chefs)}</span>${edited ? '<span class="manual-dot" aria-hidden="true">•</span><span class="visually-hidden">Manually edited</span>' : ''}</button>`
-      : `<span class="assignment-static">${escapeHtml(chefs)}</span>`;
-    return `<div class="day-rota-row${edited ? ' manually-edited' : ''}${failures.length ? ' hard-rule-affected' : ''}"><strong>${section}</strong><div class="day-rota-assignment">${content}${renderIssueDisclosure(failures, solveResult, state, issueId, `Rule issue for ${section}, ${day.dayName} ${formatDate(day.date)}`)}</div></div>`;
+      ? `<button type="button" class="assignment-button day-assignment-button" data-edit-assignment data-week-index="${weekIndex}" data-date="${day.date}" data-section="${section}" aria-label="Edit ${section} on ${formatDate(day.date)}"><span>${chefNames}</span>${edited ? '<span class="manual-dot" aria-hidden="true">•</span><span class="visually-hidden">Manually edited</span>' : ''}</button>`
+      : `<span class="assignment-static">${chefNames}</span>`;
+    return `<div class="day-rota-row${edited ? ' manually-edited' : ''}${failures.length ? ' hard-rule-affected' : ''}"><strong>${section}</strong><div ${getCellPresenceAttributes(matches, state, day, weekIndex)} class="day-rota-assignment">${content}${renderIssueDisclosure(failures, solveResult, state, issueId, `Rule issue for ${section}, ${day.dayName} ${formatDate(day.date)}`)}</div></div>`;
   }).join('');
   const options = solveResult.rota.map((option, index) => `<option value="${option.date}" ${option.date === day.date ? 'selected' : ''}>${option.dayName} ${formatDate(option.date)}</option>`).join('');
-  return `<section class="results-section day-rota-view" aria-live="polite">
+  return `<section class="results-section day-rota-view" data-selected-date="${day.date}" aria-live="polite">
     <div class="day-navigation print-hidden">
       <button type="button" class="secondary" data-day-step="-1" ${dayIndex === 0 ? 'disabled' : ''} aria-label="${dayIndex === 0 ? 'Previous day unavailable, Monday selected' : `Previous day, ${solveResult.rota[dayIndex - 1].dayName}`}">‹</button>
       <label class="visually-hidden" for="rotaDaySelect-${solveResult.weekIndex || 0}">Choose rota day</label>
