@@ -2,13 +2,14 @@ import { runSolverTests } from './solver.test.js?v=20260719zf';
 import { runValidationTests } from './validation.test.js';
 import { runScoringTests } from './scoring.test.js?v=20260719zf';
 import { runAdditionalChefTests } from './additional-chef.test.js?v=20260719zf';
-import { runUiTests } from './ui.test.js?v=20260719zf';
+import { runUiTests } from './ui.test.js?v=20260720ui2';
 import { runPrintTests } from './print.test.js?v=20260719zf';
 import { runBackupTests } from './backup.test.js';
 import { runManualEditTests } from './manual-edit.test.js?v=20260719zf';
 import { runDiagnosticsTests } from './diagnostics.test.js';
 import { runUiPolishTests } from './ui-polish.test.js?v=20260719zf';
 import { runChefPresenceTests } from './chef-presence.test.js?v=20260720cp';
+import { runUiUpgradeTests } from './ui-upgrade.test.js?v=20260720ui';
 import { SOLVER_ENGINE_VERSION } from '../js/solver.js';
 
 const summaryEl = document.getElementById('testSummary');
@@ -45,6 +46,8 @@ async function runAllTests() {
     await runChefPresenceTests(assert);
     summaryEl.textContent = 'Running UI tests…';
     await runUiTests(assert);
+    summaryEl.textContent = 'Running coordinated UI upgrade tests…';
+    await runUiUpgradeTests(assert);
     summaryEl.textContent = 'Running diagnostics tests…';
     await runDiagnosticsTests(assert);
   } catch (error) {

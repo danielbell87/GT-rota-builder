@@ -1,7 +1,7 @@
 import { APP_BUILD_VERSION, CACHE_BUST_VERSION } from './constants.js?v=20260720cp';
 import { getState, getDefaultWeek, resetStateToDefaults, syncCompatibilityViews, setWeekStart, setMioChef, setNumWeeks, setWeeklyMioChef } from './state.js';
 import { normalizeWeekStart, getPlanningHorizon } from './utils.js';
-import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260719zf';
+import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260720ui';
 import { addChef, createBlankChefDraft, createChefDraft, getChefById, removeChef, updateChef } from './staff.js';
 import { addAvailabilityEntry, removeAvailabilityEntry, updateAvailabilityField, addAdditionalChefRequest, updateAdditionalChefRequest, removeAdditionalChefRequest, validateAdditionalChefDate, validateAdditionalChefCount } from './weekly-inputs.js';
 import {
@@ -21,14 +21,33 @@ import {
   showChefModalError,
   setChefRemovalConfirmation,
   syncChefChoiceChipState
-} from './render.js?v=20260720cp';
-import { renderAssignmentConflict, renderAssignmentConflictPreview, renderChefSelector } from './render.js?v=20260720cp';
+} from './render.js?v=20260720ui';
+import { renderAssignmentConflict, renderAssignmentConflictPreview, renderChefSelector } from './render.js?v=20260720ui';
 import { applyManualAssignment, findDuplicateCoreAssignment, getChefConcerns, rateManualAssignmentActions, redoManualEdit, resetAllManualEdits, resetManualCell, undoManualEdit } from './manual-edit.js';
 import { upsertPublishedHistory, upsertPublishedWeeks } from './history.js';
 import { openPrintWindow } from './print.js';
 import { createBackup, createBackupFilename, restoreBackup, serializeBackup } from './backup.js';
 import { buildWeekClipboardText, icon } from './ui.js?v=20260719zf';
 import { initChefPresence } from './chef-presence.js?v=20260720cp';
+import {
+  closeContextPanel,
+  dataSnapshot,
+  emphasizeIssueCell,
+  ensureCoordinatedUiState,
+  markUnsaved,
+  navigateIssue,
+  openContextPanel,
+  persistUiPreferences,
+  recordHistory,
+  redoDataChange,
+  resetView,
+  setDensity,
+  setSaveState,
+  showToast,
+  toggleFullScreen,
+  undoDataChange,
+  updateDocumentUiState
+} from './ui-upgrade.js?v=20260720ui';
 
 const state = getState();
 let editingReqDate = null;
@@ -45,6 +64,7 @@ let suppressWarningClick = false;
 let undoToastTimer = 0;
 let generationActive = false;
 let generationSlowTimer = 0;
+const fieldHistorySnapshots = new WeakMap();
 
 const HOVER_CAPABILITY_QUERY = '(hover: hover) and (pointer: fine)';
 
@@ -61,8 +81,26 @@ function requireElement(id) {
 }
 
 function persistState() {
-  saveAppState(state);
+  setSaveState(state, 'saving', 'Writing rota data to this browser.');
+  state.uiState.saveState = 'saved';
+  state.uiState.saveDetail = 'Stored in this browser.';
+  const appSaved = saveAppState(state);
   saveHistory(state.history);
+  setSaveState(state, appSaved ? 'saved' : 'failed', appSaved ? 'Stored in this browser.' : 'Browser storage is unavailable or full.');
+  const saveButton = document.querySelector('[data-open-context="save"] strong');
+  if (saveButton) saveButton.textContent = appSaved ? 'Saved' : 'Save failed';
+  if (!appSaved) showToast('Error saving rota', 'error');
+  return appSaved;
+}
+
+function beginDataAction() {
+  return dataSnapshot(state);
+}
+
+function finishDataAction(description, before, toastMessage = '') {
+  recordHistory(state, description, before);
+  persistState();
+  if (toastMessage) showToast(toastMessage);
 }
 
 function refreshAll() {
@@ -169,12 +207,23 @@ function closeChefSelector({ restoreFocus = true } = {}) {
   document.querySelector('.chef-selector')?.remove();
   document.querySelector('.chef-selector-backdrop')?.remove();
   if (restoreFocus) activeAssignmentTrigger?.focus();
+  document.querySelectorAll('.edit-selected').forEach((element) => element.classList.remove('edit-selected'));
+  state.uiState.manualEditState = null;
   activeAssignmentTrigger = null;
 }
 
 function openAssignmentSelector(button) {
   closeChefSelector({ restoreFocus: false });
+  document.dispatchEvent(new CustomEvent('rota:before-results-render'));
   activeAssignmentTrigger = button;
+  const cell = button.closest('[data-rota-cell], .day-rota-assignment');
+  cell?.classList.add('edit-selected');
+  state.uiState.selectedCell = {
+    weekIndex: Number(button.dataset.weekIndex),
+    date: button.dataset.date,
+    section: button.dataset.section
+  };
+  state.uiState.manualEditState = { ...state.uiState.selectedCell, dirtySelection: false };
   document.body.insertAdjacentHTML('beforeend', renderChefSelector({
     weekIndex: Number(button.dataset.weekIndex),
     date: button.dataset.date,
@@ -245,7 +294,16 @@ async function generateRota({ forceBestAvailable = false } = {}) {
     return;
   }
   generationActive = true;
-  const buttons = document.querySelectorAll('#generateRotaBtn,[data-sticky-generate],[data-generate-best-available]');
+  state.uiState.generationState = 'running';
+  const resultsContainer = document.getElementById('results');
+  resultsContainer?.classList.add('generation-loading');
+  if (resultsContainer?.querySelector('.rota-empty-state')) {
+    resultsContainer.innerHTML = `<section class="rota-skeleton" aria-label="Building rota" aria-busy="true">
+      <div class="skeleton-heading"></div>
+      <div class="skeleton-grid">${Array.from({ length: 42 }, () => '<span></span>').join('')}</div>
+    </section>`;
+  }
+  const buttons = document.querySelectorAll('[data-empty-generate],[data-generate-best-available],[data-regenerate]');
   buttons.forEach((button) => { button.disabled = true; button.setAttribute('aria-busy', 'true'); });
   updateGenerationProgress('Checking availability', 1);
   generationSlowTimer = window.setTimeout(() => {
@@ -260,13 +318,19 @@ async function generateRota({ forceBestAvailable = false } = {}) {
     renderResultsPanel({ forceBestAvailable: true });
     updateGenerationProgress('Preparing results', 6);
     persistState();
+    state.uiState.generationState = 'completed';
+    showToast(readiness?.status === 'ready' ? 'Rota generated' : 'Best available rota generated', readiness?.status === 'ready' ? 'success' : 'warning');
     announce(readiness?.status === 'ready' ? 'Rota generated.' : 'Best available draft rota generated. Review unresolved rule issues.');
   } catch (error) {
     state.uiState.lastError = error.message;
+    state.uiState.generationState = 'failed';
+    showToast('Error generating rota', 'error');
+    renderResultsPanel({ showEmpty: true });
     announce(`Rota generation failed: ${error.message}`);
   } finally {
     window.clearTimeout(generationSlowTimer);
     generationActive = false;
+    resultsContainer?.classList.remove('generation-loading');
     buttons.forEach((button) => { button.disabled = false; button.removeAttribute('aria-busy'); });
     window.setTimeout(() => document.getElementById('generationProgress')?.classList.add('hidden'), 500);
   }
@@ -429,6 +493,8 @@ function closeChefEditor({ restoreFocus = true, focusAfterCloseSelector = '' } =
 
 function handleChefSave(event) {
   event.preventDefault();
+  const before = beginDataAction();
+  const wasEditingChef = !!activeChefId;
   const draft = readChefDraftFromModal();
   const result = activeChefId ? updateChef(activeChefId, draft) : addChef(draft);
   if (!result.valid) {
@@ -442,18 +508,19 @@ function handleChefSave(event) {
   renderStaffTable();
   renderAvailabilityTable();
   renderResultsPanel();
-  persistState();
+  finishDataAction(wasEditingChef ? 'Chef settings changed' : 'Chef added', before, wasEditingChef ? 'Chef updated' : 'Chef added');
   focusSelector(focusTargetSelector);
 }
 
 function handleChefRemoval() {
   if (!activeChefId) return;
+  const before = beginDataAction();
   removeChef(activeChefId);
   closeChefEditor({ restoreFocus: false });
   renderStaffTable();
   renderAvailabilityTable();
   renderResultsPanel();
-  persistState();
+  finishDataAction('Chef removed', before, 'Chef removed');
   focusSelector('#addChefBtn');
 }
 
@@ -508,6 +575,8 @@ function closeAdditionalChefModal() {
 }
 
 function handleAdditionalChefSave() {
+  const before = beginDataAction();
+  const wasEditingRequest = !!editingReqDate;
   const dateInput = requireElement('additionalChefDate');
   const countInput = requireElement('additionalChefCount');
   const errorEl = requireElement('additionalChefError');
@@ -538,7 +607,7 @@ function handleAdditionalChefSave() {
   closeAdditionalChefModal();
   renderAdditionalChefRequirements();
   renderResultsPanel();
-  persistState();
+  finishDataAction(wasEditingRequest ? 'Additional chef request changed' : 'Additional chef request added', before, 'Staffing request saved');
 }
 
 function loadInitialState() {
@@ -560,6 +629,19 @@ function loadInitialState() {
 }
 
 function attachEvents() {
+  document.addEventListener('toggle', (event) => {
+    const summary = event.target.closest?.('[data-summary-key]');
+    if (!summary) return;
+    state.uiState.expandedSections[summary.dataset.summaryKey] = summary.open;
+    persistUiPreferences(state);
+  }, true);
+  document.addEventListener('dblclick', (event) => {
+    const assignment = event.target.closest?.('[data-edit-assignment]');
+    if (!assignment) return;
+    event.preventDefault();
+    state.uiState.editMode = true;
+    openAssignmentSelector(assignment);
+  });
   window.addEventListener('resize', () => updateRotaScrollAccessibility(document));
   window.addEventListener('resize', () => {
     closeIssuePopover();
@@ -640,6 +722,9 @@ function attachEvents() {
   syncIssueHoverHandlers();
   hoverMedia?.addEventListener?.('change', syncIssueHoverHandlers);
   document.addEventListener('focusin', (event) => {
+    if (event.target.matches?.('.entry-chef,.entry-type,.entry-start-date,.entry-finish-date,.entry-notes')) {
+      fieldHistorySnapshots.set(event.target, beginDataAction());
+    }
     const button = event.target.closest?.('[data-issue-toggle]');
     if (button && lastInputModality === 'keyboard') openIssuePopover(button);
   });
@@ -651,41 +736,65 @@ function attachEvents() {
     if (owner) scheduleIssuePopoverClose(owner);
   });
   document.addEventListener('change', (event) => {
+    if (event.target.matches?.('[data-view-density]')) {
+      setDensity(state, event.target.value);
+      showToast(`${event.target.selectedOptions[0]?.textContent || 'Rota'} density selected`);
+      return;
+    }
+    if (event.target.matches?.('[data-compare-week]')) {
+      const key = event.target.dataset.compareWeek === 'a' ? 'weekA' : 'weekB';
+      state.uiState.comparisonState[key] = Number(event.target.value);
+      if (state.uiState.comparisonState.weekA === state.uiState.comparisonState.weekB) {
+        state.uiState.comparisonState[key === 'weekA' ? 'weekB' : 'weekA'] = key === 'weekA'
+          ? Math.min(state.generatedRotas.latestResult.weeks.length - 1, Number(event.target.value) + 1)
+          : Math.max(0, Number(event.target.value) - 1);
+      }
+      renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
+      return;
+    }
     const conflictAction = event.target.closest?.('[data-conflict-action]');
     if (conflictAction) updateConflictPreview(conflictAction.closest('.chef-selector'));
   });
 
   requireElement('weekStart').addEventListener('change', (event) => {
+    const before = beginDataAction();
+    const hadGeneratedRota = !!state.generatedRotas.latestResult;
     const normalized = normalizeWeekStart(event.target.value || getDefaultWeek());
     event.target.value = normalized;
     setWeekStart(normalized);
     state.uiState.selectedResultWeekIndex = 0;
     refreshAll();
-    persistState();
+    if (hadGeneratedRota) renderResultsPanel();
+    finishDataAction('Planning dates changed', before);
   });
 
   requireElement('mioChef').addEventListener('change', (event) => {
+    const before = beginDataAction();
     setMioChef(event.target.value);
     setWeeklyMioChef(state.weeklyInputs.weekStart, event.target.value);
     refreshAll();
-    persistState();
+    finishDataAction('MIO chef changed', before);
   });
 
   requireElement('numWeeks').addEventListener('change', (event) => {
+    const before = beginDataAction();
+    const hadGeneratedRota = !!state.generatedRotas.latestResult;
     setNumWeeks(event.target.value);
     state.uiState.selectedResultWeekIndex = 0;
     refreshAll();
-    persistState();
+    if (hadGeneratedRota) renderResultsPanel();
+    finishDataAction('Rota length changed', before);
   });
 
   requireElement('addAvailabilityBtn').addEventListener('click', () => {
+    const before = beginDataAction();
     addAvailabilityEntry();
     renderAvailabilityTable();
     renderResultsPanel();
     if (state.generatedRotas.latestResult?.status === 'ok') {
       upsertPublishedWeeks(state, state.generatedRotas.latestResult.weeks);
     }
-    persistState();
+    finishDataAction('Availability entry added', before, 'Availability entry added');
   });
 
   requireElement('addChefBtn').addEventListener('click', () => openChefEditor({ chefId: null, triggerSelector: '#addChefBtn' }));
@@ -710,7 +819,6 @@ function attachEvents() {
       message.textContent = 'Your browser blocked the printable rota. Allow pop-ups for this page, then try again.';
     }
   });
-  requireElement('generateRotaBtn').addEventListener('click', () => generateRota());
   requireElement('downloadBackupBtn').addEventListener('click', downloadBackup);
   requireElement('restoreBackupBtn').addEventListener('click', () => requireElement('restoreBackupInput').click());
   requireElement('restoreBackupInput').addEventListener('change', async (event) => {
@@ -770,6 +878,11 @@ function attachEvents() {
       || event.target.classList.contains('entry-finish-date')
       || event.target.classList.contains('entry-notes')) {
       renderResultsPanel();
+      const before = fieldHistorySnapshots.get(event.target);
+      if (before) {
+        recordHistory(state, 'Availability changed', before);
+        fieldHistorySnapshots.delete(event.target);
+      }
       persistState();
     }
   });
@@ -779,7 +892,7 @@ function attachEvents() {
     if (event.target.classList.contains('entry-notes')) {
       updateAvailabilityField(Number(event.target.dataset.index), 'notes', event.target.value);
       renderResultsPanel();
-      persistState();
+      markUnsaved(state);
     }
   });
 
@@ -789,6 +902,8 @@ function attachEvents() {
     const max = wrapper.scrollWidth - wrapper.clientWidth;
     wrapper.classList.toggle('has-more-left', wrapper.scrollLeft > 2);
     wrapper.classList.toggle('has-more-right', wrapper.scrollLeft < max - 2);
+    wrapper.classList.toggle('is-horizontally-scrolled', wrapper.scrollLeft > 2);
+    wrapper.classList.toggle('is-vertically-scrolled', wrapper.scrollTop > 2);
     if (!state.uiState.swipeHintSeen && wrapper.scrollLeft > 8) {
       state.uiState.swipeHintSeen = true;
       wrapper.closest('.results-section')?.querySelector('.rota-swipe-guidance')?.classList.add('hidden');
@@ -797,6 +912,77 @@ function attachEvents() {
   }, true);
 
   document.addEventListener('click', (event) => {
+    if (event.target.closest('[data-toast-dismiss]')) {
+      event.target.closest('.app-toast')?.remove();
+      return;
+    }
+    if (event.target.closest('[data-empty-generate]')) {
+      generateRota({ forceBestAvailable: state.uiState.readiness?.status === 'blocked' });
+      return;
+    }
+    const contextOpen = event.target.closest('[data-open-context]');
+    if (contextOpen) {
+      openContextPanel(state, contextOpen.dataset.openContext);
+      return;
+    }
+    if (event.target.closest('[data-context-close]')) {
+      if (!closeContextPanel(state)) showToast('Apply or cancel the pending edit first', 'warning');
+      return;
+    }
+    const issueStep = event.target.closest('[data-issue-step]');
+    if (issueStep) {
+      const issue = navigateIssue(state, issueStep.dataset.issueStep);
+      if (issue) {
+        renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
+        window.requestAnimationFrame(() => emphasizeIssueCell(issue));
+      }
+      return;
+    }
+    const issueLink = event.target.closest('[data-navigate-issue]');
+    if (issueLink) {
+      const issue = navigateIssue(state, issueLink.dataset.navigateIssue);
+      closeContextPanel(state, { force: true });
+      renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
+      window.requestAnimationFrame(() => emphasizeIssueCell(issue));
+      return;
+    }
+    if (event.target.closest('[data-reset-view]')) {
+      resetView(state);
+      renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
+      showToast('View reset');
+      return;
+    }
+    if (event.target.closest('[data-toggle-fullscreen]')) {
+      const active = toggleFullScreen(state);
+      renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
+      showToast(active ? 'Full-screen rota opened' : 'Full-screen rota closed');
+      return;
+    }
+    if (event.target.closest('[data-start-comparison]')) {
+      const current = state.uiState.selectedResultWeekIndex || 0;
+      state.uiState.comparisonState = {
+        active: true,
+        weekA: current,
+        weekB: current < state.generatedRotas.latestResult.weeks.length - 1 ? current + 1 : current - 1
+      };
+      renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
+      return;
+    }
+    if (event.target.closest('[data-exit-comparison]')) {
+      state.uiState.comparisonState.active = false;
+      renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
+      return;
+    }
+    const comparisonFinding = event.target.closest('[data-comparison-finding]');
+    if (comparisonFinding) {
+      document.querySelectorAll('.comparison-match').forEach((element) => element.classList.remove('comparison-match'));
+      document.querySelectorAll(`[data-chef-presence-trigger]`).forEach((element) => {
+        if (element.textContent.trim() === comparisonFinding.dataset.comparisonFinding) {
+          element.closest('[data-rota-cell]')?.classList.add('comparison-match');
+        }
+      });
+      return;
+    }
     const issueToggle = event.target.closest('[data-issue-toggle]');
     if (issueToggle) {
       if (suppressWarningClick) {
@@ -824,8 +1010,6 @@ function attachEvents() {
     closeIssuePopover();
 
     if (event.target.closest('[data-generate-best-available]')) { generateRota({ forceBestAvailable: true }); return; }
-    if (event.target.closest('[data-sticky-generate]')) { generateRota({ forceBestAvailable: state.uiState.readiness?.status === 'blocked' }); return; }
-
     if (event.target.closest('[data-return-to-setup]')) {
       const setup = requireElement('weekStart');
       setup.focus();
@@ -857,10 +1041,11 @@ function attachEvents() {
 
     const removeAvailability = event.target.closest('button[data-remove]');
     if (removeAvailability) {
+      const before = beginDataAction();
       removeAvailabilityEntry(Number(removeAvailability.getAttribute('data-remove')));
       renderAvailabilityTable();
       renderResultsPanel();
-      persistState();
+      finishDataAction('Availability entry removed', before, 'Availability entry removed');
       return;
     }
 
@@ -872,10 +1057,11 @@ function attachEvents() {
 
     const removeReqBtn = event.target.closest('button[data-remove-req]');
     if (removeReqBtn) {
+      const before = beginDataAction();
       removeAdditionalChefRequest(removeReqBtn.getAttribute('data-remove-req'));
       renderAdditionalChefRequirements();
       renderResultsPanel();
-      persistState();
+      finishDataAction('Additional chef request removed', before, 'Staffing request removed');
       return;
     }
 
@@ -884,6 +1070,7 @@ function attachEvents() {
       document.querySelector('[data-toolbar-more]')?.setAttribute('aria-expanded', 'false');
       state.uiState.selectedResultWeekIndex = Number.parseInt(resultsTab.getAttribute('data-results-week-index'), 10) || 0;
       renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
+      saveAppState(state);
       return;
     }
     const dayStep = event.target.closest('[data-day-step]');
@@ -921,7 +1108,7 @@ function attachEvents() {
       const menu = document.getElementById('toolbarMoreMenu');
       const opening = moreButton.getAttribute('aria-expanded') !== 'true';
       moreButton.setAttribute('aria-expanded', String(opening)); menu.hidden = !opening;
-      if (opening) menu.innerHTML = `<button type="button" data-copy-week>${icon('copy')} Copy week</button><button type="button" data-regenerate>${icon('regenerate')} Regenerate</button><button type="button" data-reset-manual-all ${Object.keys(state.manualEditing?.edits || {}).length ? '' : 'disabled'}>${icon('reset')} Reset manual changes</button>`;
+      if (opening) menu.innerHTML = `<button type="button" data-copy-week>${icon('copy')} Copy week</button><button type="button" data-regenerate>${icon('regenerate')} Generate fresh rota</button><button type="button" data-reset-manual-all ${Object.keys(state.manualEditing?.edits || {}).length ? '' : 'disabled'}>${icon('reset')} Reset manual changes</button>`;
       return;
     }
     if (!event.target.closest('.toolbar-more')) { const menu = document.getElementById('toolbarMoreMenu'); if (menu) menu.hidden = true; document.querySelector('[data-toolbar-more]')?.setAttribute('aria-expanded', 'false'); }
@@ -943,12 +1130,22 @@ function attachEvents() {
     }
 
     const editAssignment = event.target.closest('[data-edit-assignment]');
-    if (editAssignment) { openAssignmentSelector(editAssignment); return; }
+    if (editAssignment) {
+      state.uiState.selectedCell = {
+        weekIndex: Number(editAssignment.dataset.weekIndex),
+        date: editAssignment.dataset.date,
+        section: editAssignment.dataset.section
+      };
+      if (state.uiState.editMode) openAssignmentSelector(editAssignment);
+      else openContextPanel(state, 'assignment', state.uiState.selectedCell);
+      return;
+    }
     if (event.target.closest('[data-close-chef-selector]')) { closeChefSelector(); return; }
     const conflictAction = event.target.closest('[data-conflict-action]');
     if (conflictAction) { updateConflictPreview(conflictAction.closest('.chef-selector')); return; }
     const applyConflict = event.target.closest('[data-apply-conflict]');
     if (applyConflict) {
+      const before = beginDataAction();
       const selector = applyConflict.closest('.chef-selector');
       const returnFocus = activeAssignmentTrigger;
       const result = applyManualAssignment({
@@ -964,8 +1161,9 @@ function attachEvents() {
       const { section, date, conflictChef: chef } = selector.dataset;
       closeChefSelector({ restoreFocus: false });
       if (result.applied) {
+        recordHistory(state, result.description || 'Manual assignment changed', before);
         refreshEditedRota(`${result.description}. Validation and totals updated.`);
-        showUndoToast(result.description);
+        showToast('Change applied', 'success');
       }
       else announce(result.reason || 'No change made.');
       returnFocus?.focus();
@@ -973,6 +1171,7 @@ function attachEvents() {
     }
     const selectedChef = event.target.closest('[data-select-chef]');
     if (selectedChef) {
+      const before = beginDataAction();
       const selector = selectedChef.closest('.chef-selector');
       const weekIndex = Number(selector.dataset.weekIndex);
       const { date, section } = selector.dataset;
@@ -988,17 +1187,40 @@ function attachEvents() {
       const result = applyManualAssignment({ state, overallResult: state.generatedRotas.latestResult, weekIndex, date, section, chef, floatAction });
       closeChefSelector({ restoreFocus: false });
       if (result.applied) {
+        recordHistory(state, result.description || 'Manual assignment changed', before);
         const actionMessage = section === 'Float'
           ? (floatAction === 'remove' ? `${chef} removed from Float` : (chef ? `${chef} added to Float` : 'Float assignments cleared'))
           : `${section} changed to ${chef || 'None'}`;
         refreshEditedRota(`${actionMessage} on ${date}. Validation and totals updated.`);
-        showUndoToast(result.description || actionMessage);
+        showToast('Change applied', 'success');
       }
       else announce(result.cancelled ? 'Assignment change cancelled.' : result.reason || 'No change made.');
       return;
     }
-    if (event.target.closest('[data-manual-undo]')) { if (undoManualEdit(state, state.generatedRotas.latestResult)) refreshEditedRota('Manual change undone.'); return; }
-    if (event.target.closest('[data-manual-redo]')) { if (redoManualEdit(state, state.generatedRotas.latestResult)) refreshEditedRota('Manual change redone.'); return; }
+    if (event.target.closest('[data-global-undo]')) {
+      const description = undoDataChange(state);
+      if (description) {
+        refreshAll();
+        persistState();
+        showToast(`${description} undone`);
+      } else if (undoManualEdit(state, state.generatedRotas.latestResult)) {
+        refreshEditedRota('Manual change undone.');
+        showToast('Assignment change undone');
+      }
+      return;
+    }
+    if (event.target.closest('[data-global-redo]')) {
+      const description = redoDataChange(state);
+      if (description) {
+        refreshAll();
+        persistState();
+        showToast(`${description} redone`);
+      } else if (redoManualEdit(state, state.generatedRotas.latestResult)) {
+        refreshEditedRota('Manual change redone.');
+        showToast('Assignment change redone');
+      }
+      return;
+    }
     if (event.target.closest('[data-reset-manual-all]')) {
       openResetManualConfirmation(event.target.closest('[data-reset-manual-all]'));
       return;
@@ -1021,6 +1243,60 @@ function attachEvents() {
   });
 
   document.addEventListener('keydown', (event) => {
+    const typing = event.target.matches?.('input,select,textarea,[contenteditable="true"]');
+    const command = event.metaKey || event.ctrlKey;
+    if (!typing && command && event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      const description = event.shiftKey ? redoDataChange(state) : undoDataChange(state);
+      if (description) {
+        refreshAll();
+        persistState();
+        showToast(`${description} ${event.shiftKey ? 'redone' : 'undone'}`);
+      }
+      return;
+    }
+    if (!typing && event.ctrlKey && event.key.toLowerCase() === 'y') {
+      event.preventDefault();
+      const description = redoDataChange(state);
+      if (description) {
+        refreshAll();
+        persistState();
+        showToast(`${description} redone`);
+      }
+      return;
+    }
+    if (!typing && !command && !event.altKey && ['[', ']', 'ArrowLeft', 'ArrowRight'].includes(event.key) && state.generatedRotas.latestResult?.weeks?.length > 1) {
+      const direction = ['[', 'ArrowLeft'].includes(event.key) ? -1 : 1;
+      const current = state.uiState.selectedResultWeekIndex || 0;
+      const next = Math.max(0, Math.min(state.generatedRotas.latestResult.weeks.length - 1, current + direction));
+      if (next !== current) {
+        event.preventDefault();
+        state.uiState.selectedResultWeekIndex = next;
+        renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
+        saveAppState(state);
+      }
+      return;
+    }
+    if (!typing && !command && !event.altKey && ['e', 'E'].includes(event.key) && state.uiState.selectedCell) {
+      const selected = state.uiState.selectedCell;
+      const assignment = document.querySelector(`[data-edit-assignment][data-week-index="${selected.weekIndex}"][data-date="${selected.date}"][data-section="${CSS.escape(selected.section)}"]`);
+      if (assignment) {
+        event.preventDefault();
+        state.uiState.editMode = true;
+        openAssignmentSelector(assignment);
+      }
+      return;
+    }
+    if (!typing && !command && !event.altKey && ['u', 'U'].includes(event.key)) {
+      const description = undoDataChange(state);
+      if (description) {
+        event.preventDefault();
+        refreshAll();
+        persistState();
+        showToast(`${description} undone`);
+      }
+      return;
+    }
     const issueButton = event.target.closest?.('[data-issue-toggle]');
     if (issueButton && (event.key === 'Enter' || event.key === ' ')) {
       event.preventDefault();
@@ -1057,6 +1333,16 @@ function attachEvents() {
     const moreMenu = document.getElementById('toolbarMoreMenu');
     if (moreMenu && !moreMenu.hidden) { moreMenu.hidden = true; const button = document.querySelector('[data-toolbar-more]'); button?.setAttribute('aria-expanded', 'false'); button?.focus(); return; }
     if (document.querySelector('.chef-selector')) { closeChefSelector(); return; }
+    if (state.uiState.activePanel) {
+      if (closeContextPanel(state)) return;
+      showToast('Apply or cancel the pending edit first', 'warning');
+      return;
+    }
+    if (state.uiState.fullScreenState) {
+      toggleFullScreen(state, false);
+      renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
+      return;
+    }
     if (document.getElementById('additionalChefModal')?.classList.contains('open')) {
       closeAdditionalChefModal();
       return;
@@ -1075,6 +1361,8 @@ function publishCurrentWeekIfNeeded() {
 
 export function bootstrapApp() {
   loadInitialState();
+  ensureCoordinatedUiState(state);
+  updateDocumentUiState(state);
   initChefPresence({ getState });
   attachEvents();
   refreshAll();

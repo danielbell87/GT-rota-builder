@@ -19,6 +19,12 @@ import { buildRotaDiagnostics, checkRotaFeasibility, summarizeDiagnostics } from
 import { getGtChefNamesForDay, syncRotaGtChefs } from './rota-model.js?v=20260719zf';
 import { buildContextualScore, combineContextualScores } from './score-context.js?v=20260719zf';
 import { getWeekLifecycle, icon } from './ui.js?v=20260719zf';
+import {
+  collectIssues,
+  comparisonFindings,
+  ensureCoordinatedUiState,
+  saveLabel
+} from './ui-upgrade.js?v=20260720ui';
 
 function getRequiredElement(id) {
   const element = document.getElementById(id);
@@ -276,13 +282,6 @@ export function renderReadinessPanel() {
     </div>` : ''}
     <p class="small">Passing this check does not guarantee that the full multi-week optimisation will find a solution.</p>
   </section>`;
-  const button = document.getElementById('generateRotaBtn');
-  if (button) button.disabled = false;
-  const stickyButton = document.querySelector('[data-sticky-generate]');
-  const stickyLabel = document.getElementById('stickyGenerateReadiness');
-  const actionLabel = readiness.status === 'blocked' ? 'Generate best available' : 'Generate rota';
-  if (stickyButton) stickyButton.textContent = actionLabel;
-  if (stickyLabel) stickyLabel.textContent = readiness.status === 'ready' ? 'Ready to generate' : readiness.status === 'blocked' ? `${readiness.errors.length} feasibility issue${readiness.errors.length === 1 ? '' : 's'}` : `${readiness.warnings.length} setup warning${readiness.warnings.length === 1 ? '' : 's'}`;
   return readiness;
 }
 
@@ -298,6 +297,89 @@ function renderResultsHeader(numberOfWeeks, weekStart, lifecycle = 'Generated', 
         <p class="results-subtitle">${escapeHtml(range)}</p>
       </div>
     </div>`;
+}
+
+function renderCompactStatusBar(state, overallResult, weekViews, activeWeekIndex) {
+  const ui = ensureCoordinatedUiState(state);
+  const active = weekViews[activeWeekIndex];
+  const issues = collectIssues(state);
+  const hard = issues.filter((item) => item.severity === 'error').length;
+  const warnings = issues.length - hard;
+  const score = Math.round(active?.contextualScore?.percentage ?? 0);
+  const validity = hard ? 'Rule breaks' : (warnings ? 'Valid with compromises' : 'Valid');
+  const validityTone = hard ? 'error' : (warnings ? 'warning' : 'success');
+  const saveTone = ui.saveState === 'failed' ? 'error' : (ui.saveState === 'unsaved' ? 'warning' : 'neutral');
+  const currentIssue = issues.length ? Math.max(0, issues.findIndex((item) => item.id === ui.issueNavigationState?.issueId)) + 1 : 0;
+  return `<section class="rota-status-bar print-hidden" aria-label="Rota status and navigation">
+    <div class="status-primary">
+      <button type="button" class="status-segment ${validityTone}" data-open-context="issues"><span class="status-icon" aria-hidden="true">${hard ? '!' : warnings ? '△' : '✓'}</span><strong>${validity}</strong></button>
+      <button type="button" class="status-segment neutral" data-open-context="score"><span aria-hidden="true">◷</span><strong>${score}/100</strong><span class="segment-label">Score</span></button>
+      ${warnings ? `<button type="button" class="status-segment warning" data-open-context="compromise"><strong>${warnings}</strong><span>${warnings === 1 ? 'compromise' : 'compromises'}</span></button>` : ''}
+      ${hard ? `<button type="button" class="status-segment error" data-open-context="issues"><strong>${hard}</strong><span>hard ${hard === 1 ? 'failure' : 'failures'}</span></button>` : ''}
+      <button type="button" class="status-segment ${saveTone}" data-open-context="save"><span class="save-dot" aria-hidden="true"></span><strong>${saveLabel(ui.saveState)}</strong></button>
+      <span class="status-segment neutral week-context">Week ${activeWeekIndex + 1} of ${overallResult.numberOfWeeks}${Object.keys(state.manualEditing?.edits || {}).length ? ' · Manual edits' : ''}</span>
+    </div>
+    <div class="issue-navigator" aria-label="Issue navigation">
+      <button type="button" class="issue-count" data-open-context="issues" ${issues.length ? '' : 'disabled'}>${hard ? `${hard} hard · ` : ''}${warnings} warning${warnings === 1 ? '' : 's'}${currentIssue ? ` · ${currentIssue}/${issues.length}` : ''}</button>
+      <button type="button" class="icon-button secondary" data-issue-step="previous" ${issues.length ? '' : 'disabled'} aria-label="Previous issue">‹</button>
+      <button type="button" class="icon-button secondary" data-issue-step="next" ${issues.length ? '' : 'disabled'} aria-label="Next issue">›</button>
+    </div>
+  </section>`;
+}
+
+function renderLegend(state) {
+  const ui = ensureCoordinatedUiState(state);
+  const hasManual = !!state.uiState.editMode || Object.keys(state.manualEditing?.edits || {}).length > 0;
+  return `<details class="compact-legend print-hidden" data-summary-key="legend" ${ui.expandedSections.legend ? 'open' : ''}>
+    <summary>Legend</summary>
+    <div class="legend-items">
+      <span><i class="legend-swatch hard"></i>Hard rule break</span>
+      <span><i class="legend-swatch warning"></i>Warning</span>
+      <span><i class="legend-swatch leave"></i>Annual leave</span>
+      <span><i class="legend-swatch unavailable"></i>Unavailable</span>
+      <span><i class="legend-swatch float"></i>Float/shared assignment</span>
+      ${hasManual ? '<span><i class="legend-swatch manual"></i>Manual edit</span><span><i class="legend-swatch rating"></i>Suitability rating</span>' : ''}
+      <span><i class="legend-swatch presence"></i>Chef Presence highlight</span>
+    </div>
+  </details>`;
+}
+
+function renderComparison(state, weekViews) {
+  const comparison = ensureCoordinatedUiState(state).comparisonState;
+  if (!comparison.active || weekViews.length < 2) return '';
+  const a = Math.max(0, Math.min(weekViews.length - 1, comparison.weekA || 0));
+  const b = Math.max(0, Math.min(weekViews.length - 1, comparison.weekB || 1));
+  const options = weekViews.map((view, index) => `<option value="${index}">Week ${index + 1} · ${escapeHtml(formatCompactWeekRange(view.week.weekStart))}</option>`).join('');
+  const findings = comparisonFindings(state, a, b);
+  return `<section class="comparison-mode print-hidden" aria-labelledby="comparisonTitle">
+    <header><div><span class="panel-eyebrow">Analysis view</span><h3 id="comparisonTitle">Compare weeks</h3></div><button type="button" class="secondary" data-exit-comparison>Exit comparison</button></header>
+    <div class="comparison-controls">
+      <label>Week A<select data-compare-week="a">${options.replace(`value="${a}"`, `value="${a}" selected`)}</select></label>
+      <span aria-hidden="true">↔</span>
+      <label>Week B<select data-compare-week="b">${options.replace(`value="${b}"`, `value="${b}" selected`)}</select></label>
+    </div>
+    <div class="comparison-grid">${renderWeekPanel(weekViews[a], { showStatus: false, comparison: true })}${renderWeekPanel(weekViews[b], { showStatus: false, comparison: true })}</div>
+    <aside class="comparison-summary"><h4>Comparison findings</h4>${findings.length
+      ? `<ul>${findings.map((finding) => `<li><button type="button" data-comparison-finding="${escapeHtml(finding.chef)}">${escapeHtml(finding.message)}</button></li>`).join('')}</ul>`
+      : '<p>No repeated patterns need attention in this pair.</p>'}</aside>
+  </section>`;
+}
+
+function renderEmptyRotaState(state, readiness) {
+  const horizon = getPlanningHorizon(state.weeklyInputs.weekStart, state.weeklyInputs.numWeeks);
+  const availability = state.weeklyInputs.availability || [];
+  const leave = availability.filter((item) => item.type === 'Annual Leave').length;
+  const unavailable = availability.filter((item) => item.type === 'Unavailable').length;
+  const additions = state.weeklyInputs.additionalChefRequirements || [];
+  const blocked = readiness?.status === 'blocked';
+  return `<section class="rota-empty-state" aria-labelledby="emptyRotaTitle">
+    <div class="empty-state-icon" aria-hidden="true">▦</div>
+    <div><span class="panel-eyebrow">${blocked ? 'Setup needs attention' : 'Setup complete'}</span><h3 id="emptyRotaTitle">${blocked ? 'Review before generating' : 'Ready to generate'}</h3>
+    <p>${state.staff.length} chefs configured · ${state.weeklyInputs.numWeeks} week${state.weeklyInputs.numWeeks === 1 ? '' : 's'} · ${formatDate(horizon.start)}–${formatDate(horizon.end)}</p>
+    <div class="readiness-chips"><span>${leave} leave ${leave === 1 ? 'entry' : 'entries'}</span><span>${unavailable} unavailable ${unavailable === 1 ? 'request' : 'requests'}</span><span>${additions.length} staffing ${additions.length === 1 ? 'request' : 'requests'}</span></div>
+    ${blocked ? '<p class="empty-guidance">Feasibility checks found items to review. Use the setup links above, or generate the best available rota.</p>' : ''}
+    <button type="button" data-empty-generate>${blocked ? 'Generate best available rota' : 'Generate rota'}</button></div>
+  </section>`;
 }
 
 function renderOverallStatusCard(overallResult, weekViews) {
@@ -967,7 +1049,7 @@ function renderRotaTable(solveResult, view) {
             <span>${chefNames}</span>${edited ? '<span class="manual-dot" aria-hidden="true">•</span><span class="visually-hidden">Manually edited</span>' : ''}
           </button>`
         : `<span class="assignment-static" aria-label="${matches.length ? escapeHtml(`${section}: ${displayedChefs}`) : 'No assignment required'}">${chefNames}</span>`;
-      return `<td ${getCellPresenceAttributes(matches, state, day, weekIndex)} class="rota-assignment-cell${edited ? ' manually-edited' : ''}${affected ? ' hard-rule-affected' : ''}">
+      return `<td ${getCellPresenceAttributes(matches, state, day, weekIndex)} data-section="${escapeHtml(section)}" data-cell-id="${escapeHtml(cellKey(solveResult.weekStart, day.date, section))}" class="rota-assignment-cell${edited ? ' manually-edited' : ''}${affected ? ' hard-rule-affected' : ''}">
         ${content}
         ${renderIssueDisclosure(failures, solveResult, state, issueId, `Rule issue for ${displayedChefs || 'unfilled assignment'} on ${section}, ${day.dayName} ${formatDate(day.date)}`)}
       </td>`;
@@ -1081,7 +1163,7 @@ export function renderWeekPanel(view, options = {}) {
   const showHeader = options.showHeader !== false;
   const showStatus = options.showStatus !== false;
   return `
-    <section class="week-panel ${options.hidden ? 'hidden' : ''}" data-week-panel="${view.week.weekIndex}">
+    <section class="week-panel ${options.hidden ? 'hidden' : ''}${getState().uiState.editMode ? ' editing-active-week' : ''}${options.comparison ? ' comparison-week' : ''}" data-week-panel="${view.week.weekIndex}" data-week-key="${escapeHtml(view.week.weekStart)}">
       ${showHeader ? `<div class="week-panel-header">
         <h4 class="multi-week-heading">${escapeHtml(`Week ${view.week.weekNumber}`)}</h4>
         <p class="results-subtitle">${escapeHtml(`${formatWeekCommencing(view.week.weekStart)} – ${getWeekEnd(view.week.weekStart)}`)}</p>
@@ -1108,6 +1190,13 @@ export function renderResultsPanel(options = {}) {
 
   let overallResult = options.overallResult || null;
   const readiness = renderReadinessPanel();
+  if (!overallResult && options.showEmpty) {
+    state.generatedRotas.current = null;
+    container.innerHTML = renderEmptyRotaState(state, readiness);
+    const printButton = document.getElementById('printRotaBtn');
+    if (printButton) printButton.disabled = true;
+    return null;
+  }
   if (!overallResult && readiness?.status === 'blocked' && !options.forceBestAvailable) {
     state.generatedRotas.current = null;
     const printButton = document.getElementById('printRotaBtn');
@@ -1168,12 +1257,17 @@ export function renderResultsPanel(options = {}) {
     softFailures: view.softFailures
   }));
   state.uiState.softScore = activeView?.softScore || null;
+  const statusBar = renderCompactStatusBar(state, overallResult, weekViews, activeWeekIndex);
+  const legend = renderLegend(state);
+  const comparison = renderComparison(state, weekViews);
 
   if (overallResult.numberOfWeeks === 1) {
     container.innerHTML = `
       <div class="results-layout">
         ${renderResultsHeader(1, inputs.weekStart, getWeekLifecycle(state, activeWeekIndex), activeView?.visibleHardFailures.length || 0)}
+        ${statusBar}
         ${renderManualToolbar(state)}
+        ${legend}
         ${activeView ? renderWeekPanel(activeView, { showHeader: false, showStatus: true }) : ''}
       </div>`;
   } else {
@@ -1188,10 +1282,12 @@ export function renderResultsPanel(options = {}) {
     container.innerHTML = `
       <div class="results-layout">
         ${renderResultsHeader(overallResult.numberOfWeeks, inputs.weekStart, getWeekLifecycle(state, activeWeekIndex), activeView?.visibleHardFailures.length || 0)}
+        ${statusBar}
         ${renderManualToolbar(state)}
+        ${legend}
         <div class="desktop-only week-tabs print-hidden" role="tablist">${tabs}</div>
         <label class="mobile-only print-hidden">Week<select id="resultsWeekSelect">${dropdownOptions}</select></label>
-        <div class="week-panels">${panels}</div>
+        ${comparison || `<div class="week-panels">${panels}</div>`}
       </div>`;
   }
 
@@ -1235,11 +1331,16 @@ function renderManualToolbar(state) {
   const manual = state.manualEditing || {};
   const hasEdits = Object.keys(manual.edits || {}).length > 0;
   return `<div class="results-toolbar print-hidden" role="toolbar" aria-label="Rota results actions">
-    <button type="button" class="secondary" data-toggle-edit>${icon('edit')}<span>Edit rota</span></button>
-    <button type="button" class="secondary" data-manual-undo ${manual.undo?.length ? '' : 'disabled'}>${icon('undo')}<span>Undo</span></button>
+    <button type="button" class="${state.uiState.editMode ? 'editing-control' : 'secondary'}" data-toggle-edit aria-pressed="${state.uiState.editMode ? 'true' : 'false'}">${icon('edit')}<span>${state.uiState.editMode ? 'Editing' : 'Edit rota'}</span></button>
+    <button type="button" class="secondary" data-global-undo ${(state.uiState.undoStack?.length || manual.undo?.length) ? '' : 'disabled'}>${icon('undo')}<span>Undo</span></button>
+    <button type="button" class="secondary" data-global-redo ${(state.uiState.redoStack?.length || manual.redo?.length) ? '' : 'disabled'}><span>Redo</span></button>
+    <button type="button" class="secondary" data-start-comparison ${state.generatedRotas.latestResult?.weeks?.length > 1 ? '' : 'disabled'}><span>Compare weeks</span></button>
+    <label class="density-control"><span>Density</span><select data-view-density aria-label="Rota density"><option value="comfortable" ${state.uiState.viewDensity === 'comfortable' ? 'selected' : ''}>Comfortable</option><option value="compact" ${state.uiState.viewDensity === 'compact' ? 'selected' : ''}>Compact</option></select></label>
+    <button type="button" class="secondary" data-toggle-fullscreen><span>${state.uiState.fullScreenState ? 'Exit full screen' : 'Full screen'}</span></button>
+    <button type="button" class="secondary" data-reset-view><span>Reset view</span></button>
     <button type="button" data-toolbar-print>${icon('print')}<span>Print / PDF</span></button>
     <button type="button" class="secondary toolbar-secondary" data-copy-week>${icon('copy')}<span>Copy week</span></button>
-    <button type="button" class="secondary toolbar-secondary" data-regenerate>${icon('regenerate')}<span>Regenerate</span></button>
+    <button type="button" class="secondary toolbar-secondary" data-regenerate>${icon('regenerate')}<span>Generate fresh rota</span></button>
     <button type="button" class="secondary toolbar-secondary" data-reset-manual-all ${hasEdits ? '' : 'disabled'}>${icon('reset')}<span>Reset manual changes</span></button>
     <div class="toolbar-more"><button type="button" class="secondary" data-toolbar-more aria-expanded="false" aria-controls="toolbarMoreMenu">${icon('more')}<span>More</span></button><div id="toolbarMoreMenu" class="toolbar-more-menu" hidden></div></div>
   </div>`;
@@ -1332,8 +1433,9 @@ export function renderAll() {
   renderAvailabilityTable();
   renderReadinessPanel();
   const state = getState();
+  ensureCoordinatedUiState(state);
   const saved = state.generatedRotas.latestResult;
   const savedStartsHere = saved?.weeks?.[0]?.weekStart === state.weeklyInputs.weekStart;
   const savedWeekCountMatches = saved?.numberOfWeeks === (state.weeklyInputs.numWeeks || 1);
-  renderResultsPanel(savedStartsHere && savedWeekCountMatches ? { overallResult: saved } : {});
+  renderResultsPanel(savedStartsHere && savedWeekCountMatches ? { overallResult: saved } : { showEmpty: true });
 }

@@ -256,9 +256,10 @@ export async function runUiTests(assert) {
     assert(canonicalFrame.contentWindow.__gtRotaBootstrap?.status === 'ok', 'UI: canonical URL loads without console errors');
 
     const doc = canonicalFrame.contentDocument;
-    assert(!doc.getElementById('printRotaBtn').disabled, 'UI: print button is available when a successful rota exists');
+    assert(doc.getElementById('printRotaBtn').disabled && !!doc.querySelector('[data-empty-generate]'), 'UI: fresh application shows a useful readiness state and keeps print unavailable before generation');
     await setFieldValue(doc.getElementById('weekStart'), '2026-07-13');
     await setFieldValue(doc.getElementById('numWeeks'), '1');
+    doc.querySelector('[data-empty-generate]')?.click();
     await waitFor(() => (
       canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.weekStarts?.[0] === '2026-07-13'
       && canonicalFrame.contentWindow.__gtRotaBootstrap?.lastRender?.numberOfWeeks === 1
@@ -372,7 +373,7 @@ export async function runUiTests(assert) {
     if (multiFloatDay) {
       const floatButton = getWeekPanel(doc, multiFloatDay.weekIndex)
         ?.querySelector(`[data-edit-assignment][data-date="${multiFloatDay.day.date}"][data-section="Float"]`);
-      floatButton?.click();
+      floatButton?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
       await waitFor(() => doc.querySelector('.chef-selector[data-section="Float"]'));
       const floatSelectorText = normalizeText(doc.querySelector('.chef-selector[data-section="Float"]').textContent);
       const assignedFloatChefs = multiFloatDay.day.assignments.filter((assignment) => assignment.section === 'Float').map((assignment) => assignment.chef);

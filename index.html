@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>GT Rota Builder</title>
-  <link rel="stylesheet" href="styles.css?v=20260720cp" />
+  <link rel="stylesheet" href="styles.css?v=20260720ui" />
 </head>
 <body>
   <div class="wrap">
@@ -89,10 +89,9 @@
     <div class="panel generation-panel" id="generateSetup" tabindex="-1">
       <div class="generation-heading">
         <div>
-          <h2>Generate rota</h2>
-          <p class="small my-8">Check the current inputs, then build the selected one-to-eight-week rota.</p>
+          <h2>Generation readiness</h2>
+          <p class="small my-8">Readiness updates automatically as the rota inputs change.</p>
         </div>
-        <button id="generateRotaBtn" type="button">Generate rota</button>
       </div>
       <div id="readiness" aria-live="polite" aria-atomic="true"></div>
       <div id="generationProgress" class="generation-progress hidden" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -112,7 +111,8 @@
     </div>
   </div>
 
-  <div id="stickyGenerate" class="sticky-generate print-hidden" aria-label="Generate rota controls"><span id="stickyGenerateReadiness">Checking setup…</span><button type="button" data-sticky-generate>Generate rota</button></div>
+  <div id="contextPanel" class="context-panel print-hidden" aria-hidden="true"></div>
+  <div id="toastRegion" class="toast-region print-hidden" aria-live="polite" aria-atomic="true"></div>
 
   <div id="chefModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="chefModalTitle" aria-describedby="chefModalDescription" aria-hidden="true">
     <div class="modal-card chef-modal-card">
@@ -226,6 +226,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260720cp"></script>
+  <script type="module" src="js/app.js?v=20260720ui"></script>
 </body>
 </html>

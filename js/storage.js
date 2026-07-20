@@ -227,17 +227,29 @@ export function loadAppState() {
 export function saveAppState(state) {
   try {
     normalizeGeneratedRotas(state.generatedRotas);
+    const persistedUiState = {
+      ...state.uiState,
+      activePanel: null,
+      activePanelContext: null,
+      manualEditState: null,
+      comparisonState: { ...(state.uiState?.comparisonState || {}), active: false },
+      fullScreenState: false,
+      undoStack: [],
+      redoStack: [],
+      toastQueue: []
+    };
     localStorage.setItem(STORAGE_KEYS.appState, JSON.stringify({
       staff: normalizeStaffRecords(state.staff),
       settings: state.settings,
       weeklyInputs: normalizeWeeklyInputsShape(state.weeklyInputs, state.weeklyInputs.weekStart),
       generatedRotas: state.generatedRotas,
       history: state.history,
-      uiState: state.uiState,
+      uiState: persistedUiState,
       manualEditing: normalizeManualEditing(state.manualEditing)
     }));
+    return true;
   } catch {
-    // Ignore write failures; persistence should be best-effort.
+    return false;
   }
 }
 
