@@ -1,5 +1,6 @@
 import { DISPLAY_SECTIONS } from './constants.js';
 import { formatDate, parseLocalDate } from './utils.js';
+import { composeDateNotes } from './rota-notes.js?v=20260720notes';
 
 export function escapePrintHtml(value) {
   return String(value ?? '')
@@ -39,6 +40,7 @@ export function buildPrintModel(overallResult) {
       days: week.rota.map((day) => ({
         dayName: day.dayName,
         date: day.date,
+        notes: composeDateNotes(day.date, week.inputs || {}),
         issues: (week.hardValidation || []).filter((issue) => issue.passed === false && issue.scope === 'day' && issue.date === day.date).map((issue) => issue.message),
         sections: Object.fromEntries(DISPLAY_SECTIONS.map((section) => [
           section,
@@ -84,6 +86,7 @@ function renderPrintWeek(week, sections, isLast) {
         return `<td class="${issues.length ? 'print-cell-error' : ''}"${errorLabel}>${issues.length ? '<strong class="print-error-icon" aria-hidden="true">!</strong>' : ''}${names.length ? names.map(escapePrintHtml).join('<br>') : ''}</td>`;
       }).join('')}
     </tr>`).join('');
+  const notesRow = `<tr class="print-notes-row"><th scope="row">Notes</th>${week.days.map((day) => `<td>${(day.notes || []).map((line) => `<span>${escapePrintHtml(line.text)}</span>`).join('')}</td>`).join('')}</tr>`;
   const warnings = week.warnings.length
     ? `<aside class="warnings"><strong>Warnings</strong><ul>${week.warnings.map((warning) => `<li>${escapePrintHtml(warning)}</li>`).join('')}</ul></aside>`
     : '';
@@ -106,7 +109,7 @@ function renderPrintWeek(week, sections, isLast) {
       ${week.warnings.length ? '<p class="draft-print-warning"><strong>Contains unresolved rule issues</strong></p>' : ''}
       <table>
         <thead><tr><th scope="col">Section</th>${dayHeaders}</tr></thead>
-        <tbody>${rows}</tbody>
+        <tbody>${rows}${notesRow}</tbody>
       </table>
       ${warnings}
       ${decisions}
@@ -145,6 +148,10 @@ export function renderPrintDocument(model) {
     .print-cell-error { border: 0.8mm double #7f1d1d; background: #fff !important; }
     .print-day-error { outline:0.8mm double #fff; outline-offset:-1.2mm; background:#7f1d1d !important; }
     .print-error-icon { display: inline-grid; place-items: center; width: 4.5mm; height: 4.5mm; margin-right: 1.5mm; border: 0.5mm solid #111; border-radius: 50%; font-size: 8pt; line-height: 1; }
+    .print-notes-row { break-inside: avoid; page-break-inside: avoid; }
+    .print-notes-row th, .print-notes-row td { height: auto; min-height: 9mm; padding: 1.5mm; color: #4b5563; font-size: 6.7pt; line-height: 1.25; vertical-align: top; }
+    .print-notes-row td span { display: block; white-space: pre-wrap; }
+    .print-notes-row td span + span { margin-top: 0.8mm; }
     .warnings { margin-top: 4mm; padding: 3mm; border: 0.35mm solid #92400e; background: #fffbeb; font-size: 8pt; break-inside: avoid; page-break-inside: avoid; }
     .draft-print-warning { margin:0 0 3mm; padding:2mm 3mm; border:0.5mm solid #7f1d1d; background:#fff1f2; font-size:9pt; }
     .warnings ul { margin: 1.5mm 0 0; padding-left: 5mm; }

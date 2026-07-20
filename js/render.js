@@ -25,6 +25,7 @@ import {
   ensureCoordinatedUiState,
   saveLabel
 } from './ui-upgrade.js?v=20260720ui';
+import { composeDateNotes } from './rota-notes.js?v=20260720notes';
 
 function getRequiredElement(id) {
   const element = document.getElementById(id);
@@ -905,7 +906,7 @@ export function renderAdditionalChefRequirements() {
     const label = date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
     const chefWord = req.count === 1 ? 'chef' : 'chefs';
     return `<div class="chef-req-row">
-      <span class="chef-req-label">${label} — +${req.count} ${chefWord}</span>
+      <span class="chef-req-label">${label} — +${req.count} ${chefWord}${req.note ? `<small>${escapeHtml(req.note)}</small>` : ''}</span>
       <button class="secondary small-btn" data-edit-req="${req.date}" aria-label="Edit additional chef request for ${label}">Edit</button>
       <button class="danger small-btn" data-remove-req="${req.date}" aria-label="Remove additional chef request for ${label}">Remove</button>
     </div>`;
@@ -1056,13 +1057,24 @@ function renderRotaTable(solveResult, view) {
     }).join('');
     return `<tr><th scope="row">${section}</th>${cells}</tr>`;
   }).join('');
+  const notesCells = solveResult.rota.map((day) => {
+    const lines = composeDateNotes(day.date, {
+      ...(solveResult.inputs || {}),
+      manualDailyNotes: state.weeklyInputs.manualDailyNotes || {}
+    });
+    return `<td class="rota-notes-cell" data-date="${day.date}">
+      <button type="button" class="notes-cell-button" data-edit-daily-note data-empty="${lines.length ? 'false' : 'true'}" data-date="${day.date}" aria-label="Edit note for ${formatDate(day.date)}">
+        ${lines.map((line) => `<span class="rota-note-line rota-note-${line.type}">${escapeHtml(line.text)}</span>`).join('')}
+      </button>
+    </td>`;
+  }).join('');
 
   return `
     <section class="results-section">
       <h4>Rota table</h4>
       <p class="rota-swipe-guidance${state.uiState.swipeHintSeen ? ' hidden' : ''}">Swipe left or right to view the full week.</p>
       <div class="rota-table-scroll has-more-right" role="region" aria-label="Weekly rota table, horizontally scrollable on smaller screens">
-        <table class="rota-table"><thead><tr><th scope="col">Section</th>${dayHeaders}</tr></thead><tbody>${sectionCells}</tbody></table>
+        <table class="rota-table"><thead><tr><th scope="col">Section</th>${dayHeaders}</tr></thead><tbody>${sectionCells}<tr class="rota-notes-row"><th scope="row">Notes</th>${notesCells}</tr></tbody></table>
       </div>
     </section>`;
 }
@@ -1089,6 +1101,15 @@ function renderDayView(solveResult, view) {
     return `<div class="day-rota-row${edited ? ' manually-edited' : ''}${failures.length ? ' hard-rule-affected' : ''}"><strong>${section}</strong><div ${getCellPresenceAttributes(matches, state, day, weekIndex)} class="day-rota-assignment">${content}${renderIssueDisclosure(failures, solveResult, state, issueId, `Rule issue for ${section}, ${day.dayName} ${formatDate(day.date)}`)}</div></div>`;
   }).join('');
   const options = solveResult.rota.map((option, index) => `<option value="${option.date}" ${option.date === day.date ? 'selected' : ''}>${option.dayName} ${formatDate(option.date)}</option>`).join('');
+  const noteLines = composeDateNotes(day.date, {
+    ...(solveResult.inputs || {}),
+    manualDailyNotes: state.weeklyInputs.manualDailyNotes || {}
+  });
+  const notesRow = `<div class="day-rota-row day-notes-row"><strong>Notes</strong><div class="day-rota-assignment">
+    <button type="button" class="notes-cell-button" data-edit-daily-note data-empty="${noteLines.length ? 'false' : 'true'}" data-date="${day.date}" aria-label="Edit note for ${formatDate(day.date)}">
+      ${noteLines.map((line) => `<span class="rota-note-line rota-note-${line.type}">${escapeHtml(line.text)}</span>`).join('')}
+    </button>
+  </div></div>`;
   return `<section class="results-section day-rota-view" data-selected-date="${day.date}" aria-live="polite">
     <div class="day-navigation print-hidden">
       <button type="button" class="secondary" data-day-step="-1" ${dayIndex === 0 ? 'disabled' : ''} aria-label="${dayIndex === 0 ? 'Previous day unavailable, Monday selected' : `Previous day, ${solveResult.rota[dayIndex - 1].dayName}`}">‹</button>
@@ -1097,7 +1118,7 @@ function renderDayView(solveResult, view) {
       <button type="button" class="secondary" data-day-step="1" ${dayIndex === solveResult.rota.length - 1 ? 'disabled' : ''} aria-label="${dayIndex === solveResult.rota.length - 1 ? 'Next day unavailable, Sunday selected' : `Next day, ${solveResult.rota[dayIndex + 1].dayName}`}">›</button>
     </div>
     <h4>${day.dayName} <span class="day-full-date">${formatDate(day.date)}</span></h4>
-    <div class="day-rota-list">${rows}</div>
+    <div class="day-rota-list">${rows}${notesRow}</div>
   </section>`;
 }
 

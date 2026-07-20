@@ -3,6 +3,7 @@ import { normalizeStaffRecords } from './staff.js';
 import { getWeekStartAtOffset, normalizeWeekStart } from './utils.js';
 import { DEFAULT_STAFF } from '../data/default-staff.js';
 import { normalizeOverallRotaResult, syncRotaGtChefs } from './rota-model.js?v=20260719zf';
+import { normalizeManualDailyNotes } from './rota-notes.js';
 
 export const STORAGE_KEYS = {
   schemaVersion: 'gtRota.schemaVersion',
@@ -12,7 +13,7 @@ export const STORAGE_KEYS = {
 
 const LEGACY_MIO_ELIGIBILITY_KEY = 'gtRota.mioEligibilityByChef';
 const LEGACY_STAFF_PROFILES_KEY = 'gtRota.staffProfilesByChef';
-const CURRENT_SCHEMA_VERSION = 16;
+const CURRENT_SCHEMA_VERSION = 17;
 
 function normalizeGeneratedRotas(value) {
   if (!value || typeof value !== 'object') return value;
@@ -73,7 +74,10 @@ function normalizeWeeklyInputsShape(weeklyInputs = {}, fallbackWeekStart = '') {
     status: weeklyInputs.status || 'Draft',
     dailyOverrides: weeklyInputs.dailyOverrides && typeof weeklyInputs.dailyOverrides === 'object' ? weeklyInputs.dailyOverrides : {},
     availability: Array.isArray(weeklyInputs.availability) ? weeklyInputs.availability : [],
-    additionalChefRequirements: Array.isArray(weeklyInputs.additionalChefRequirements) ? weeklyInputs.additionalChefRequirements : []
+    additionalChefRequirements: Array.isArray(weeklyInputs.additionalChefRequirements)
+      ? weeklyInputs.additionalChefRequirements.map((entry) => ({ ...entry, note: typeof entry?.note === 'string' ? entry.note.trim() : '' }))
+      : [],
+    manualDailyNotes: normalizeManualDailyNotes(weeklyInputs.manualDailyNotes)
   };
 }
 
@@ -186,6 +190,10 @@ export function migrateStorageIfNeeded() {
       saved.manualEditing = null;
     }
     if (current < 16) saved.generatedRotas = normalizeGeneratedRotas(saved.generatedRotas);
+    if (current < 17) {
+      const fallbackWeekStart = saved.weeklyInputs?.weekStart || getState().weeklyInputs.weekStart;
+      saved.weeklyInputs = normalizeWeeklyInputsShape(saved.weeklyInputs, fallbackWeekStart);
+    }
     localStorage.setItem(STORAGE_KEYS.appState, JSON.stringify(saved));
   }
 

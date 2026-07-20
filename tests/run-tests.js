@@ -10,6 +10,7 @@ import { runDiagnosticsTests } from './diagnostics.test.js';
 import { runUiPolishTests } from './ui-polish.test.js?v=20260719zf';
 import { runChefPresenceTests } from './chef-presence.test.js?v=20260720cp';
 import { runUiUpgradeTests } from './ui-upgrade.test.js?v=20260720ui';
+import { runRotaNotesTests } from './rota-notes.test.js?v=20260720notes';
 import { SOLVER_ENGINE_VERSION } from '../js/solver.js';
 
 const summaryEl = document.getElementById('testSummary');
@@ -44,6 +45,8 @@ async function runAllTests() {
     await runUiPolishTests(assert);
     summaryEl.textContent = 'Running Chef Presence tests…';
     await runChefPresenceTests(assert);
+    summaryEl.textContent = 'Running rota Notes tests…';
+    await runRotaNotesTests(assert);
     summaryEl.textContent = 'Running UI tests…';
     await runUiTests(assert);
     summaryEl.textContent = 'Running coordinated UI upgrade tests…';

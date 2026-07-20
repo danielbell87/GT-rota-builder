@@ -1,7 +1,7 @@
-import { APP_BUILD_VERSION, CACHE_BUST_VERSION } from './constants.js?v=20260720cp';
-import { getState, getDefaultWeek, resetStateToDefaults, syncCompatibilityViews, setWeekStart, setMioChef, setNumWeeks, setWeeklyMioChef } from './state.js';
-import { normalizeWeekStart, getPlanningHorizon } from './utils.js';
-import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260720ui';
+import { APP_BUILD_VERSION, CACHE_BUST_VERSION } from './constants.js?v=20260720notes';
+import { getState, getDefaultWeek, resetStateToDefaults, syncCompatibilityViews, setWeekStart, setMioChef, setNumWeeks, setWeeklyMioChef, setManualDailyNote } from './state.js';
+import { normalizeWeekStart, getPlanningHorizon, formatDate } from './utils.js';
+import { migrateStorageIfNeeded, loadAppState, saveAppState, saveHistory, loadHistory } from './storage.js?v=20260720notes';
 import { addChef, createBlankChefDraft, createChefDraft, getChefById, removeChef, updateChef } from './staff.js';
 import { addAvailabilityEntry, removeAvailabilityEntry, updateAvailabilityField, addAdditionalChefRequest, updateAdditionalChefRequest, removeAdditionalChefRequest, validateAdditionalChefDate, validateAdditionalChefCount } from './weekly-inputs.js';
 import {
@@ -21,11 +21,11 @@ import {
   showChefModalError,
   setChefRemovalConfirmation,
   syncChefChoiceChipState
-} from './render.js?v=20260720ui';
-import { renderAssignmentConflict, renderAssignmentConflictPreview, renderChefSelector } from './render.js?v=20260720ui';
+} from './render.js?v=20260720notes';
+import { renderAssignmentConflict, renderAssignmentConflictPreview, renderChefSelector } from './render.js?v=20260720notes';
 import { applyManualAssignment, findDuplicateCoreAssignment, getChefConcerns, rateManualAssignmentActions, redoManualEdit, resetAllManualEdits, resetManualCell, undoManualEdit } from './manual-edit.js';
 import { upsertPublishedHistory, upsertPublishedWeeks } from './history.js';
-import { openPrintWindow } from './print.js';
+import { openPrintWindow } from './print.js?v=20260720notes';
 import { createBackup, createBackupFilename, restoreBackup, serializeBackup } from './backup.js';
 import { buildWeekClipboardText, icon } from './ui.js?v=20260719zf';
 import { initChefPresence } from './chef-presence.js?v=20260720cp';
@@ -65,6 +65,8 @@ let undoToastTimer = 0;
 let generationActive = false;
 let generationSlowTimer = 0;
 const fieldHistorySnapshots = new WeakMap();
+let activeManualNoteDate = '';
+let activeManualNoteTrigger = null;
 
 const HOVER_CAPABILITY_QUERY = '(hover: hover) and (pointer: fine)';
 
@@ -529,6 +531,7 @@ function openAdditionalChefModal(editDate) {
   const fmt = (date) => date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   const dateInput = requireElement('additionalChefDate');
   const countInput = requireElement('additionalChefCount');
+  const noteInput = requireElement('additionalChefNote');
   const titleEl = requireElement('additionalChefModalTitle');
   const saveBtn = requireElement('saveAdditionalChefBtn');
 
@@ -542,6 +545,7 @@ function openAdditionalChefModal(editDate) {
     const request = (state.weeklyInputs.additionalChefRequirements || []).find((entry) => entry.date === editDate);
     dateInput.value = editDate;
     countInput.value = request ? request.count : 1;
+    noteInput.value = request?.note || '';
     titleEl.textContent = 'Edit additional chef';
     saveBtn.textContent = 'Save';
   } else {
@@ -559,6 +563,7 @@ function openAdditionalChefModal(editDate) {
     }
     dateInput.value = defaultDate;
     countInput.value = 1;
+    noteInput.value = '';
     titleEl.textContent = 'Add additional chef';
     saveBtn.textContent = 'Add';
   }
@@ -579,6 +584,7 @@ function handleAdditionalChefSave() {
   const wasEditingRequest = !!editingReqDate;
   const dateInput = requireElement('additionalChefDate');
   const countInput = requireElement('additionalChefCount');
+  const noteInput = requireElement('additionalChefNote');
   const errorEl = requireElement('additionalChefError');
 
   const dateErr = validateAdditionalChefDate(dateInput.value, state.weeklyInputs.weekStart, state.weeklyInputs.numWeeks || 1);
@@ -597,17 +603,53 @@ function handleAdditionalChefSave() {
 
   const count = Number.parseInt(countInput.value, 10);
   const date = dateInput.value;
+  const note = noteInput.value.trim();
 
   if (editingReqDate) {
-    updateAdditionalChefRequest(editingReqDate, date, count);
+    updateAdditionalChefRequest(editingReqDate, date, count, note);
   } else {
-    addAdditionalChefRequest(date, count);
+    addAdditionalChefRequest(date, count, note);
   }
 
   closeAdditionalChefModal();
   renderAdditionalChefRequirements();
   renderResultsPanel();
   finishDataAction(wasEditingRequest ? 'Additional chef request changed' : 'Additional chef request added', before, 'Staffing request saved');
+}
+
+function openManualNoteEditor(button) {
+  activeManualNoteDate = button.dataset.date;
+  activeManualNoteTrigger = button;
+  const modal = requireElement('manualNoteModal');
+  const text = requireElement('manualNoteText');
+  requireElement('manualNoteDescription').textContent = `Daily note for ${formatDate(activeManualNoteDate)}.`;
+  text.value = state.weeklyInputs.manualDailyNotes?.[activeManualNoteDate] || '';
+  requireElement('removeManualNoteBtn').classList.toggle('hidden', !text.value);
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+  text.focus();
+}
+
+function closeManualNoteEditor({ restoreFocus = true } = {}) {
+  const modal = requireElement('manualNoteModal');
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+  if (restoreFocus && activeManualNoteTrigger?.isConnected) activeManualNoteTrigger.focus();
+  activeManualNoteDate = '';
+  activeManualNoteTrigger = null;
+}
+
+function saveManualNote(value, description) {
+  if (!activeManualNoteDate) return;
+  const before = beginDataAction();
+  setManualDailyNote(activeManualNoteDate, value);
+  (state.generatedRotas.latestResult?.weeks || []).forEach((week) => {
+    week.inputs ||= {};
+    week.inputs.manualDailyNotes = { ...(state.weeklyInputs.manualDailyNotes || {}) };
+  });
+  closeManualNoteEditor({ restoreFocus: false });
+  renderResultsPanel({ overallResult: state.generatedRotas.latestResult });
+  finishDataAction(description, before, description);
 }
 
 function loadInitialState() {
@@ -811,6 +853,9 @@ function attachEvents() {
   requireElement('addAdditionalChefBtn').addEventListener('click', () => openAdditionalChefModal(null));
   requireElement('cancelAdditionalChefBtn').addEventListener('click', closeAdditionalChefModal);
   requireElement('saveAdditionalChefBtn').addEventListener('click', handleAdditionalChefSave);
+  requireElement('cancelManualNoteBtn').addEventListener('click', () => closeManualNoteEditor());
+  requireElement('saveManualNoteBtn').addEventListener('click', () => saveManualNote(requireElement('manualNoteText').value, 'Daily note saved'));
+  requireElement('removeManualNoteBtn').addEventListener('click', () => saveManualNote('', 'Daily note removed'));
   requireElement('printRotaBtn').addEventListener('click', () => {
     const message = requireElement('printMessage');
     message.textContent = '';
@@ -1023,6 +1068,11 @@ function attachEvents() {
       closeChefEditor();
       return;
     }
+    const noteModalBackdrop = event.target.closest('#manualNoteModal');
+    if (noteModalBackdrop && event.target.id === 'manualNoteModal') {
+      closeManualNoteEditor();
+      return;
+    }
 
     const openChefButton = event.target.closest('[data-open-chef-id]');
     if (openChefButton) {
@@ -1046,6 +1096,12 @@ function attachEvents() {
       renderAvailabilityTable();
       renderResultsPanel();
       finishDataAction('Availability entry removed', before, 'Availability entry removed');
+      return;
+    }
+
+    const editDailyNote = event.target.closest('[data-edit-daily-note]');
+    if (editDailyNote) {
+      openManualNoteEditor(editDailyNote);
       return;
     }
 
@@ -1345,6 +1401,10 @@ function attachEvents() {
     }
     if (document.getElementById('additionalChefModal')?.classList.contains('open')) {
       closeAdditionalChefModal();
+      return;
+    }
+    if (document.getElementById('manualNoteModal')?.classList.contains('open')) {
+      closeManualNoteEditor();
       return;
     }
     if (chefModal?.classList.contains('open') && !removeChefConfirmationOpen) {

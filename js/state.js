@@ -13,7 +13,8 @@ function buildDefaultWeeklyInputs() {
     status: 'Draft',
     dailyOverrides: {},
     availability: [],
-    additionalChefRequirements: []
+    additionalChefRequirements: [],
+    manualDailyNotes: {}
   };
 }
 
@@ -112,4 +113,13 @@ export function setNumWeeks(value) {
 export function setAdditionalChefRequirements(entries) {
   appState.weeklyInputs.additionalChefRequirements = entries;
   syncCompatibilityViews();
+}
+
+export function setManualDailyNote(date, note) {
+  if (!date) return;
+  const notes = { ...(appState.weeklyInputs.manualDailyNotes || {}) };
+  const trimmed = typeof note === 'string' ? note.trim() : '';
+  if (trimmed) notes[date] = trimmed;
+  else delete notes[date];
+  appState.weeklyInputs.manualDailyNotes = notes;
 }

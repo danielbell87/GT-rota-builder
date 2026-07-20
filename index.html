@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>GT Rota Builder</title>
-  <link rel="stylesheet" href="styles.css?v=20260720ui" />
+  <link rel="stylesheet" href="styles.css?v=20260720notes" />
 </head>
 <body>
   <div class="wrap">
@@ -217,6 +217,9 @@
         <label>Number of additional chefs
           <input id="additionalChefCount" type="number" min="1" max="5" value="1">
         </label>
+        <label class="grid-wide">Reason or note (optional)
+          <input id="additionalChefNote" type="text" maxlength="160" autocomplete="off">
+        </label>
       </div>
       <div id="additionalChefError" class="chef-req-error" role="alert" aria-live="polite"></div>
       <div class="controls mt-14 justify-end">
@@ -226,6 +229,23 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260720ui"></script>
+  <div id="manualNoteModal" class="modal print-hidden" role="dialog" aria-modal="true" aria-labelledby="manualNoteTitle" aria-describedby="manualNoteDescription" aria-hidden="true">
+    <div class="modal-card daily-note-modal-card">
+      <h3 class="mt-0 mb-6" id="manualNoteTitle">Edit daily note</h3>
+      <p id="manualNoteDescription" class="small mb-12"></p>
+      <label for="manualNoteText">Note
+        <textarea id="manualNoteText" rows="5" maxlength="500"></textarea>
+      </label>
+      <div class="daily-note-actions mt-14">
+        <button id="removeManualNoteBtn" type="button" class="danger">Remove note</button>
+        <div class="controls justify-end">
+          <button id="cancelManualNoteBtn" type="button" class="secondary">Cancel</button>
+          <button id="saveManualNoteBtn" type="button">Save note</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js?v=20260720notes"></script>
 </body>
 </html>

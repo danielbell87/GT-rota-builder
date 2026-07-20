@@ -42,6 +42,7 @@ export function collectWeeklyInputsFromDom() {
     numWeeks: state.weeklyInputs.numWeeks,
     weeklyMioSelections: { ...(state.weeklyInputs.weeklyMioSelections || {}) },
     additionalChefRequirements: state.weeklyInputs.additionalChefRequirements || [],
+    manualDailyNotes: { ...(state.weeklyInputs.manualDailyNotes || {}) },
     availability: state.weeklyInputs.availability,
     status: state.weeklyInputs.status
   };
@@ -71,23 +72,23 @@ export function updateAvailabilityField(index, key, value) {
   setAvailability(next);
 }
 
-export function addAdditionalChefRequest(date, count) {
+export function addAdditionalChefRequest(date, count, note = '') {
   const state = getState();
   const existing = (state.weeklyInputs.additionalChefRequirements || []).slice();
   const existingIndex = existing.findIndex((request) => request.date === date);
   if (existingIndex >= 0) {
-    existing[existingIndex] = { date, count };
+    existing[existingIndex] = { date, count, note: String(note || '').trim() };
   } else {
-    existing.push({ date, count });
+    existing.push({ date, count, note: String(note || '').trim() });
   }
   setAdditionalChefRequirements(existing);
 }
 
-export function updateAdditionalChefRequest(oldDate, newDate, count) {
+export function updateAdditionalChefRequest(oldDate, newDate, count, note = '') {
   const state = getState();
   let existing = (state.weeklyInputs.additionalChefRequirements || []).slice();
   existing = existing.filter((request) => request.date !== oldDate && request.date !== newDate);
-  existing.push({ date: newDate, count });
+  existing.push({ date: newDate, count, note: String(note || '').trim() });
   setAdditionalChefRequirements(existing);
 }
 
